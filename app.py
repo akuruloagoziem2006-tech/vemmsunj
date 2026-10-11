@@ -133,6 +133,10 @@ SCHEMA = [
         listing_id INTEGER PRIMARY KEY,
         body TEXT NOT NULL,
         fetched_at REAL NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS bot_days (
+        listing_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        PRIMARY KEY (listing_id, day))""",
 ]
 
 SEED = [
@@ -720,7 +724,8 @@ fetch("/api/listings")
   <div class="meta">
     <strong>{{ p['author'] }}</strong>
     {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
-    {% if username and p['author'] != username %}
+    {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
+    {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
       <form class="inline" method="post" action="/follow/{{ p['author'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
@@ -937,7 +942,7 @@ def signup():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if username.lower() == "vemmsunj":
+        if username.lower().startswith("vemmsunj"):
             error = "That username is reserved."
         elif not (3 <= len(username) <= 30) or not username.replace("_", "").isalnum():
             error = "Username must be 3 to 30 letters, numbers, or underscores."
@@ -1020,6 +1025,74 @@ def toggle_like(post_id):
         db.execute("INSERT INTO likes (username, post_id) VALUES (?, ?)", (me, post_id))
     db.commit()
     return redirect("/posts")
+
+# ---------- Daily bot ----------
+BOT_NAME = "VEMMSUNJ_BOT"
+BOT_TIME_BUDGET = 240  # seconds; stop starting new places after this
+
+def sun_altitude_deg(lat, lon, when):
+    ts = load.timescale()
+    t = ts.from_datetime(when)
+    obs = wgs84.latlon(lat, lon).at(t).position.km
+    sun = sun_unit_vector(when)
+    norm = math.sqrt(sum(c * c for c in obs))
+    return math.degrees(math.asin(max(-1.0, min(1.0, sum(a * b for a, b in zip(obs, sun)) / norm))))
+
+def upcoming_passes(place, now, hours=24, limit=3):
+    passes, _ = cached_passes(place["id"], place)
+    found = []
+    for p in passes:
+        start = datetime.fromisoformat(p["start"])
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if now <= start <= now + timedelta(hours=hours):
+            found.append((start, p))
+    return found[:limit]
+
+def run_daily_bot(now=None):
+    now = now or datetime.now(timezone.utc)
+    day = now.strftime("%Y-%m-%d")
+    started = time.time()
+    db = connect()
+    places = db.execute("SELECT * FROM listings ORDER BY id").fetchall()
+    posted, skipped = [], []
+    for place in places:
+        if time.time() - started > BOT_TIME_BUDGET:
+            skipped.append({"place": place["name"], "reason": "time budget used up, try again tomorrow"})
+            continue
+        if db.execute("SELECT 1 FROM bot_days WHERE listing_id = ? AND day = ?", (place["id"], day)).fetchone():
+            skipped.append({"place": place["name"], "reason": "already posted today"})
+            continue
+        if sun_altitude_deg(place["latitude"], place["longitude"], now) > -6.0:
+            skipped.append({"place": place["name"], "reason": "sun is up"})
+            continue
+        try:
+            upcoming = upcoming_passes(place, now)
+        except requests.RequestException as e:
+            skipped.append({"place": place["name"], "reason": f"satellite data unavailable: {e.__class__.__name__}"})
+            continue
+        if not upcoming:
+            skipped.append({"place": place["name"], "reason": "no passes in the next 24 hours"})
+            continue
+        lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
+                 for start, p in upcoming]
+        body = f"{place['name']}, next 24 hours: " + "; ".join(lines) + ". Times are UTC."
+        db.execute(
+            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes")),
+        )
+        db.execute("INSERT INTO bot_days (listing_id, day) VALUES (?, ?)", (place["id"], day))
+        db.commit()
+        posted.append(place["name"])
+    db.close()
+    return {"day": day, "posted": posted, "skipped": skipped}
+
+@app.route("/api/cron/daily")
+def cron_daily():
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    return jsonify(run_daily_bot())
 
 if __name__ == "__main__":
     from waitress import serve
