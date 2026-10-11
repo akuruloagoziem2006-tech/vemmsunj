@@ -460,34 +460,18 @@ TEMPLATES = {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
-<script>
-(function () {
-  var t = localStorage.getItem("theme");
-  if (t) document.documentElement.setAttribute("data-theme", t);
-})();
-</script>
 <style>
 :root {
-  --bg: #0F1217;
-  --surface: #171C24;
+  --bg: #0A0D12;
+  --surface: #151A22;
   --text: #E9E6DC;
   --muted: #8C929C;
-  --accent: #E0553F;
+  --accent: #C9553A;
   --accent-text: #FFF6F0;
   --rule: #2A313C;
   --serif: "Fraunces", Georgia, serif;
   --sans: "Atkinson Hyperlegible", system-ui, sans-serif;
   color-scheme: dark;
-}
-html[data-theme="light"] {
-  --bg: #FFFFFF;
-  --surface: #F2F5FA;
-  --text: #0B1B33;
-  --muted: #55647A;
-  --accent: #1F3FA8;
-  --accent-text: #FFFFFF;
-  --rule: #D5DDE8;
-  color-scheme: light;
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.55 var(--sans); }
@@ -538,9 +522,14 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
 .strip .pass { position: absolute; top: 1.1rem; height: .8rem; background: var(--accent); border-radius: 2px; }
 .strip .now { position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--text); }
 #map { height: 70vh; border: 1px solid var(--rule); border-radius: 4px; }
-:root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--text); }
 .leaflet-popup-content a { color: var(--accent); }
+.planets {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .7rem 1.25rem; border-bottom: 1px solid var(--rule);
+}
+.planets i { display: block; border-radius: 50%; background: var(--c); width: var(--s); height: var(--s); }
 </style>
 {% block head %}{% endblock %}
 </head>
@@ -555,26 +544,19 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
-    <button id="theme" class="btn quiet" type="button">Daylight mode</button>
   </nav>
 </header>
+<div class="planets" aria-hidden="true">
+  <i style="--c:#B5B2AC;--s:6px"></i>
+  <i style="--c:#E8C27A;--s:9px"></i>
+  <i style="--c:#4A7FB0;--s:10px"></i>
+  <i style="--c:#C9553A;--s:8px"></i>
+  <i style="--c:#D9A77A;--s:16px"></i>
+  <i style="--c:#E3CC93;--s:14px"></i>
+  <i style="--c:#9FD8DF;--s:11px"></i>
+  <i style="--c:#3E66C9;--s:11px"></i>
+</div>
 <main>{% block content %}{% endblock %}</main>
-<script>
-(function () {
-  var root = document.documentElement;
-  var btn = document.getElementById("theme");
-  function label() {
-    btn.textContent = root.getAttribute("data-theme") === "light" ? "Night mode" : "Daylight mode";
-  }
-  btn.addEventListener("click", function () {
-    var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
-    root.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
-    label();
-  });
-  label();
-})();
-</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
