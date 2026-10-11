@@ -145,6 +145,12 @@ SEED = [
     ("Natural Bridges National Monument", "dark-sky", "Lake Powell Blvd, Lake Powell, UT", 37.6021, -110.0229, "https://www.nps.gov/nabr"),
 ]
 
+EXAMPLE_POSTS = [
+    ("Griffith Observatory", "A steady light moving from west to east, about 20 minutes after sunset. Post the time in UTC to see which satellites were overhead."),
+    ("Cherry Springs State Park", "A faint streak above the treeline in the dark-sky park. Add the place and time, and the app checks which satellites were sunlit and above 10 degrees."),
+    ("Death Valley National Park", "Three lights in a line crossing the sky. The app can only match a sighting to orbit data, so a time and place make the answer more useful."),
+]
+
 def init_schema():
     db = connect()
     for stmt in SCHEMA:
@@ -154,6 +160,18 @@ def init_schema():
             db.execute(
                 "INSERT INTO listings (name, category, address, latitude, longitude, website) VALUES (?, ?, ?, ?, ?, ?)",
                 row,
+            )
+    if not db.execute("SELECT 1 FROM users WHERE username = ?", ("VEMMSUNJ",)).fetchone():
+        db.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("VEMMSUNJ", generate_password_hash(secrets.token_hex(32)), "2026-10-10T00:00"),
+        )
+    if not db.execute("SELECT 1 FROM posts WHERE author = ?", ("VEMMSUNJ",)).fetchone():
+        for place, body in EXAMPLE_POSTS:
+            db.execute(
+                "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) "
+                "SELECT ?, ?, id, NULL, NULL, ? FROM listings WHERE name = ?",
+                ("VEMMSUNJ", body, "2026-10-10T00:00", place),
             )
     db.commit()
     db.close()
@@ -484,6 +502,9 @@ header.site {
   gap: .6rem 1rem; padding: .9rem 1.25rem; border-bottom: 1px solid var(--rule);
 }
 .brand { font-family: var(--serif); font-weight: 600; font-size: 1.2rem; color: var(--text); text-decoration: none; }
+.brandbox { display: flex; flex-direction: column; }
+.tagline { color: var(--muted); font-size: .92rem; }
+a.btn { text-decoration: none; display: inline-block; }
 header nav { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
 header nav a { color: var(--muted); text-decoration: none; }
 header nav a:hover { color: var(--text); }
@@ -525,7 +546,10 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
 </head>
 <body>
 <header class="site">
-  <a class="brand" href="/listings">VEMMSUNJ</a>
+  <div class="brandbox">
+    <a class="brand" href="/listings">VEMMSUNJ</a>
+    <span class="tagline">Sky-watching map for observatories, satellite passes, and sightings</span>
+  </div>
   <nav>
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
@@ -563,7 +587,7 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
   <a href="/listings?category=observatory" {% if category == 'observatory' %}aria-current="page"{% endif %}>Observatories</a>
   <a href="/listings?category=dark-sky" {% if category == 'dark-sky' %}aria-current="page"{% endif %}>Dark-sky spots</a>
 </nav>
-<p><a href="/listings/new">Add a place</a></p>
+<p><a class="btn" href="/listings/new">Add a place</a></p>
 {% for r in rows %}
 <article class="place">
   <h2><a href="/places/{{ r['id'] }}">{{ r['name'] }}</a></h2>
@@ -627,7 +651,7 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
   <input id="longitude" name="longitude" required value="{{ form.get('longitude', '') }}">
   <label for="website">Website</label>
   <input id="website" name="website" value="{{ form.get('website', '') }}">
-  <p><button class="btn" type="submit">Save place</button></p>
+  <p><button class="btn" type="submit">Add a place</button></p>
 </form>
 <p><a href="/listings">Back to places</a></p>
 {% endblock %}
@@ -713,6 +737,7 @@ fetch("/api/listings")
 <article class="entry">
   <div class="meta">
     <strong>{{ p['author'] }}</strong>
+    {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
     {% if username and p['author'] != username %}
       <form class="inline" method="post" action="/follow/{{ p['author'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -734,7 +759,7 @@ fetch("/api/listings")
   </div>
 </article>
 {% else %}
-<p>{% if view == 'following' %}Nobody you follow has posted yet.{% else %}No sightings yet.{% endif %}</p>
+{% if view == 'following' %}<p>Nobody you follow has posted yet.</p>{% else %}<div class="place"><p><strong>Be the first to log a sky sighting.</strong></p><p class="meta">Add the place and time so the app can help identify what you saw.</p></div>{% endif %}
 {% endfor %}
 {% endblock %}
 """,
@@ -749,7 +774,7 @@ fetch("/api/listings")
   <input id="username" name="username" required maxlength="30" autocomplete="username">
   <label for="password">Password</label>
   <input id="password" name="password" type="password" required autocomplete="{% if action == '/signup' %}new-password{% else %}current-password{% endif %}">
-  <p><button class="btn" type="submit">{{ title }}</button></p>
+  <p><button class="btn" type="submit">{{ button }}</button></p>
 </form>
 <p><a href="{{ link }}">{{ link_text }}</a></p>
 {% endblock %}
@@ -930,7 +955,9 @@ def signup():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if not (3 <= len(username) <= 30) or not username.replace("_", "").isalnum():
+        if username.lower() == "vemmsunj":
+            error = "That username is reserved."
+        elif not (3 <= len(username) <= 30) or not username.replace("_", "").isalnum():
             error = "Username must be 3 to 30 letters, numbers, or underscores."
         elif len(password) < 8:
             error = "Password must be at least 8 characters."
@@ -948,7 +975,7 @@ def signup():
             else:
                 session["username"] = username
                 return redirect("/posts")
-    return render_template("auth.html", title="Sign up", action="/signup", error=error,
+    return render_template("auth.html", title="Sign up", button="Create account", action="/signup", error=error,
                            link="/login", link_text="Have an account? Log in", section="login")
 
 @app.route("/login", methods=["GET", "POST"])
@@ -972,7 +999,7 @@ def login():
             record_failure(key)
             record_failure("ip:" + ip)
             error = "Wrong username or password."
-    return render_template("auth.html", title="Log in", action="/login", error=error,
+    return render_template("auth.html", title="Log in", button="Log in", action="/login", error=error,
                            link="/signup", link_text="No account? Sign up", section="login")
 
 @app.route("/logout")
