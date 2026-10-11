@@ -1,0 +1,6 @@
+vemmsunj.db
+secret_key.txt
+*.tle
+*.bsp
+__pycache__/
+.git

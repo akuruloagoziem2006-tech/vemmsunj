@@ -1,0 +1,10 @@
+.env*
+.vercel/
+secret_key.txt
+.neon_url
+.gemini_key
+*.db
+*.tle
+*.bsp
+__pycache__/
+*.pyc

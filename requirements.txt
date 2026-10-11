@@ -1,0 +1,8 @@
+flask
+requests
+skyfield
+sgp4
+jplephem
+numpy
+pg8000
+waitress
