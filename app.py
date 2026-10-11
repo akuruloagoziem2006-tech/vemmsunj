@@ -11,7 +11,8 @@ from urllib.parse import unquote, urlparse
 
 import pg8000.dbapi
 import requests
-from flask import Flask, abort, g, jsonify, redirect, render_template_string, request, session
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, session
+from jinja2 import DictLoader
 from pg8000.dbapi import IntegrityError
 from skyfield.api import EarthSatellite, Loader, wgs84
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -20,6 +21,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 if os.environ.get("TRUST_PROXY") == "1":
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+CATEGORIES = ("observatory", "dark-sky")
+STARLINK = os.environ.get("STARLINK") == "1"
 
 # ---------- Database: Postgres via pg8000 ----------
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -125,6 +129,10 @@ SCHEMA = [
         grp TEXT PRIMARY KEY,
         body TEXT NOT NULL,
         fetched_at REAL NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS pass_cache (
+        listing_id INTEGER PRIMARY KEY,
+        body TEXT NOT NULL,
+        fetched_at REAL NOT NULL)""",
 ]
 
 SEED = [
@@ -152,7 +160,7 @@ def init_schema():
 
 init_schema()
 
-# ---------- Secret key and cookies ----------
+# ---------- Secret key, cookies, CSRF ----------
 def load_secret():
     if os.environ.get("SECRET_KEY"):
         return os.environ["SECRET_KEY"]
@@ -174,7 +182,9 @@ def _get_csrf():
         session["csrf"] = secrets.token_hex(16)
     return session["csrf"]
 
-app.jinja_env.globals["csrf_token"] = _get_csrf
+@app.context_processor
+def inject_globals():
+    return {"username": session.get("username"), "csrf_token": _get_csrf}
 
 @app.before_request
 def check_csrf():
@@ -207,8 +217,9 @@ def locked(key, max_fails=MAX_FAILS):
 
 # ---------- Satellite data ----------
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
-TLE_GROUPS = ["stations", "visual", "weather"] + (["starlink"] if os.environ.get("STARLINK") == "1" else [])
+TLE_GROUPS = ["stations", "visual", "weather"] + (["starlink"] if STARLINK else [])
 CACHE_MAX_AGE = 6 * 3600
+PASS_CACHE_AGE = 3600
 load = Loader(os.path.join(tempfile.gettempdir(), "skyfield-data"), verbose=False)
 
 def get_group_text(group):
@@ -295,7 +306,7 @@ def find_passes(lat, lon, hours=24, min_alt=10.0):
     ts, sats = get_satellites()
     observer = wgs84.latlon(lat, lon)
     start = datetime.now(timezone.utc)
-    step = 5 if os.environ.get("STARLINK") == "1" else 1
+    step = 5 if STARLINK else 1
     t = ts.from_datetimes([start + timedelta(minutes=m) for m in range(0, hours * 60, step)])
     passes = []
     for sat in sats:
@@ -319,6 +330,59 @@ def find_passes(lat, lon, hours=24, min_alt=10.0):
     passes.sort(key=lambda p: p["start"])
     return passes
 
+def cached_passes(listing_id, row):
+    """Return (passes, was_cached). Results are capped at 100 and cached in Neon for an hour."""
+    db = get_db()
+    cached = db.execute("SELECT body, fetched_at FROM pass_cache WHERE listing_id = ?", (listing_id,)).fetchone()
+    if cached and time.time() - cached["fetched_at"] < PASS_CACHE_AGE:
+        return json.loads(cached["body"])[:100], True
+    started = time.time()
+    passes = find_passes(row["latitude"], row["longitude"])[:100]
+    print(f"find_passes listing={listing_id} took {time.time() - started:.1f}s", flush=True)
+    body = json.dumps(passes)
+    # Open a fresh connection: the request connection may have gone idle during the calculation.
+    wdb = connect()
+    if cached:
+        wdb.execute("UPDATE pass_cache SET body = ?, fetched_at = ? WHERE listing_id = ?", (body, time.time(), listing_id))
+    else:
+        wdb.execute("INSERT INTO pass_cache (listing_id, body, fetched_at) VALUES (?, ?, ?)", (listing_id, body, time.time()))
+    wdb.commit()
+    wdb.close()
+    return passes, False
+
+def pass_strip(passes):
+    """Turn passes into positions on a 24-hour axis that starts now."""
+    now = datetime.now(timezone.utc)
+    items = []
+    for p in passes:
+        start = datetime.fromisoformat(p["start"])
+        end = datetime.fromisoformat(p["end"])
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=timezone.utc)
+        s = max((start - now).total_seconds() / 60, 0)
+        e = min((end - now).total_seconds() / 60 + 1, 1440)
+        if e <= 0 or s >= 1440:
+            continue
+        items.append({
+            "left": round(s / 1440 * 100, 2),
+            "width": round(max((e - s) / 1440 * 100, 0.4), 2),
+            "satellite": p["satellite"],
+            "start": start.strftime("%H:%M"),
+            "peak": p["max_altitude_deg"],
+        })
+    ticks = []
+    first = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    for k in range(25):
+        t = first + timedelta(hours=k)
+        offset = (t - now).total_seconds() / 60
+        if offset > 1440:
+            break
+        if t.hour % 3 == 0:
+            ticks.append({"left": round(offset / 1440 * 100, 2), "label": t.strftime("%H:%M")})
+    return items, ticks
+
+# ---------- Gemini ----------
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
 
 def ask_gemini(prompt):
@@ -368,79 +432,218 @@ def sighting_result(listing, when, note):
     return candidates, ask_gemini(prompt)
 
 # ---------- Templates ----------
-PAGE = """
-<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VEMMSUNJ Listings</title>
+TEMPLATES = {
+"base.html": """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}: VEMMSUNJ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<script>
+(function () {
+  var t = localStorage.getItem("theme");
+  if (t) document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
 <style>
-body { font-family: sans-serif; margin: 1em; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border-bottom: 1px solid #ccc; padding: 6px; text-align: left; }
-</style></head>
+:root {
+  --bg: #0F1217;
+  --surface: #171C24;
+  --text: #E9E6DC;
+  --muted: #8C929C;
+  --accent: #E0553F;
+  --accent-text: #FFF6F0;
+  --rule: #2A313C;
+  --serif: "Fraunces", Georgia, serif;
+  --sans: "Atkinson Hyperlegible", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  --bg: #F6F3EC;
+  --surface: #EDE9DF;
+  --text: #1B1F25;
+  --muted: #5E6670;
+  --accent: #B2351F;
+  --accent-text: #FFFFFF;
+  --rule: #D6D0C2;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.55 var(--sans); }
+main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+h1, h2 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 .6rem; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.3rem; }
+h2 a { color: var(--text); text-decoration: none; }
+a { color: var(--accent); }
+header.site {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .6rem 1rem; padding: .9rem 1.25rem; border-bottom: 1px solid var(--rule);
+}
+.brand { font-family: var(--serif); font-weight: 600; font-size: 1.2rem; color: var(--text); text-decoration: none; }
+header nav { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+header nav a { color: var(--muted); text-decoration: none; }
+header nav a:hover { color: var(--text); }
+header nav a[aria-current="page"] { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+.tabs { display: flex; gap: 1.2rem; margin: 0 0 1.2rem; }
+.tabs a { color: var(--muted); text-decoration: none; }
+.tabs a[aria-current="page"] { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+.btn {
+  font: inherit; background: var(--accent); color: var(--accent-text); border: 0;
+  border-radius: 4px; padding: .6rem 1.1rem; cursor: pointer;
+}
+.btn.quiet { background: transparent; color: var(--muted); border: 1px solid var(--rule); padding: .35rem .7rem; }
+input, select, textarea {
+  font: inherit; width: 100%; padding: .5rem .6rem; background: var(--surface);
+  color: var(--text); border: 1px solid var(--rule); border-radius: 4px;
+}
+textarea { min-height: 5rem; }
+label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95rem; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.place, .entry { padding: 1.1rem 0; border-bottom: 1px solid var(--rule); }
+.meta { color: var(--muted); font-size: .92rem; }
+.note { border-left: 3px solid var(--accent); padding-left: .8rem; margin: .6rem 0 0; }
+.error { color: var(--accent); }
+.inline { display: inline; margin-left: .4rem; }
+.strip { position: relative; height: 3rem; margin: 1.2rem 0 2.2rem; border-bottom: 1px solid var(--rule); }
+.strip .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--rule); }
+.strip .tick span {
+  position: absolute; top: calc(100% + .35rem); left: 0; transform: translateX(-50%);
+  font-size: .85rem; color: var(--muted); white-space: nowrap;
+}
+.strip .pass { position: absolute; top: 1.1rem; height: .8rem; background: var(--accent); border-radius: 2px; }
+.strip .now { position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--text); }
+#map { height: 70vh; border: 1px solid var(--rule); border-radius: 4px; }
+:root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--text); }
+.leaflet-popup-content a { color: var(--accent); }
+</style>
+{% block head %}{% endblock %}
+</head>
 <body>
-<h1>{{ title }}</h1>
-<p><a href="/listings?category=observatory">Observatories</a> | <a href="/listings?category=dark-sky">Dark-sky spots</a></p>
-<p><a href="/listings/new">Add a listing</a> | <a href="/map">Map view</a> | <a href="/posts">Sightings</a></p>
-<table>
-<tr><th>Name</th><th>Address</th><th>Coordinates</th><th>Website</th></tr>
-{% for r in rows %}
-<tr>
-  <td>{{ r["name"] }}</td>
-  <td>{{ r["address"] }}</td>
-  <td>{{ r["latitude"] }}, {{ r["longitude"] }}</td>
-  <td><a href="{{ r["website"] }}">link</a></td>
-</tr>
-{% endfor %}
-</table>
-</body></html>
-"""
+<header class="site">
+  <a class="brand" href="/listings">VEMMSUNJ</a>
+  <nav>
+    <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
+    <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
+    <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
+    {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
+    <button id="theme" class="btn quiet" type="button">Light mode</button>
+  </nav>
+</header>
+<main>{% block content %}{% endblock %}</main>
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("theme");
+  function label() {
+    btn.textContent = root.getAttribute("data-theme") === "light" ? "Dark mode" : "Light mode";
+  }
+  btn.addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    label();
+  });
+  label();
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
+""",
 
-FORM_PAGE = """
-<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Add a listing</title>
-<style>
-body { font-family: sans-serif; margin: 1em; }
-label { display: block; margin-top: 0.8em; }
-input, select { width: 100%; padding: 6px; box-sizing: border-box; }
-button { margin-top: 1em; padding: 8px 16px; }
-.error { color: #b00020; }
-</style></head>
-<body>
-<h1>Add a listing</h1>
+"places.html": """{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<nav class="tabs">
+  <a href="/listings?category=observatory" {% if category == 'observatory' %}aria-current="page"{% endif %}>Observatories</a>
+  <a href="/listings?category=dark-sky" {% if category == 'dark-sky' %}aria-current="page"{% endif %}>Dark-sky spots</a>
+</nav>
+<p><a href="/listings/new">Add a place</a></p>
+{% for r in rows %}
+<article class="place">
+  <h2><a href="/places/{{ r['id'] }}">{{ r['name'] }}</a></h2>
+  {% if r['address'] %}<div class="meta">{{ r['address'] }}</div>{% endif %}
+  <div class="meta">{{ '%.4f'|format(r['latitude']) }}, {{ '%.4f'|format(r['longitude']) }}</div>
+  {% if r['website'] %}<div class="meta"><a href="{{ r['website'] }}">Website</a></div>{% endif %}
+</article>
+{% else %}
+<p>No places in this list yet. <a href="/listings/new">Add one</a>.</p>
+{% endfor %}
+{% endblock %}
+""",
+
+"place.html": """{% extends "base.html" %}
+{% block content %}
+<p><a href="/listings?category={{ place['category'] }}">Back to places</a></p>
+<h1>{{ place['name'] }}</h1>
+{% if place['address'] %}<p class="meta">{{ place['address'] }}</p>{% endif %}
+<h2>Next 24 hours</h2>
+<p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is now.</p>
+{% if error %}
+  <p class="error">{{ error }}</p>
+{% else %}
+  {% if items %}
+    <p>Next pass at {{ items[0]['start'] }} UTC, peak {{ items[0]['peak'] }} degrees.</p>
+  {% endif %}
+  <div class="strip" aria-label="Passes in the next 24 hours">
+    <div class="now"></div>
+    {% for t in ticks %}<div class="tick" style="left: {{ t['left'] }}%"><span>{{ t['label'] }}</span></div>{% endfor %}
+    {% for p in items %}<div class="pass" style="left: {{ p['left'] }}%; width: {{ p['width'] }}%" title="{{ p['satellite'] }}, {{ p['start'] }} UTC, peak {{ p['peak'] }} degrees"></div>{% endfor %}
+  </div>
+  {% for p in items[:10] %}
+    <div class="place">
+      <strong>{{ p['satellite'] }}</strong>
+      <div class="meta">Starts {{ p['start'] }} UTC, peak {{ p['peak'] }} degrees</div>
+    </div>
+  {% else %}
+    <p>No passes in the next 24 hours.</p>
+  {% endfor %}
+{% endif %}
+{% endblock %}
+""",
+
+"place_form.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Add a place</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="/listings/new">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>Name <input name="name" required value="{{ form.get('name', '') }}"></label>
-<label>Category <select name="category">
-{% for c in ['observatory', 'dark-sky'] %}<option value="{{ c }}" {% if form.get('category', 'observatory') == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-</select></label>
-<label>Address <input name="address" value="{{ form.get('address', '') }}"></label>
-<label>Latitude <input name="latitude" required value="{{ form.get('latitude', '') }}"></label>
-<label>Longitude <input name="longitude" required value="{{ form.get('longitude', '') }}"></label>
-<label>Website <input name="website" value="{{ form.get('website', '') }}"></label>
-<button type="submit">Save</button>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="name">Name</label>
+  <input id="name" name="name" required value="{{ form.get('name', '') }}">
+  <label for="category">Type</label>
+  <select id="category" name="category">
+    {% for c in ['observatory', 'dark-sky'] %}<option value="{{ c }}" {% if form.get('category', 'observatory') == c %}selected{% endif %}>{{ 'Observatory' if c == 'observatory' else 'Dark-sky spot' }}</option>{% endfor %}
+  </select>
+  <label for="address">Address</label>
+  <input id="address" name="address" value="{{ form.get('address', '') }}">
+  <label for="latitude">Latitude</label>
+  <input id="latitude" name="latitude" required value="{{ form.get('latitude', '') }}">
+  <label for="longitude">Longitude</label>
+  <input id="longitude" name="longitude" required value="{{ form.get('longitude', '') }}">
+  <label for="website">Website</label>
+  <input id="website" name="website" value="{{ form.get('website', '') }}">
+  <p><button class="btn" type="submit">Save place</button></p>
 </form>
-<p><a href="/listings">Back to listings</a></p>
-</body></html>
-"""
+<p><a href="/listings">Back to places</a></p>
+{% endblock %}
+""",
 
-MAP_PAGE = """
-<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VEMMSUNJ Map</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-body { font-family: sans-serif; margin: 0; }
-h1 { font-size: 1.2em; margin: 0.6em 1em; }
-#map { height: 75vh; width: 100%; }
-</style></head>
-<body>
-<h1>Observatories and dark-sky spots</h1>
+"map.html": """{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
+{% block content %}
+<h1>Map</h1>
+<p class="meta">Tap a pin to see its next passes. Times are UTC.</p>
 <div id="map"></div>
-<p style="margin: 0.6em 1em;"><a href="/listings">Back to listings</a></p>
+{% endblock %}
+{% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const map = L.map("map").setView([39.8, -98.6], 4);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors"
@@ -452,129 +655,122 @@ fetch("/api/listings")
     const bounds = [];
     rows.forEach(r => {
       const marker = L.marker([r.latitude, r.longitude]).addTo(map);
-      marker.bindPopup("<b>" + r.name + "</b><br>" + (r.address || "") + "<br><i>Loading passes...</i>");
+      const head = "<b>" + esc(r.name) + "</b><br>" + esc(r.address || "");
+      const link = "<br><a href='/places/" + r.id + "'>Open place</a>";
+      marker.bindPopup(head + "<br><i>Loading passes...</i>");
       marker.on("popupopen", () => {
         fetch("/api/passes/" + r.id)
           .then(res => res.json())
           .then(data => {
-            let html = "<b>" + r.name + "</b><br>" + (r.address || "") + "<hr>";
-            if (data.error) { html += "<i>" + data.error + "</i>"; }
+            let html = head + "<hr>";
+            if (data.error) { html += "<i>" + esc(data.error) + "</i>"; }
             else if (data.passes.length === 0) { html += "No passes in the next 24 hours."; }
             else {
               html += "<b>Next passes (UTC)</b><br>";
               data.passes.slice(0, 5).forEach(p => {
-                html += p.satellite + "<br>" + p.start.replace("T", " ") + " (max " + p.max_altitude_deg + "&deg;)<br>";
+                html += esc(p.satellite) + "<br>" + esc(p.start.replace("T", " ")) + " (peak " + esc(p.max_altitude_deg) + "&deg;)<br>";
               });
             }
-            marker.setPopupContent(html);
+            marker.setPopupContent(html + link);
           })
-          .catch(() => marker.setPopupContent("<b>" + r.name + "</b><br>Could not load passes."));
+          .catch(() => marker.setPopupContent(head + "<br><i>Could not load passes.</i>" + link));
       });
       bounds.push([r.latitude, r.longitude]);
     });
     if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
   });
 </script>
-</body></html>
-"""
+{% endblock %}
+""",
 
-FEED_PAGE = """
-<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VEMMSUNJ Sightings</title>
-<style>
-body { font-family: sans-serif; margin: 1em; max-width: 40em; }
-label { display: block; margin-top: 0.6em; }
-input, select, textarea { width: 100%; padding: 6px; box-sizing: border-box; }
-textarea { min-height: 4em; }
-button { margin-top: 0.8em; padding: 8px 16px; }
-.post { border-bottom: 1px solid #ccc; padding: 0.8em 0; }
-.meta { color: #555; font-size: 0.9em; }
-.ai { background: #f3f0ff; padding: 0.5em; margin-top: 0.4em; border-radius: 4px; }
-</style></head>
-<body>
+"feed.html": """{% extends "base.html" %}
+{% block content %}
 <h1>Sightings</h1>
-<p><a href="/posts">All</a> | <a href="/posts?view=following">Following</a></p>
-<p><a href="/listings">Listings</a> | <a href="/map">Map</a>{% if username %} | <a href="/logout">Log out ({{ username }})</a>{% endif %}</p>
+<nav class="tabs">
+  <a href="/posts" {% if view != 'following' %}aria-current="page"{% endif %}>All</a>
+  <a href="/posts?view=following" {% if view == 'following' %}aria-current="page"{% endif %}>Following</a>
+</nav>
 {% if username %}
-<p>Posting as <b>{{ username }}</b></p>
 <form method="post" action="/posts">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>What did you see? <textarea name="body" maxlength="1000" required></textarea></label>
-<label>Where <select name="listing_id"><option value="">(not tied to a place)</option>
-{% for l in listings %}<option value="{{ l['id'] }}">{{ l['name'] }}</option>{% endfor %}
-</select></label>
-<label>When, UTC (e.g. 2026-10-10T19:30) <input name="seen_at"></label>
-<button type="submit">Post</button>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p class="meta">Posting as {{ username }}</p>
+  <label for="body">What did you see?</label>
+  <textarea id="body" name="body" maxlength="1000" required></textarea>
+  <label for="listing_id">Where</label>
+  <select id="listing_id" name="listing_id">
+    <option value="">Not tied to a place</option>
+    {% for l in listings %}<option value="{{ l['id'] }}">{{ l['name'] }}</option>{% endfor %}
+  </select>
+  <label for="seen_at">When, in UTC (for example 2026-10-10T19:30)</label>
+  <input id="seen_at" name="seen_at">
+  <p><button class="btn" type="submit">Post sighting</button></p>
 </form>
 {% else %}
-<p><a href="/login">Log in</a> or <a href="/signup">sign up</a> to post.</p>
+<p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
 {% endif %}
+
 {% for p in posts %}
-<div class="post">
-  <div><b>{{ p['author'] }}</b>
-  {% if username and p['author'] != username %}
-    <form method="post" action="/follow/{{ p['author'] }}" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
-    </form>
-  {% endif %}
-  <span class="meta">{{ p['created_at'] }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %} · seen {{ p['seen_at'] }}{% endif %}</span></div>
-  <div>{{ p['body'] }}</div>
-  {% if p['ai_explanation'] %}<div class="ai">{{ p['ai_explanation'] }}</div>{% endif %}
+<article class="entry">
+  <div class="meta">
+    <strong>{{ p['author'] }}</strong>
+    {% if username and p['author'] != username %}
+      <form class="inline" method="post" action="/follow/{{ p['author'] }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
+      </form>
+    {% endif %}
+    <br>{{ p['created_at'] }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
+  </div>
+  <p>{{ p['body'] }}</p>
+  {% if p['ai_explanation'] %}<p class="note">{{ p['ai_explanation'] }}</p>{% endif %}
   <div class="meta">
     {{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}
     {% if username %}
-    <form method="post" action="/posts/{{ p['id'] }}/like" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit">{% if p['id'] in liked %}Unlike{% else %}Like{% endif %}</button>
-    </form>
+      <form class="inline" method="post" action="/posts/{{ p['id'] }}/like">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn quiet" type="submit">{% if p['id'] in liked %}Unlike{% else %}Like{% endif %}</button>
+      </form>
     {% endif %}
   </div>
-</div>
+</article>
 {% else %}
-<p>No sightings yet.</p>
+<p>{% if view == 'following' %}Nobody you follow has posted yet.{% else %}No sightings yet.{% endif %}</p>
 {% endfor %}
-</body></html>
-"""
+{% endblock %}
+""",
 
-AUTH_PAGE = """
-<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }}</title>
-<style>
-body { font-family: sans-serif; margin: 1em; max-width: 24em; }
-label { display: block; margin-top: 0.6em; }
-input { width: 100%; padding: 6px; box-sizing: border-box; }
-button { margin-top: 1em; padding: 8px 16px; }
-.error { color: #b00020; }
-</style></head>
-<body>
+"auth.html": """{% extends "base.html" %}
+{% block content %}
 <h1>{{ title }}</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="{{ action }}">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>Username <input name="username" required maxlength="30"></label>
-<label>Password <input name="password" type="password" required></label>
-<button type="submit">{{ title }}</button>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="username">Username</label>
+  <input id="username" name="username" required maxlength="30" autocomplete="username">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" required autocomplete="{% if action == '/signup' %}new-password{% else %}current-password{% endif %}">
+  <p><button class="btn" type="submit">{{ title }}</button></p>
 </form>
-<p><a href="{{ link }}">{{ link_text }}</a> | <a href="/posts">Sightings</a></p>
-</body></html>
-"""
+<p><a href="{{ link }}">{{ link_text }}</a></p>
+{% endblock %}
+""",
+}
 
-# ---------- Routes: listings ----------
+app.jinja_env.loader = DictLoader(TEMPLATES)
+
+# ---------- Routes: places ----------
 @app.route("/")
 def index():
-    return "VEMMSUNJ is running"
+    return redirect("/listings")
 
 @app.route("/listings")
 def listings():
     category = request.args.get("category", "observatory")
-    if category not in ("observatory", "dark-sky"):
+    if category not in CATEGORIES:
         category = "observatory"
-    title = "Observatories" if category == "observatory" else "Dark-sky viewing spots"
+    title = "Observatories" if category == "observatory" else "Dark-sky spots"
     rows = get_db().execute("SELECT * FROM listings WHERE category = ? ORDER BY name", (category,)).fetchall()
-    return render_template_string(PAGE, rows=rows, title=title)
+    return render_template("places.html", rows=rows, title=title, category=category, section="places")
 
 @app.route("/api/listings")
 def api_listings():
@@ -583,14 +779,14 @@ def api_listings():
 
 @app.route("/listings/new", methods=["GET"])
 def new_listing():
-    return render_template_string(FORM_PAGE, form={}, error=None)
+    return render_template("place_form.html", form={}, error=None, title="Add a place", section="places")
 
 @app.route("/listings/new", methods=["POST"])
 def create_listing():
     f = request.form
     name = f.get("name", "").strip()
     category = f.get("category", "observatory")
-    if category not in ("observatory", "dark-sky"):
+    if category not in CATEGORIES:
         category = "observatory"
     try:
         lat = float(f.get("latitude", ""))
@@ -598,7 +794,7 @@ def create_listing():
     except ValueError:
         lat = lon = None
     if not name or lat is None or lon is None or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
-        return render_template_string(FORM_PAGE, form=f, error="Name and valid latitude/longitude are required.")
+        return render_template("place_form.html", form=f, error="Name and valid latitude and longitude are required.", title="Add a place", section="places")
     db = get_db()
     db.execute(
         "INSERT INTO listings (name, category, address, latitude, longitude, website) VALUES (?, ?, ?, ?, ?, ?)",
@@ -607,36 +803,35 @@ def create_listing():
     db.commit()
     return redirect("/listings")
 
+@app.route("/places/<int:listing_id>")
+def place_page(listing_id):
+    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    error, items, ticks = None, [], []
+    try:
+        passes, _ = cached_passes(listing_id, place)
+        items, ticks = pass_strip(passes)
+    except requests.RequestException as e:
+        error = f"Could not load satellite data: {e}"
+    return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
+                           title=place["name"], section="places")
+
 @app.route("/map")
 def map_view():
-    return render_template_string(MAP_PAGE)
+    return render_template("map.html", title="Map", section="map")
 
 # ---------- Routes: satellites ----------
 @app.route("/api/passes/<int:listing_id>")
 def api_passes(listing_id):
-    db = get_db()
-    row = db.execute("SELECT name, latitude, longitude FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    row = get_db().execute("SELECT name, latitude, longitude FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if row is None:
         return jsonify({"error": "not found"}), 404
-    cached = db.execute("SELECT body, fetched_at FROM pass_cache WHERE listing_id = ?", (listing_id,)).fetchone()
-    if cached and time.time() - cached["fetched_at"] < PASS_CACHE_AGE:
-        return jsonify({"listing": row["name"], "passes": json.loads(cached["body"])[:100], "cached": True})
-    started = time.time()
     try:
-        passes = find_passes(row["latitude"], row["longitude"])
+        passes, cached = cached_passes(listing_id, row)
     except requests.RequestException as e:
         return jsonify({"error": f"could not fetch TLE data: {e}"}), 502
-    print(f"find_passes listing={listing_id} took {time.time() - started:.1f}s", flush=True)
-    passes = passes[:100]
-    body = json.dumps(passes)
-    db = connect()
-    if cached:
-        db.execute("UPDATE pass_cache SET body = ?, fetched_at = ? WHERE listing_id = ?", (body, time.time(), listing_id))
-    else:
-        db.execute("INSERT INTO pass_cache (listing_id, body, fetched_at) VALUES (?, ?, ?)", (listing_id, body, time.time()))
-    db.commit()
-    db.close()
-    return jsonify({"listing": row["name"], "passes": passes, "cached": False})
+    return jsonify({"listing": row["name"], "passes": passes, "cached": cached})
 
 @app.route("/api/identify/<int:listing_id>")
 def api_identify(listing_id):
@@ -662,7 +857,7 @@ def api_identify(listing_id):
         "explanation": explanation,
     })
 
-# ---------- Routes: sightings feed ----------
+# ---------- Routes: sightings ----------
 @app.route("/posts")
 def posts_page():
     db = get_db()
@@ -683,8 +878,8 @@ def posts_page():
     sql += " ORDER BY p.id DESC LIMIT 50"
     posts = db.execute(sql, params).fetchall()
     listings = db.execute("SELECT id, name FROM listings ORDER BY name").fetchall()
-    return render_template_string(FEED_PAGE, posts=posts, listings=listings,
-                                  username=me, following=following, liked=liked)
+    return render_template("feed.html", posts=posts, listings=listings, following=following,
+                           liked=liked, view=view, title="Sightings", section="posts")
 
 @app.route("/posts", methods=["POST"])
 def create_post():
@@ -701,10 +896,9 @@ def create_post():
         listing_id = None
     seen_at = f.get("seen_at", "").strip() or None
 
-    db = get_db()
     ai = None
     if listing_id and seen_at:
-        listing = db.execute("SELECT name, latitude, longitude FROM listings WHERE id = ?", (listing_id,)).fetchone()
+        listing = get_db().execute("SELECT name, latitude, longitude FROM listings WHERE id = ?", (listing_id,)).fetchone()
         try:
             when = parse_when(seen_at)
             if listing is not None:
@@ -714,11 +908,14 @@ def create_post():
         except Exception as e:
             ai = f"AI explanation unavailable ({e.__class__.__name__})."
 
+    # Fresh connection: the request connection may have gone idle during the calculation.
+    db = connect()
     db.execute(
         "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (username, body, listing_id, seen_at, ai, datetime.now(timezone.utc).isoformat(timespec="minutes")),
     )
     db.commit()
+    db.close()
     return redirect("/posts")
 
 @app.route("/api/posts")
@@ -751,8 +948,8 @@ def signup():
             else:
                 session["username"] = username
                 return redirect("/posts")
-    return render_template_string(AUTH_PAGE, title="Sign up", action="/signup",
-                                  error=error, link="/login", link_text="Have an account? Log in")
+    return render_template("auth.html", title="Sign up", action="/signup", error=error,
+                           link="/login", link_text="Have an account? Log in", section="login")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -775,8 +972,8 @@ def login():
             record_failure(key)
             record_failure("ip:" + ip)
             error = "Wrong username or password."
-    return render_template_string(AUTH_PAGE, title="Log in", action="/login",
-                                  error=error, link="/signup", link_text="No account? Sign up")
+    return render_template("auth.html", title="Log in", action="/login", error=error,
+                           link="/signup", link_text="No account? Sign up", section="login")
 
 @app.route("/logout")
 def logout():
@@ -814,15 +1011,6 @@ def toggle_like(post_id):
         db.execute("INSERT INTO likes (username, post_id) VALUES (?, ?)", (me, post_id))
     db.commit()
     return redirect("/posts")
-
-PASS_CACHE_AGE = 3600
-_init = connect()
-_init.execute("""CREATE TABLE IF NOT EXISTS pass_cache (
-    listing_id INTEGER PRIMARY KEY,
-    body TEXT NOT NULL,
-    fetched_at REAL NOT NULL)""")
-_init.commit()
-_init.close()
 
 if __name__ == "__main__":
     from waitress import serve
