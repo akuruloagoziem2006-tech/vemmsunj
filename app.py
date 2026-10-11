@@ -480,13 +480,13 @@ TEMPLATES = {
   color-scheme: dark;
 }
 html[data-theme="light"] {
-  --bg: #F6F3EC;
-  --surface: #EDE9DF;
-  --text: #1B1F25;
-  --muted: #5E6670;
-  --accent: #B2351F;
+  --bg: #FFFFFF;
+  --surface: #F2F5FA;
+  --text: #0B1B33;
+  --muted: #55647A;
+  --accent: #1F3FA8;
   --accent-text: #FFFFFF;
-  --rule: #D6D0C2;
+  --rule: #D5DDE8;
   color-scheme: light;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -555,7 +555,7 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
-    <button id="theme" class="btn quiet" type="button">Light mode</button>
+    <button id="theme" class="btn quiet" type="button">Daylight mode</button>
   </nav>
 </header>
 <main>{% block content %}{% endblock %}</main>
@@ -564,7 +564,7 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
   var root = document.documentElement;
   var btn = document.getElementById("theme");
   function label() {
-    btn.textContent = root.getAttribute("data-theme") === "light" ? "Dark mode" : "Light mode";
+    btn.textContent = root.getAttribute("data-theme") === "light" ? "Night mode" : "Daylight mode";
   }
   btn.addEventListener("click", function () {
     var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
