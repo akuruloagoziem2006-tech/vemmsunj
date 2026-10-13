@@ -684,6 +684,23 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
 <p><a href="/listings?category={{ place['category'] }}">Back to places</a></p>
 <h1>{{ place['name'] }}</h1>
 {% if place['address'] %}<p class="meta">{{ place['address'] }}</p>{% endif %}
+<h2>Tonight's best</h2>
+<p>{{ tonight['phase'] }}, {{ tonight['illum'] }}% lit.</p>
+{% if tonight['dark'] is none %}
+  <p class="meta">Dark hours are unavailable right now.</p>
+{% elif tonight['dark'] %}
+  <p>Dark from {% for a, b in tonight['dark'] %}{{ a }} to {{ b }} UTC{% if not loop.last %}, then {% endif %}{% endfor %}.</p>
+{% else %}
+  <p class="meta">The sky doesn't get fully dark here in the next 24 hours.</p>
+{% endif %}
+{% if tonight['top'] %}
+  <p class="meta">Highest passes, ranked by peak altitude:</p>
+  {% for t in tonight['top'] %}
+    <div class="place"><strong>{{ t['satellite'] }}</strong><div class="meta">{{ t['start'] }} UTC, peak {{ t['peak'] }} degrees</div></div>
+  {% endfor %}
+{% else %}
+  <p class="meta">No passes in the next 24 hours.</p>
+{% endif %}
 <h2>Next 24 hours</h2>
 <p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is now.</p>
 {% if error %}
@@ -863,6 +880,71 @@ fetch("/api/listings")
 
 app.jinja_env.loader = DictLoader(TEMPLATES)
 
+# ---------- Tonight's best ----------
+def sun_longitude_deg(d):
+    L = (280.460 + 0.9856474 * d) % 360
+    g = math.radians((357.528 + 0.9856003 * d) % 360)
+    return (L + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) % 360
+
+def moon_phase(when):
+    """Low-precision Moon phase. Accurate to a few degrees, which is enough for percent lit."""
+    d = when.timestamp() / 86400.0 + 2440587.5 - 2451545.0
+    moon_lon = (218.316 + 13.176396 * d + 6.289 * math.sin(math.radians((134.963 + 13.064993 * d) % 360))) % 360
+    elong = (moon_lon - sun_longitude_deg(d)) % 360
+    illum = round((1 - math.cos(math.radians(elong))) / 2 * 100)
+    if elong < 22.5 or elong >= 337.5:
+        name = "New moon"
+    elif elong < 67.5:
+        name = "Waxing crescent"
+    elif elong < 112.5:
+        name = "First quarter"
+    elif elong < 157.5:
+        name = "Waxing gibbous"
+    elif elong < 202.5:
+        name = "Full moon"
+    elif elong < 247.5:
+        name = "Waning gibbous"
+    elif elong < 292.5:
+        name = "Last quarter"
+    else:
+        name = "Waning crescent"
+    return name, illum
+
+def dark_intervals(lat, lon, now, hours=24, step_min=30):
+    """Time ranges in the next 24 hours when the sun is at least 6 degrees below the horizon."""
+    intervals, start = [], None
+    for k in range(hours * 60 // step_min + 1):
+        t = now + timedelta(minutes=k * step_min)
+        dark = sun_altitude_deg(lat, lon, t) <= -6.0
+        if dark and start is None:
+            start = t
+        elif not dark and start is not None:
+            intervals.append((start, t))
+            start = None
+    if start is not None:
+        intervals.append((start, now + timedelta(hours=hours)))
+    return intervals
+
+def tonight_summary(place, passes):
+    now = datetime.now(timezone.utc)
+    end = now + timedelta(hours=24)
+    phase, illum = moon_phase(now)
+    try:
+        dark = [(a.strftime("%H:%M"), b.strftime("%H:%M"))
+                for a, b in dark_intervals(place["latitude"], place["longitude"], now)]
+    except Exception:
+        dark = None  # shown as unavailable on the page
+    upcoming = []
+    for p in passes:
+        start = datetime.fromisoformat(p["start"])
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if now <= start <= end:
+            upcoming.append({"satellite": p["satellite"], "start": start.strftime("%H:%M"),
+                             "peak": p["max_altitude_deg"]})
+    upcoming.sort(key=lambda p: p["peak"], reverse=True)
+    return {"phase": phase, "illum": illum, "dark": dark, "top": upcoming[:3]}
+
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
@@ -917,13 +999,14 @@ def place_page(listing_id):
     place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if place is None:
         abort(404)
-    error, items, ticks = None, [], []
+    error, items, ticks, passes = None, [], [], []
     try:
         passes, _ = cached_passes(listing_id, place)
         items, ticks = pass_strip(passes)
     except requests.RequestException as e:
         error = f"Could not load satellite data: {e}"
-    return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
+    tonight = tonight_summary(place, passes)
+    return render_template("place.html", place=place, items=items, ticks=ticks, error=error, tonight=tonight,
                            title=place["name"], section="places")
 
 @app.route("/map")
