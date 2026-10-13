@@ -537,6 +537,18 @@ img { max-width: 100%; height: auto; display: block; margin-top: .6rem; border-r
   padding: .7rem 1.25rem; border-bottom: 1px solid var(--rule);
 }
 .planets i { display: block; border-radius: 50%; background: var(--c); width: var(--s); height: var(--s); }
+html.redlight {
+  --bg: #120303;
+  --surface: #1C0909;
+  --text: #E9A79E;
+  --muted: #A0605A;
+  --accent: #E23B2E;
+  --accent-text: #120303;
+  --rule: #3A1414;
+  color-scheme: dark;
+}
+html.redlight .planets i { background: #7A2620; }
+html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45deg) brightness(.55); }
 </style>
 {% block head %}{% endblock %}
 </head>
@@ -550,6 +562,7 @@ img { max-width: 100%; height: auto; display: block; margin-top: .6rem; border-r
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
+    <button id="redlight" class="btn quiet" type="button">Red light: off</button>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
   </nav>
 </header>
@@ -565,6 +578,22 @@ img { max-width: 100%; height: auto; display: block; margin-top: .6rem; border-r
 </div>
 <main>{% block content %}{% endblock %}</main>
 {% block scripts %}{% endblock %}
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("redlight");
+  if (localStorage.getItem("redlight") === "on") root.classList.add("redlight");
+  function label() {
+    btn.textContent = root.classList.contains("redlight") ? "Red light: on" : "Red light: off";
+  }
+  btn.addEventListener("click", function () {
+    var on = root.classList.toggle("redlight");
+    localStorage.setItem("redlight", on ? "on" : "off");
+    label();
+  });
+  label();
+})();
+</script>
 </body>
 </html>
 """,
@@ -576,9 +605,53 @@ img { max-width: 100%; height: auto; display: block; margin-top: .6rem; border-r
   <a href="/listings?category=observatory" {% if category == 'observatory' %}aria-current="page"{% endif %}>Observatories</a>
   <a href="/listings?category=dark-sky" {% if category == 'dark-sky' %}aria-current="page"{% endif %}>Dark-sky spots</a>
 </nav>
-<p><a class="btn" href="/listings/new">Add a place</a></p>
+<p>
+  <a class="btn" href="/listings/new">Add a place</a>
+  <button id="nearme" class="btn quiet" type="button">Near me</button>
+  <span id="nearme-status" class="meta"></span>
+</p>
+<script>
+(function () {
+  var btn = document.getElementById("nearme");
+  var status = document.getElementById("nearme-status");
+  function km(lat1, lon1, lat2, lon2) {
+    var R = 6371, rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  btn.addEventListener("click", function () {
+    if (!navigator.geolocation) {
+      status.textContent = "Location is not available in this browser.";
+      return;
+    }
+    status.textContent = "Finding your location...";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var here = pos.coords;
+      var articles = Array.prototype.slice.call(document.querySelectorAll("article.place"));
+      articles.forEach(function (a) {
+        a.distance = km(here.latitude, here.longitude, parseFloat(a.dataset.lat), parseFloat(a.dataset.lon));
+        var line = document.createElement("div");
+        line.className = "meta";
+        line.textContent = Math.round(a.distance).toLocaleString() + " km away";
+        a.appendChild(line);
+      });
+      articles.sort(function (x, y) { return x.distance - y.distance; });
+      var recent = document.querySelector("section.recent");
+      var parent = recent.parentNode;
+      articles.forEach(function (a) { parent.insertBefore(a, recent); });
+      status.textContent = "Sorted by distance from you.";
+    }, function (err) {
+      status.textContent = err.code === 1
+        ? "Location was blocked. You can still browse the list."
+        : "Could not get your location. Try again.";
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+  });
+})();
+</script>
 {% for r in rows %}
-<article class="place">
+<article class="place" data-lat="{{ r['latitude'] }}" data-lon="{{ r['longitude'] }}">
   <h2><a href="/places/{{ r['id'] }}">{{ r['name'] }}</a></h2>
   {% if r['address'] %}<div class="meta">{{ r['address'] }}</div>{% endif %}
   <div class="meta">{{ '%.4f'|format(r['latitude']) }}, {{ '%.4f'|format(r['longitude']) }}</div>
