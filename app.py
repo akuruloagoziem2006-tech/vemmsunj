@@ -326,10 +326,10 @@ def visible_at(lat, lon, when, min_alt=10.0, dark_alt=-6.0):
             })
     return found, True
 
-def find_passes(lat, lon, hours=24, min_alt=10.0):
+def find_passes(lat, lon, hours=24, min_alt=10.0, start=None):
     ts, sats = get_satellites()
     observer = wgs84.latlon(lat, lon)
-    start = datetime.now(timezone.utc)
+    start = start or datetime.now(timezone.utc)
     step = 5 if STARLINK else 1
     t = ts.from_datetimes([start + timedelta(minutes=m) for m in range(0, hours * 60, step)])
     passes = []
@@ -374,9 +374,9 @@ def cached_passes(listing_id, row):
     wdb.close()
     return passes, False
 
-def pass_strip(passes):
-    """Turn passes into positions on a 24-hour axis that starts now."""
-    now = datetime.now(timezone.utc)
+def pass_strip(passes, origin=None):
+    """Turn passes into positions on a 24-hour axis that starts at origin, or now."""
+    now = origin or datetime.now(timezone.utc)
     items = []
     for p in passes:
         start = datetime.fromisoformat(p["start"])
@@ -684,6 +684,16 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
 <p><a href="/listings?category={{ place['category'] }}">Back to places</a></p>
 <h1>{{ place['name'] }}</h1>
 {% if place['address'] %}<p class="meta">{{ place['address'] }}</p>{% endif %}
+<form method="get" action="/places/{{ place['id'] }}">
+  <label for="at">Check another time (UTC, up to 7 days ahead)</label>
+  <input id="at" name="at" type="datetime-local" value="{{ at_value }}">
+  <p><button class="btn quiet" type="submit">Show passes</button>
+  {% if custom %}<a href="/places/{{ place['id'] }}">Back to now</a>{% endif %}</p>
+</form>
+{% if custom %}
+  <h2>Passes from {{ at_label }} UTC</h2>
+  <p class="meta">The next 24 hours from that time. Predictions use current orbit data, so they're less reliable further ahead.</p>
+{% else %}
 <h2>Tonight's best</h2>
 <p>{{ tonight['phase'] }}, {{ tonight['illum'] }}% lit.</p>
 {% if tonight['dark'] is none %}
@@ -701,8 +711,9 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
 {% else %}
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
+{% endif %}
 <h2>Next 24 hours</h2>
-<p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is now.</p>
+<p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is the start of the window.</p>
 {% if error %}
   <p class="error">{{ error }}</p>
 {% else %}
@@ -999,14 +1010,33 @@ def place_page(listing_id):
     place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if place is None:
         abort(404)
-    error, items, ticks, passes = None, [], [], []
+    at_value = request.args.get("at", "").strip()
+    error, items, ticks, passes, tonight, origin = None, [], [], [], None, None
+    if at_value:
+        try:
+            origin = parse_when(at_value)
+        except ValueError:
+            error = "Use a date and time, such as 2026-10-14T19:30."
+        else:
+            now = datetime.now(timezone.utc)
+            if origin < now - timedelta(minutes=5) or origin > now + timedelta(days=7):
+                error = ("Choose a time from now up to 7 days ahead. Older dates can't be "
+                         "predicted from current orbit data.")
+                origin = None
     try:
-        passes, _ = cached_passes(listing_id, place)
-        items, ticks = pass_strip(passes)
+        if origin is not None:
+            passes = find_passes(place["latitude"], place["longitude"], start=origin)
+        else:
+            passes, _ = cached_passes(listing_id, place)
+        items, ticks = pass_strip(passes, origin)
     except requests.RequestException as e:
         error = f"Could not load satellite data: {e}"
-    tonight = tonight_summary(place, passes)
-    return render_template("place.html", place=place, items=items, ticks=ticks, error=error, tonight=tonight,
+    if origin is None:
+        tonight = tonight_summary(place, passes)
+    return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
+                           tonight=tonight, custom=origin is not None,
+                           at_value=at_value if origin is not None else "",
+                           at_label=origin.strftime("%Y-%m-%d %H:%M") if origin is not None else "",
                            title=place["name"], section="places")
 
 @app.route("/map")
