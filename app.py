@@ -1,5 +1,6 @@
 import json
 import math
+from html import escape
 import os
 import re
 import secrets
@@ -11,7 +12,7 @@ from urllib.parse import unquote, urlparse
 
 import pg8000.dbapi
 import requests
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, session
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, session
 from jinja2 import DictLoader
 from pg8000.dbapi import IntegrityError
 from skyfield.api import EarthSatellite, Loader, wgs84
@@ -137,6 +138,7 @@ SCHEMA = [
         listing_id INTEGER NOT NULL,
         day TEXT NOT NULL,
         PRIMARY KEY (listing_id, day))""",
+    """ALTER TABLE posts ADD COLUMN IF NOT EXISTS image_svg TEXT""",
 ]
 
 SEED = [
@@ -516,6 +518,7 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
 .meta { color: var(--muted); font-size: .92rem; }
 .note { border-left: 3px solid var(--accent); padding-left: .8rem; margin: .6rem 0 0; }
 .error { color: var(--accent); }
+img { max-width: 100%; height: auto; display: block; margin-top: .6rem; border-radius: 4px; }
 .inline { display: inline; margin-left: .4rem; }
 .strip { position: relative; height: 3rem; margin: 1.2rem 0 2.2rem; border-bottom: 1px solid var(--rule); }
 .strip .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--rule); }
@@ -584,6 +587,22 @@ label { display: block; margin-top: 1.1rem; color: var(--muted); font-size: .95r
 {% else %}
 <p>No places in this list yet. <a href="/listings/new">Add one</a>.</p>
 {% endfor %}
+<section class="recent">
+  <h2>Recent sightings</h2>
+  {% for s in recent %}
+  <article class="entry">
+    <div class="meta">
+      <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
+      · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
+    </div>
+    <p>{{ s['body'] }}</p>
+    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="Schematic of satellite passes" width="100%">{% endif %}
+  </article>
+  {% else %}
+  <p>No sightings yet.</p>
+  {% endfor %}
+  <p><a href="/posts">All sightings</a></p>
+</section>
 {% endblock %}
 """,
 
@@ -734,6 +753,7 @@ fetch("/api/listings")
     <br>{{ p['created_at'] }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
   </div>
   <p>{{ p['body'] }}</p>
+  {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="Schematic of satellite passes at {{ p['listing_name'] }}" width="100%">{% endif %}
   {% if p['ai_explanation'] %}<p class="note">{{ p['ai_explanation'] }}</p>{% endif %}
   <div class="meta">
     {{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}
@@ -782,7 +802,11 @@ def listings():
         category = "observatory"
     title = "Observatories" if category == "observatory" else "Dark-sky spots"
     rows = get_db().execute("SELECT * FROM listings WHERE category = ? ORDER BY name", (category,)).fetchall()
-    return render_template("places.html", rows=rows, title=title, category=category, section="places")
+    recent = get_db().execute(
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 5"
+    ).fetchall()
+    return render_template("places.html", rows=rows, title=title, category=category, section="places", recent=recent)
 
 @app.route("/api/listings")
 def api_listings():
@@ -930,6 +954,13 @@ def create_post():
     db.close()
     return redirect("/posts")
 
+@app.route("/posts/<int:post_id>/image.svg")
+def post_image(post_id):
+    row = get_db().execute("SELECT image_svg FROM posts WHERE id = ?", (post_id,)).fetchone()
+    if row is None or not row["image_svg"]:
+        abort(404)
+    return Response(row["image_svg"], mimetype="image/svg+xml")
+
 @app.route("/api/posts")
 def api_posts():
     rows = get_db().execute("SELECT * FROM posts ORDER BY id DESC LIMIT 50").fetchall()
@@ -1026,6 +1057,29 @@ def toggle_like(post_id):
     db.commit()
     return redirect("/posts")
 
+# ---------- Schematic pass charts ----------
+def bot_chart(place_name, upcoming):
+    """A labeled schematic of up to three passes. Arc heights show peak altitude, not a real sky view."""
+    rows = len(upcoming)
+    height = 110 + 96 * rows
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 {height}" role="img" aria-label="Schematic of satellite passes at {escape(place_name)}">',
+        f'<rect width="600" height="{height}" fill="#151A22"/>',
+        f'<text x="24" y="36" fill="#E9E6DC" font-family="Georgia, serif" font-size="20">{escape(place_name)}</text>',
+        '<text x="24" y="58" fill="#8C929C" font-family="sans-serif" font-size="13">Next passes in the next 24 hours</text>',
+    ]
+    for i, (start, p) in enumerate(upcoming):
+        top = 80 + 96 * i
+        base = top + 62
+        h = max(float(p["max_altitude_deg"]), 0.0) / 90 * 46
+        parts.append(f'<text x="24" y="{top + 14}" fill="#E9E6DC" font-family="sans-serif" font-size="15">{escape(p["satellite"])}</text>')
+        parts.append(f'<text x="24" y="{top + 32}" fill="#8C929C" font-family="sans-serif" font-size="13">{start.strftime("%H:%M")} UTC, peak {p["max_altitude_deg"]} degrees</text>')
+        parts.append(f'<line x1="40" y1="{base}" x2="560" y2="{base}" stroke="#2A313C"/>')
+        parts.append(f'<path d="M40 {base} Q300 {base - 2 * h:.1f} 560 {base}" fill="none" stroke="#C9553A" stroke-width="3"/>')
+    parts.append(f'<text x="24" y="{height - 12}" fill="#8C929C" font-family="sans-serif" font-size="11">Schematic, not to scale. Times are UTC.</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
 # ---------- Daily bot ----------
 BOT_NAME = "VEMMSUNJ_BOT"
 BOT_TIME_BUDGET = 240  # seconds; stop starting new places after this
@@ -1077,9 +1131,10 @@ def run_daily_bot(now=None):
         lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
                  for start, p in upcoming]
         body = f"{place['name']}, next 24 hours: " + "; ".join(lines) + ". Times are UTC."
+        chart = bot_chart(place["name"], upcoming)
         db.execute(
-            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes")),
+            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), chart),
         )
         db.execute("INSERT INTO bot_days (listing_id, day) VALUES (?, ?)", (place["id"], day))
         db.commit()
