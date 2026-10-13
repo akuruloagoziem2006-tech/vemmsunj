@@ -959,6 +959,8 @@ def post_image(post_id):
     row = get_db().execute("SELECT image_svg FROM posts WHERE id = ?", (post_id,)).fetchone()
     if row is None or not row["image_svg"]:
         abort(404)
+    if row["image_svg"].startswith("https://"):
+        return redirect(row["image_svg"])
     return Response(row["image_svg"], mimetype="image/svg+xml")
 
 @app.route("/api/posts")
@@ -1147,7 +1149,42 @@ def cron_daily():
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
         abort(401)
-    return jsonify(run_daily_bot())
+    result = run_daily_bot()
+    result["satellite_image"] = post_satellite_image()
+    return jsonify(result)
+
+# ---------- Daily NASA EPIC image (public domain) ----------
+EPIC_API = "https://epic.gsfc.nasa.gov/api/natural"
+EPIC_GLOBAL_ID = 0  # bot_days key for the once-a-day Earth image, separate from places
+
+def post_satellite_image(now=None):
+    now = now or datetime.now(timezone.utc)
+    day = now.strftime("%Y-%m-%d")
+    db = connect()
+    try:
+        if db.execute("SELECT 1 FROM bot_days WHERE listing_id = ? AND day = ?", (EPIC_GLOBAL_ID, day)).fetchone():
+            return "already posted today"
+        r = requests.get(EPIC_API, timeout=20)
+        r.raise_for_status()
+        frames = r.json()
+        if not frames:
+            return "no images available"
+        latest = max(frames, key=lambda f: f["date"])
+        y, m, d = latest["date"][:10].split("-")
+        url = f"https://epic.gsfc.nasa.gov/archive/natural/{y}/{m}/{d}/png/{latest['image']}.png"
+        body = (f"Earth from space, captured {latest['date'][:16]} UTC by NASA's EPIC camera "
+                "on the DSCOVR satellite. Image: NASA, public domain.")
+        db.execute(
+            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (BOT_NAME, body, None, None, None, now.isoformat(timespec="minutes"), url),
+        )
+        db.execute("INSERT INTO bot_days (listing_id, day) VALUES (?, ?)", (EPIC_GLOBAL_ID, day))
+        db.commit()
+        return "posted"
+    except requests.RequestException as e:
+        return f"image unavailable: {e.__class__.__name__}"
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     from waitress import serve
