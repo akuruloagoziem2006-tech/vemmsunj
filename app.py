@@ -562,6 +562,7 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
+    {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
     <button id="redlight" class="btn quiet" type="button">Red light: off</button>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
   </nav>
@@ -889,7 +890,39 @@ fetch("/api/listings")
 """,
 }
 
-app.jinja_env.loader = DictLoader(TEMPLATES)
+LOG_TEMPLATES = {"log.html": """{% extends "base.html" %}
+{% block content %}
+<h1>My log</h1>
+<p class="meta">Only you can see this log. Entries don't appear in Sightings.</p>
+<form method="post" action="/log">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="note">What did you see?</label>
+  <textarea id="note" name="note" maxlength="1000" required></textarea>
+  <label for="listing_id">Where</label>
+  <select id="listing_id" name="listing_id">
+    <option value="">Not tied to a place</option>
+    {% for l in listings %}<option value="{{ l['id'] }}">{{ l['name'] }}</option>{% endfor %}
+  </select>
+  <label for="seen_at">When, in UTC (optional)</label>
+  <input id="seen_at" name="seen_at" placeholder="2026-10-14T19:30">
+  <p><button class="btn" type="submit">Save entry</button></p>
+</form>
+{% for e in entries %}
+<article class="entry">
+  <div class="meta">{{ e['created_at'] }}{% if e['listing_name'] %} at {{ e['listing_name'] }}{% endif %}{% if e['seen_at'] %}, seen {{ e['seen_at'] }}{% endif %}</div>
+  <p>{{ e['note'] }}</p>
+  <form method="post" action="/log/{{ e['id'] }}/delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn quiet" type="submit">Delete entry</button>
+  </form>
+</article>
+{% else %}
+<div class="place"><p><strong>Nothing logged yet.</strong></p><p class="meta">Record what you see, with the place and time, so you can look back on it later.</p></div>
+{% endfor %}
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -1371,6 +1404,69 @@ def post_satellite_image(now=None):
         return f"image unavailable: {e.__class__.__name__}"
     finally:
         db.close()
+
+# ---------- Private observation log ----------
+_obs = connect()
+_obs.execute("""CREATE TABLE IF NOT EXISTS observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    note TEXT NOT NULL,
+    listing_id INTEGER,
+    seen_at TEXT,
+    created_at TEXT NOT NULL)""")
+_obs.commit()
+_obs.close()
+
+@app.route("/log")
+def log_page():
+    me = session.get("username")
+    if not me:
+        return redirect("/login")
+    db = get_db()
+    entries = db.execute(
+        "SELECT e.*, l.name AS listing_name FROM observations e "
+        "LEFT JOIN listings l ON l.id = e.listing_id WHERE e.username = ? ORDER BY e.id DESC",
+        (me,),
+    ).fetchall()
+    listings = db.execute("SELECT id, name FROM listings ORDER BY name").fetchall()
+    return render_template("log.html", entries=entries, listings=listings, title="My log", section="log")
+
+@app.route("/log", methods=["POST"])
+def add_observation():
+    me = session.get("username")
+    if not me:
+        return redirect("/login")
+    f = request.form
+    note = f.get("note", "").strip()[:1000]
+    if not note:
+        return redirect("/log")
+    try:
+        listing_id = int(f.get("listing_id", "")) if f.get("listing_id") else None
+    except ValueError:
+        listing_id = None
+    seen_at = f.get("seen_at", "").strip() or None
+    if seen_at:
+        try:
+            parse_when(seen_at)
+        except ValueError:
+            seen_at = None  # keep the note, drop a time that can't be read
+    db = get_db()
+    db.execute(
+        "INSERT INTO observations (username, note, listing_id, seen_at, created_at) VALUES (?, ?, ?, ?, ?)",
+        (me, note, listing_id, seen_at, datetime.now(timezone.utc).isoformat(timespec="minutes")),
+    )
+    db.commit()
+    return redirect("/log")
+
+@app.route("/log/<int:entry_id>/delete", methods=["POST"])
+def delete_observation(entry_id):
+    me = session.get("username")
+    if not me:
+        return redirect("/login")
+    db = get_db()
+    db.execute("DELETE FROM observations WHERE id = ? AND username = ?", (entry_id, me))
+    db.commit()
+    return redirect("/log")
 
 if __name__ == "__main__":
     from waitress import serve
