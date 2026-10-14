@@ -561,6 +561,7 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
   <nav>
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
+    <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
     <button id="redlight" class="btn quiet" type="button">Red light: off</button>
@@ -922,7 +923,28 @@ LOG_TEMPLATES = {"log.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES})
+CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Calendar</h1>
+<p class="meta">Times are UTC, rounded to the nearest hour. The next 60 days.</p>
+<h2>Moon phases</h2>
+{% for e in phases %}
+<div class="place"><strong>{{ e['name'] }}</strong><div class="meta">{{ e['when'] }}</div></div>
+{% else %}
+<p>No phases found in this window.</p>
+{% endfor %}
+<h2>Meteor showers</h2>
+<p class="meta">Peak dates are approximate. They shift by a day or two from year to year, so check the International Meteor Organization for exact times.</p>
+{% for m in showers %}
+<div class="place"><strong>{{ m['name'] }}</strong><div class="meta">Around {{ m['when'] }}</div></div>
+{% else %}
+<p>No showers peak in the next 60 days.</p>
+{% endfor %}
+<p class="meta">Eclipses aren't listed yet.</p>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -1467,6 +1489,55 @@ def delete_observation(entry_id):
     db.execute("DELETE FROM observations WHERE id = ? AND username = ?", (entry_id, me))
     db.commit()
     return redirect("/log")
+
+# ---------- Event calendar ----------
+def elongation_deg(when):
+    """Angle between the Moon and the Sun as seen from Earth, in degrees (0 is new moon)."""
+    d = when.timestamp() / 86400.0 + 2440587.5 - 2451545.0
+    moon_lon = (218.316 + 13.176396 * d + 6.289 * math.sin(math.radians((134.963 + 13.064993 * d) % 360))) % 360
+    return (moon_lon - sun_longitude_deg(d)) % 360
+
+PHASE_NAMES = {0: "New moon", 1: "First quarter", 2: "Full moon", 3: "Last quarter"}
+
+def moon_phase_events(days=60):
+    """Each phase, at the first hour it begins. The Moon's elongation moves forward about 12 degrees a day."""
+    start = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    events = []
+    prev_k = int(elongation_deg(start) // 90)
+    for h in range(1, days * 24 + 1):
+        t = start + timedelta(hours=h)
+        k = int(elongation_deg(t) // 90)
+        if k != prev_k:
+            events.append({"name": PHASE_NAMES[k], "when": t.strftime("%a %d %b %Y, %H:%M UTC")})
+            prev_k = k
+    return events
+
+# Approximate annual peaks (month, day). Exact times vary by a day or two each year.
+METEOR_SHOWERS = [
+    ("Quadrantids", 1, 4),
+    ("Lyrids", 4, 22),
+    ("Eta Aquariids", 5, 6),
+    ("Perseids", 8, 12),
+    ("Orionids", 10, 21),
+    ("Leonids", 11, 17),
+    ("Geminids", 12, 14),
+]
+
+def upcoming_showers(now, days=60):
+    found = []
+    for name, month, day in METEOR_SHOWERS:
+        for year in (now.year, now.year + 1):
+            peak = datetime(year, month, day, tzinfo=timezone.utc)
+            if now <= peak <= now + timedelta(days=days):
+                found.append({"name": name, "when": peak.strftime("%a %d %b %Y")})
+    found.sort(key=lambda m: datetime.strptime(m["when"], "%a %d %b %Y"))
+    return found
+
+@app.route("/calendar")
+def calendar_page():
+    now = datetime.now(timezone.utc)
+    return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now),
+                           title="Calendar", section="calendar")
 
 if __name__ == "__main__":
     from waitress import serve
