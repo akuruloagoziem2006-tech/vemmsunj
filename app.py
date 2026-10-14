@@ -552,6 +552,12 @@ html.redlight {
 }
 html.redlight .planets i { background: #7A2620; }
 html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45deg) brightness(.55); }
+.planet-art { display: flex; flex-wrap: wrap; gap: 1rem 1.4rem; margin: .8rem 0 1.4rem; }
+.planet-art figure { margin: 0; width: 4.5rem; text-align: center; }
+.planet-art svg { display: block; margin: 0 auto; }
+.planet-art figcaption { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+.planet-pic { width: 3.2rem; height: 3.2rem; margin: .5rem 0 .2rem; }
+.planet-pic svg { width: 100%; height: 100%; display: block; }
 </style>
 {% block head %}{% endblock %}
 </head>
@@ -720,6 +726,16 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
+<h2>Planets</h2>
+{% if planets_dark %}<p class="meta">The sky is still too bright to see planets well at this time.</p>{% endif %}
+{% for p in planets %}
+<div class="place">
+  <strong>{{ p['name'] }}</strong>
+  <div class="planet-pic">{{ p['art']|safe }}</div>
+  <div class="meta">{% if p['up'] %}Above the horizon, {{ p['alt'] }} degrees up, to the {{ p['dir'] }}{% else %}Below the horizon ({{ p['alt'] }} degrees){% endif %}</div>
+</div>
+{% endfor %}
+<p class="meta">Estimated from simplified orbits, accurate to about a degree. Times are UTC.</p>
 <h2>Next 24 hours</h2>
 <p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is the start of the window.</p>
 {% if error %}
@@ -1017,6 +1033,101 @@ def tonight_summary(place, passes):
     upcoming.sort(key=lambda p: p["peak"], reverse=True)
     return {"phase": phase, "illum": illum, "dark": dark, "top": upcoming[:3]}
 
+# ---------- Planets (simplified orbital elements) ----------
+# Each entry: N, i, w, a, e, M, each as a base value plus a rate per day since J2000.
+PLANETS = {
+    "Mercury": (48.3313, 3.24587e-5, 7.0047, 5.00e-8, 29.1241, 1.01444e-5, 0.387098, 0.0, 0.205635, 5.59e-10, 168.6562, 4.0923344368),
+    "Venus":   (76.6799, 2.46590e-5, 3.3946, 2.75e-8, 54.8910, 1.38374e-5, 0.723330, 0.0, 0.006773, -1.302e-9, 48.0052, 1.6021302244),
+    "Mars":    (49.5574, 2.11081e-5, 1.8497, -1.78e-8, 286.5016, 2.92961e-5, 1.523688, 0.0, 0.093405, 2.516e-9, 18.6021, 0.5240207766),
+    "Jupiter": (100.4542, 2.76854e-5, 1.3030, -1.557e-7, 273.8777, 1.64505e-5, 5.20256, 0.0, 0.048498, 4.469e-9, 19.8950, 0.0830853001),
+    "Saturn":  (113.6634, 2.38980e-5, 2.4886, -1.081e-7, 339.3939, 2.97661e-5, 9.55475, 0.0, 0.055546, -9.499e-9, 316.9670, 0.0334442282),
+    "Uranus":  (74.0005, 1.3978e-5, 0.7733, 1.9e-8, 96.6612, 3.0565e-5, 19.18171, -1.55e-8, 0.047318, 7.45e-9, 142.5905, 0.011725806),
+    "Neptune": (131.7806, 3.0173e-5, 1.7700, -2.55e-7, 272.8461, -6.027e-6, 30.05826, 3.313e-8, 0.008606, 2.15e-9, 260.2471, 0.005995147),
+}
+
+def _solve_kepler(M_deg, e):
+    M = math.radians(M_deg)
+    E = M + e * math.sin(M) * (1 + e * math.cos(M))
+    for _ in range(12):
+        E -= (E - e * math.sin(E) - M) / (1 - e * math.cos(E))
+    return E
+
+def _geocentric_equatorial(name, when):
+    """Right ascension and declination (radians) of a planet, plus days since J2000."""
+    N0, N1, i0, i1, w0, w1, a0, a1, e0, e1, M0, M1 = PLANETS[name]
+    d = when.timestamp() / 86400.0 + 2440587.5 - 2451545.0
+    N = math.radians((N0 + N1 * d) % 360)
+    i = math.radians(i0 + i1 * d)
+    w = math.radians((w0 + w1 * d) % 360)
+    a = a0 + a1 * d
+    e = e0 + e1 * d
+    E = _solve_kepler((M0 + M1 * d) % 360, e)
+    xv = a * (math.cos(E) - e)
+    yv = a * math.sqrt(1 - e * e) * math.sin(E)
+    v = math.atan2(yv, xv)
+    r = math.hypot(xv, yv)
+    vw = v + w
+    xh = r * (math.cos(N) * math.cos(vw) - math.sin(N) * math.sin(vw) * math.cos(i))
+    yh = r * (math.sin(N) * math.cos(vw) + math.cos(N) * math.sin(vw) * math.cos(i))
+    zh = r * math.sin(vw) * math.sin(i)
+    # Earth's heliocentric position from the Sun's geocentric longitude and distance
+    Ls = math.radians(sun_longitude_deg(d))
+    g = math.radians((357.528 + 0.9856003 * d) % 360)
+    R = 1.00014 - 0.01671 * math.cos(g) - 0.00014 * math.cos(2 * g)
+    x = xh + R * math.cos(Ls)
+    y = yh + R * math.sin(Ls)
+    z = zh
+    eps = math.radians(23.4393 - 3.563e-7 * d)
+    xq = x
+    yq = y * math.cos(eps) - z * math.sin(eps)
+    zq = y * math.sin(eps) + z * math.cos(eps)
+    return math.atan2(yq, xq), math.atan2(zq, math.hypot(xq, yq)), d
+
+def _compass(az):
+    names = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    return names[int(((az + 22.5) % 360) // 45)]
+
+def planets_at(place, when):
+    """Returns (sky_too_bright, planets sorted by altitude). Planets are marked up when 10 degrees or higher."""
+    lat, lon = place["latitude"], place["longitude"]
+    too_bright = sun_altitude_deg(lat, lon, when) > -6.0
+    latr = math.radians(lat)
+    out = []
+    for name in PLANETS:
+        ra, dec, d = _geocentric_equatorial(name, when)
+        lst = math.radians((280.46061837 + 360.98564736629 * d + lon) % 360)
+        H = lst - ra
+        sin_alt = math.sin(dec) * math.sin(latr) + math.cos(dec) * math.cos(latr) * math.cos(H)
+        alt = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+        az_from_south = math.degrees(math.atan2(math.sin(H), math.cos(H) * math.sin(latr) - math.tan(dec) * math.cos(latr)))
+        az = (az_from_south + 180) % 360
+        out.append({"name": name, "alt": round(alt, 1), "dir": _compass(az), "up": alt >= 10.0, "art": planet_svg(name)})
+    out.sort(key=lambda p: p["alt"], reverse=True)
+    return too_bright, out
+
+# ---------- Planet illustrations (drawn in the app's style) ----------
+PLANET_COLORS = {
+    "Mercury": "#B5B2AC", "Venus": "#E8C27A", "Mars": "#C9553A", "Jupiter": "#D9A77A",
+    "Saturn": "#E3CC93", "Uranus": "#9FD8DF", "Neptune": "#3E66C9",
+}
+
+def planet_svg(name):
+    c = PLANET_COLORS[name]
+    parts = [f'<svg viewBox="0 0 120 120" width="72" height="72" role="img" aria-label="{name}">']
+    if name == "Saturn":
+        parts.append('<ellipse cx="60" cy="60" rx="54" ry="13" fill="none" stroke="#8C7A52" stroke-width="6" transform="rotate(-18 60 60)"/>')
+    parts.append(f'<circle cx="60" cy="60" r="36" fill="{c}"/>')
+    if name == "Jupiter":
+        parts.append('<ellipse cx="60" cy="46" rx="32" ry="3.5" fill="#A8703F" opacity=".7"/>')
+        parts.append('<ellipse cx="60" cy="60" rx="34" ry="4" fill="#B97D4E" opacity=".6"/>')
+        parts.append('<ellipse cx="60" cy="74" rx="30" ry="3" fill="#A8703F" opacity=".7"/>')
+    if name == "Mars":
+        parts.append('<ellipse cx="50" cy="52" rx="10" ry="6" fill="#8A3A26" opacity=".45"/>')
+    if name == "Saturn":
+        parts.append('<ellipse cx="60" cy="60" rx="54" ry="13" fill="none" stroke="#C9B57E" stroke-width="3" transform="rotate(-18 60 60)" clip-path="url(#front)"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
@@ -1094,7 +1205,10 @@ def place_page(listing_id):
         error = f"Could not load satellite data: {e}"
     if origin is None:
         tonight = tonight_summary(place, passes)
+    when_now = origin or datetime.now(timezone.utc)
+    planets_dark, planets = planets_at(place, when_now)
     return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
+                           planets=planets, planets_dark=planets_dark,
                            tonight=tonight, custom=origin is not None,
                            at_value=at_value if origin is not None else "",
                            at_label=origin.strftime("%Y-%m-%d %H:%M") if origin is not None else "",
