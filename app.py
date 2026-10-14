@@ -1077,45 +1077,156 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     return;
   }
 
-  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
+  // Simplified outlines as [longitude, latitude]. Approximate, chosen for the look of the Earth.
+  var LAND = [
+    [[-168,66],[-156,71],[-120,70],[-95,72],[-80,68],[-62,60],[-55,50],[-66,44],[-76,35],[-81,25],[-83,29],[-97,26],[-97,18],[-88,15],[-83,9],[-77,8],[-80,7],[-86,12],[-105,20],[-112,30],[-117,32],[-124,40],[-124,48],[-135,58],[-150,60],[-165,62]],
+    [[-80,8],[-60,10],[-50,0],[-35,-7],[-40,-22],[-48,-26],[-58,-38],[-65,-42],[-68,-52],[-74,-50],[-73,-37],[-71,-18],[-81,-5],[-80,0]],
+    [[-55,60],[-43,60],[-20,70],[-20,82],[-60,82],[-70,78],[-55,70]],
+    [[-10,36],[-9,43],[-2,44],[-4,48],[2,51],[8,54],[9,57],[5,62],[15,68],[25,71],[40,68],[60,70],[80,73],[110,77],[140,72],[160,70],[180,68],[180,62],[160,60],[140,55],[135,44],[128,38],[122,30],[120,22],[108,18],[106,10],[100,13],[98,8],[100,2],[104,1],[98,15],[92,22],[80,15],[77,8],[72,21],[60,25],[57,25],[50,30],[36,36],[27,37],[22,37],[20,40],[12,44],[16,38],[12,42],[3,43],[-5,36]],
+    [[-17,21],[-10,30],[10,37],[32,31],[37,20],[43,12],[51,11],[40,-3],[40,-15],[35,-25],[20,-35],[18,-30],[12,-17],[13,-5],[9,4],[-8,4],[-17,14]],
+    [[114,-22],[122,-18],[130,-12],[137,-12],[142,-11],[146,-19],[153,-27],[150,-37],[140,-38],[131,-31],[115,-34]],
+    [[95,5],[105,-6],[115,-8],[120,-3],[117,7],[110,2]],
+    [[130,31],[135,34],[141,41],[142,45],[139,38],[133,34]],
+    [[-5,50],[1,51],[-3,58],[-6,56]],
+    [[44,-25],[49,-15],[50,-16],[47,-25]]
+  ];
+  var DESERT = [[-17,21],[-10,30],[10,37],[32,31],[37,20],[43,12],[15,15],[-5,15]];
+  var ARCTIC = [[-180,80],[-90,82],[0,80],[90,82],[180,80],[180,90],[-180,90]];
+  var ANTARCTIC = [[-180,-72],[-120,-75],[-60,-70],[0,-72],[60,-68],[120,-70],[180,-72],[180,-90],[-180,-90]];
+
+  function earthTexture() {
+    var W = 1024, H = 512;
+    var c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    var g = c.getContext("2d");
+    var sea = g.createLinearGradient(0, 0, 0, H);
+    sea.addColorStop(0, "#15406A");
+    sea.addColorStop(0.5, "#1F6191");
+    sea.addColorStop(1, "#15406A");
+    g.fillStyle = sea;
+    g.fillRect(0, 0, W, H);
+    function xy(lon, lat) { return [(lon + 180) / 360 * W, (90 - lat) / 180 * H]; }
+    function poly(pts, color) {
+      g.beginPath();
+      pts.forEach(function (p, i) {
+        var q = xy(p[0], p[1]);
+        if (i === 0) g.moveTo(q[0], q[1]); else g.lineTo(q[0], q[1]);
+      });
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+    }
+    LAND.forEach(function (p) { poly(p, "#4E7D44"); });
+    g.globalAlpha = 0.9;
+    poly(DESERT, "#B9A46A");
+    g.globalAlpha = 1;
+    poly(ARCTIC, "#E8EEF2");
+    poly(ANTARCTIC, "#E8EEF2");
+    var seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    g.globalAlpha = 0.35;
+    for (var i = 0; i < 70; i++) {
+      var q = xy(rnd() * 360 - 180, rnd() * 140 - 70);
+      var rx = 8 + rnd() * 26;
+      g.beginPath();
+      g.ellipse(q[0], q[1], rx, rx * 0.4, 0, 0, Math.PI * 2);
+      g.fillStyle = "#FFFFFF";
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    var tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  var glowTex = (function () {
+    var c = document.createElement("canvas");
+    c.width = c.height = 64;
+    var g = c.getContext("2d");
+    var grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, "rgba(255,255,255,0.9)");
+    grd.addColorStop(0.35, "rgba(255,240,220,0.35)");
+    grd.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
 
   var renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   wrap.appendChild(renderer.domElement);
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
-  scene.add(new THREE.AmbientLight(0x404a5a, 0.9));
-  var sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  scene.add(new THREE.AmbientLight(0x6A7486, 1.0));
+  var sunLight = new THREE.DirectionalLight(0xffffff, 1.1);
   scene.add(sunLight);
 
   var earthGroup = new THREE.Group();
   scene.add(earthGroup);
   earthGroup.add(new THREE.Mesh(
-    new THREE.SphereGeometry(1, 64, 48),
-    new THREE.MeshPhongMaterial({ color: 0x1B3A5C, shininess: 10 })
+    new THREE.SphereGeometry(1, 96, 72),
+    new THREE.MeshPhongMaterial({ map: earthTexture(), shininess: 14, specular: 0x335577 })
   ));
-  earthGroup.add(new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.SphereGeometry(1.002, 24, 12)),
-    new THREE.LineBasicMaterial({ color: 0x3A5A80, transparent: true, opacity: 0.5 })
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(1.05, 64, 48),
+    new THREE.MeshBasicMaterial({ color: 0x7EC8FF, transparent: true, opacity: 0.1, side: THREE.BackSide })
   ));
 
   // Earth-centred km (x, y, z) to scene units. Scene Y is the Earth's spin axis.
   function sc(p, k) { return new THREE.Vector3(p[0] * k, p[2] * k, -p[1] * k); }
 
+  // A small satellite model: body, solar panels, and for the ISS a truss and four panel pairs.
+  function makeSatellite(isIss) {
+    var u = isIss ? 0.02 : 0.013;
+    var g = new THREE.Group();
+    var metal = new THREE.MeshStandardMaterial({ color: 0xD9DEE6, metalness: 0.75, roughness: 0.35 });
+    var gold = new THREE.MeshStandardMaterial({ color: 0xC9A24A, metalness: 0.6, roughness: 0.4 });
+    var cell = new THREE.MeshStandardMaterial({ color: 0x23487E, metalness: 0.3, roughness: 0.45, emissive: 0x0A1830 });
+    function box(w, h, d, mat, x, y, z) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      g.add(m);
+    }
+    box(u * 0.9, u * 0.9, u * 2.2, metal, 0, 0, 0);
+    box(u * 0.5, u * 0.5, u * 0.7, gold, 0, u * 0.55, 0);
+    if (isIss) {
+      box(u * 12, u * 0.12, u * 0.12, metal, 0, 0, 0);
+      [-5.8, -3.5, 3.5, 5.8].forEach(function (x) { box(u * 2.0, u * 0.03, u * 3.0, cell, u * x, 0, 0); });
+      var mod = new THREE.Mesh(new THREE.CylinderGeometry(u * 0.45, u * 0.45, u * 4.2, 16), metal);
+      mod.rotation.x = Math.PI / 2;
+      g.add(mod);
+    } else {
+      [-1, 1].forEach(function (s) { box(u * 4.2, u * 0.04, u * 1.3, cell, s * u * 2.55, 0, 0); });
+    }
+    var glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: isIss ? 0xFFD9B0 : 0xD8E6FF, transparent: true, depthWrite: false
+    }));
+    glow.scale.setScalar(isIss ? 0.16 : 0.09);
+    g.add(glow);
+    return g;
+  }
+
+  function disposeGroup(g) {
+    g.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material && o.material.dispose) o.material.dispose();
+    });
+  }
+
+  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
+
   function buildSatellites(list) {
     sats.forEach(function (s) {
-      scene.remove(s.mesh);
+      scene.remove(s.group);
       scene.remove(s.line);
-      s.mesh.geometry.dispose();
+      disposeGroup(s.group);
       s.line.geometry.dispose();
+      s.line.material.dispose();
     });
     sats = list.map(function (d) {
       var isIss = /ISS/i.test(d.name);
-      var mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(isIss ? 0.035 : 0.022, 12, 8),
-        new THREE.MeshBasicMaterial({ color: isIss ? 0xC9553A : 0xE9E6DC })
-      );
-      scene.add(mesh);
+      var group = makeSatellite(isIss);
+      scene.add(group);
       var pts = new Float32Array(d.track.length * 3);
       d.track.forEach(function (p, i) {
         var v = sc(p, 1 / R);
@@ -1129,7 +1240,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         color: isIss ? 0xC9553A : 0x5C7DA6, transparent: true, opacity: 0.55
       }));
       scene.add(line);
-      return { data: d, mesh: mesh, line: line };
+      return { data: d, group: group, line: line };
     });
   }
 
@@ -1264,13 +1375,14 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       earthGroup.rotation.y = gmst * DEG;
       sunLight.position.copy(sc(data.sun, 10));
       sats.forEach(function (s) {
-        var v = sc(satPosition(s.data, simElapsed), 1 / R);
-        s.mesh.position.copy(v);
-        var picked = s.data.name === selectedName;
-        s.mesh.scale.setScalar(picked ? 1.8 : 1);
+        var p0 = sc(satPosition(s.data, simElapsed), 1 / R);
+        var p1 = sc(satPosition(s.data, simElapsed + 2), 1 / R);
+        s.group.position.copy(p0);
+        s.group.lookAt(p1);
+        s.group.scale.setScalar(s.data.name === selectedName ? 1.6 : 1);
       });
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
-      if (sel) target.copy(sel.mesh.position);
+      if (sel) target.copy(sel.group.position);
       else target.set(0, 0, 0);
     }
     cam.lerp(target, 0.08);
