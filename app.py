@@ -746,7 +746,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <div class="meta">{% if p['up'] %}Above the horizon, {{ p['alt'] }} degrees up, to the {{ p['dir'] }}{% else %}Below the horizon ({{ p['alt'] }} degrees){% endif %}</div>
 </div>
 {% endfor %}
-<p class="meta">Estimated from simplified orbits, accurate to about a degree. Times are UTC.</p>
+<p class="meta">{% if planets and planets[0]['exact'] %}Calculated from NASA's DE421 planetary data. Times are UTC.{% else %}Estimated from simplified orbits, accurate to about a degree. Times are UTC.{% endif %}</p>
 <h2>Next 24 hours</h2>
 <p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is the start of the window.</p>
 {% if error %}
@@ -1104,7 +1104,7 @@ def _compass(az):
     names = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     return names[int(((az + 22.5) % 360) // 45)]
 
-def planets_at(place, when):
+def planets_simplified(place, when):
     """Returns (sky_too_bright, planets sorted by altitude). Planets are marked up when 10 degrees or higher."""
     lat, lon = place["latitude"], place["longitude"]
     too_bright = sun_altitude_deg(lat, lon, when) > -6.0
@@ -1118,7 +1118,7 @@ def planets_at(place, when):
         alt = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
         az_from_south = math.degrees(math.atan2(math.sin(H), math.cos(H) * math.sin(latr) - math.tan(dec) * math.cos(latr)))
         az = (az_from_south + 180) % 360
-        out.append({"name": name, "alt": round(alt, 1), "dir": _compass(az), "up": alt >= 10.0, "art": planet_svg(name)})
+        out.append({"name": name, "alt": round(alt, 1), "dir": _compass(az), "up": alt >= 10.0, "art": planet_svg(name), "exact": False})
     out.sort(key=lambda p: p["alt"], reverse=True)
     return too_bright, out
 
@@ -1177,6 +1177,82 @@ def sky_page(listing_id):
     return render_template_string(
         SKY_PAGE, place=place, chart=chart, when_label=when.strftime("%Y-%m-%d %H:%M"),
         too_bright=too_bright, at_value=at_value, title="Sky chart", section="places")
+
+# ---------- Planets from NASA's DE421 data (stored in Neon) ----------
+EPH_URL = "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp"
+EPH_PATH = Path(tempfile.gettempdir()) / "de421.bsp"
+_PLANET_KERNEL = None
+PLANET_KERNEL_NAMES = [
+    ("Mercury", "mercury barycenter"),
+    ("Venus", "venus barycenter"),
+    ("Mars", "mars barycenter"),
+    ("Jupiter", "jupiter barycenter"),
+    ("Saturn", "saturn barycenter"),
+    ("Uranus", "uranus barycenter"),
+    ("Neptune", "neptune barycenter"),
+]
+
+def get_planet_kernel():
+    global _PLANET_KERNEL
+    if _PLANET_KERNEL is None:
+        from skyfield.jpllib import SpiceKernel
+        if not EPH_PATH.exists() or EPH_PATH.stat().st_size < 1000000:
+            db = connect()
+            row = db.execute("SELECT body FROM ephemeris WHERE name = ?", ("de421",)).fetchone()
+            db.close()
+            if row is None:
+                raise RuntimeError("planetary data is not stored yet")
+            EPH_PATH.write_bytes(bytes(row["body"]))
+        _PLANET_KERNEL = SpiceKernel(str(EPH_PATH))
+    return _PLANET_KERNEL
+
+def planets_at(place, when):
+    """Exact planet positions from DE421. Falls back to the simplified calculation if the data isn't available."""
+    try:
+        eph = get_planet_kernel()
+    except Exception:
+        return planets_simplified(place, when)
+    lat, lon = place["latitude"], place["longitude"]
+    too_bright = sun_altitude_deg(lat, lon, when) > -6.0
+    ts = load.timescale()
+    t = ts.from_datetime(when)
+    observer = eph["earth"] + wgs84.latlon(lat, lon)
+    out = []
+    for name, key in PLANET_KERNEL_NAMES:
+        alt, az, _ = observer.at(t).observe(eph[key]).apparent().altaz()
+        out.append({
+            "name": name,
+            "alt": round(alt.degrees, 1),
+            "dir": _compass(az.degrees),
+            "up": alt.degrees >= 10.0,
+            "art": planet_svg(name),
+            "exact": True,
+        })
+    out.sort(key=lambda p: p["alt"], reverse=True)
+    return too_bright, out
+
+# One-time setup: Vercel downloads the planetary data and stores it in Neon.
+@app.route("/api/cron/ephemeris")
+def cron_ephemeris():
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    try:
+        r = requests.get(EPH_URL, timeout=120)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        return jsonify({"error": f"download failed: {e.__class__.__name__}: {e}"}), 502
+    data = r.content
+    db = connect()
+    db.execute("CREATE TABLE IF NOT EXISTS ephemeris (name TEXT PRIMARY KEY, body BYTEA NOT NULL, stored_at TEXT NOT NULL)")
+    db.execute("DELETE FROM ephemeris WHERE name = ?", ("de421",))
+    db.execute("INSERT INTO ephemeris (name, body, stored_at) VALUES (?, ?, ?)",
+               ("de421", data, datetime.now(timezone.utc).isoformat(timespec="minutes")))
+    db.commit()
+    db.close()
+    if EPH_PATH.exists():
+        EPH_PATH.unlink()
+    return jsonify({"stored": "de421", "bytes": len(data)})
 
 # ---------- Routes: places ----------
 @app.route("/")
