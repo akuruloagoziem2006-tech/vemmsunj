@@ -561,6 +561,20 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
 .planet-pic { width: 3.2rem; height: 3.2rem; margin: .5rem 0 .2rem; }
 .planet-pic svg { width: 100%; height: 100%; display: block; }
 </style>
+<style>
+.btn { min-height: 2.75rem; }
+.btn.quiet { padding: .5rem .9rem; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  header.site { padding: .75rem 1rem; flex-direction: column; align-items: flex-start; }
+  header nav { gap: .35rem .8rem; font-size: .95rem; }
+  main { padding: 1.25rem 1rem 3rem; }
+  .strip .tick span { font-size: .75rem; }
+  .tabs { gap: 1rem; }
+}
+</style>
 {% block head %}{% endblock %}
 </head>
 <body>
@@ -624,7 +638,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 <p>
   <a class="btn" href="/listings/new">Add a place</a>
   <button id="nearme" class="btn quiet" type="button">Near me</button>
-  <span id="nearme-status" class="meta"></span>
+  <span id="nearme-status" class="meta" role="status" aria-live="polite"></span>
 </p>
 <script>
 (function () {
@@ -983,7 +997,16 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES})
+ERR_TEMPLATES = {"error.html": """{% extends "base.html" %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>{{ message }}</p>
+<p><a class="btn" href="/listings">Back to places</a></p>
+<p class="meta">Error {{ code }}</p>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -1328,7 +1351,8 @@ def place_page(listing_id):
             passes, _ = cached_passes(listing_id, place)
         items, ticks = pass_strip(passes, origin)
     except requests.RequestException as e:
-        error = f"Could not load satellite data: {e}"
+        print(f"satellite data error: {e}", flush=True)
+        error = "Satellite data isn't available right now. Try again in a few minutes."
     if origin is None:
         tonight = tonight_summary(place, passes)
     when_now = origin or datetime.now(timezone.utc)
@@ -1353,7 +1377,8 @@ def api_passes(listing_id):
     try:
         passes, cached = cached_passes(listing_id, row)
     except requests.RequestException as e:
-        return jsonify({"error": f"could not fetch TLE data: {e}"}), 502
+        print(f"tle error: {e}", flush=True)
+        return jsonify({"error": "Satellite data isn't available right now. Try again in a few minutes."}), 502
     return jsonify({"listing": row["name"], "passes": passes, "cached": cached})
 
 @app.route("/api/identify/<int:listing_id>")
@@ -1429,7 +1454,7 @@ def create_post():
         except ValueError:
             ai = "Could not read the time. Use a format like 2026-10-10T19:30."
         except Exception as e:
-            ai = f"AI explanation unavailable ({e.__class__.__name__})."
+            ai = "The explanation is unavailable right now. Your sighting was saved."
 
     # Fresh connection: the request connection may have gone idle during the calculation.
     db = connect()
@@ -1939,6 +1964,25 @@ def service_worker():
     res.headers["Cache-Control"] = "no-cache"
     res.headers["Service-Worker-Allowed"] = "/"
     return res
+
+# ---------- Friendly error pages ----------
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template("error.html", code=403, heading="This form has expired",
+                           message="Go back, reload the page, and try again. Your session may have timed out.",
+                           title="Form expired", section=""), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("error.html", code=404, heading="Page not found",
+                           message="This page doesn't exist. Check the address, or start from places.",
+                           title="Not found", section=""), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template("error.html", code=500, heading="Something went wrong",
+                           message="The page couldn't load. Try again in a minute. If it keeps happening, the satellite data may still be loading.",
+                           title="Error", section=""), 500
 
 if __name__ == "__main__":
     from waitress import serve
