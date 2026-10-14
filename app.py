@@ -826,6 +826,57 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 <script>
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const map = L.map("map").setView([39.8, -98.6], 4);
+
+const satMarkers = {};
+let satSnap = [];
+function groundAt(s, e) {
+  const n = s.ground.length - 1;
+  const phase = ((e % s.period_s) + s.period_s) % s.period_s;
+  const idx = phase / s.period_s * n;
+  const i0 = Math.floor(idx), i1 = Math.min(i0 + 1, n), f = idx - i0;
+  const a = s.ground[i0], b = s.ground[i1];
+  let dlon = b[1] - a[1];
+  if (dlon > 180) dlon -= 360;
+  if (dlon < -180) dlon += 360;
+  let lon = a[1] + dlon * f;
+  if (lon > 180) lon -= 360;
+  if (lon < -180) lon += 360;
+  return [a[0] + (b[0] - a[0]) * f, lon];
+}
+function drawSats() {
+  fetch("/api/globe", { cache: "no-store" })
+    .then(res => res.json())
+    .then(d => {
+      if (d.error) return;
+      const t0 = Date.now();
+      satSnap = d.satellites.map(s => ({ s: s, t0: t0 }));
+      const names = new Set(d.satellites.map(s => s.name));
+      Object.keys(satMarkers).forEach(n => {
+        if (!names.has(n)) { map.removeLayer(satMarkers[n]); delete satMarkers[n]; }
+      });
+      d.satellites.forEach(s => {
+        if (!satMarkers[s.name]) {
+          const iss = /ISS/i.test(s.name);
+          const col = iss ? "#C9553A" : "#E9E6DC";
+          satMarkers[s.name] = L.circleMarker([s.lat, s.lon], {
+            radius: iss ? 7 : 4, color: col, fillColor: col, fillOpacity: 0.9, weight: 1
+          }).bindTooltip(esc(s.name)).addTo(map);
+        }
+      });
+    })
+    .catch(() => {});
+}
+function tickSats() {
+  satSnap.forEach(o => {
+    const e = (Date.now() - o.t0) / 1000;
+    const m = satMarkers[o.s.name];
+    if (m) m.setLatLng(groundAt(o.s, e));
+  });
+}
+setInterval(tickSats, 1000);
+drawSats();
+setInterval(drawSats, 60000);
+
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors"
 }).addTo(map);
@@ -1059,6 +1110,12 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 </div>
 <h2>Satellites</h2>
 <div id="sat-list" class="sat-list"></div>
+<div class="catnr-row">
+  <label for="catnr">Track any satellite by NORAD catalogue number</label>
+  <input id="catnr" name="catnr" inputmode="numeric" maxlength="9" placeholder="25544">
+  <p><button id="catnr-go" class="btn quiet" type="button">Track</button>
+  <span id="catnr-status" class="meta" role="status" aria-live="polite"></span></p>
+</div>
 <div id="sat-info" class="place meta">Choose a satellite to track it.</div>
 {% endblock %}
 {% block scripts %}
@@ -1427,6 +1484,44 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     });
   }
 
+  var extras = [];
+  function mergeExtras() {
+    if (!data) return;
+    extras.forEach(function (x) {
+      data.satellites = data.satellites.filter(function (s) { return s.name !== x.name; });
+      data.satellites.push(x);
+    });
+  }
+  function trackByCatnr() {
+    var input = document.getElementById("catnr");
+    var out = document.getElementById("catnr-status");
+    var n = input.value.trim();
+    if (!/^[0-9]{1,9}$/.test(n)) {
+      out.textContent = "Enter a NORAD catalogue number, such as 25544 for the ISS.";
+      return;
+    }
+    if (!data) {
+      out.textContent = "Wait for the globe to load, then try again.";
+      return;
+    }
+    out.textContent = "Loading satellite " + n + "...";
+    fetch("/api/globe/sat?catnr=" + n, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { out.textContent = d.error; return; }
+        extras = extras.filter(function (x) { return x.name !== d.satellite.name; });
+        extras.push(d.satellite);
+        mergeExtras();
+        selectedName = d.satellite.name;
+        buildSatellites(data.satellites);
+        renderList();
+        updateInfo();
+        updateHighlights();
+        out.textContent = "Tracking " + d.satellite.name + ".";
+      })
+      .catch(function () { out.textContent = "Couldn't load that satellite right now."; });
+  }
+
   function load() {
     fetch("/api/globe", { cache: "no-store" })
       .then(function (r) { return r.json(); })
@@ -1436,6 +1531,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
           return;
         }
         data = d;
+        mergeExtras();
         simElapsed = 0;
         buildSatellites(d.satellites);
         renderList();
@@ -1461,6 +1557,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       });
   }
 
+  document.getElementById("catnr-go").addEventListener("click", trackByCatnr);
   document.querySelectorAll("[data-speed]").forEach(function (b) {
     b.addEventListener("click", function () {
       speed = Number(b.getAttribute("data-speed"));
@@ -2707,6 +2804,74 @@ def globe_snapshot(now=None):
         "sun": [round(c, 6) for c in sun],
         "satellites": out,
     }
+
+# ---------- Globe: track any satellite by NORAD catalogue number ----------
+TLE_URL_CAT = "https://celestrak.org/NORAD/elements/gp.php?CATNR={catnr}&FORMAT=tle"
+
+def get_tle_text(key, url):
+    db = get_db()
+    row = db.execute("SELECT body, fetched_at FROM tle_cache WHERE grp = ?", (key,)).fetchone()
+    now = time.time()
+    if row and now - row["fetched_at"] < CACHE_MAX_AGE:
+        return row["body"]
+    try:
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        body = r.text
+    except requests.RequestException:
+        if row:
+            return row["body"]
+        raise
+    if row:
+        db.execute("UPDATE tle_cache SET body = ?, fetched_at = ? WHERE grp = ?", (body, now, key))
+    else:
+        db.execute("INSERT INTO tle_cache (grp, body, fetched_at) VALUES (?, ?, ?)", (key, body, now))
+    db.commit()
+    return body
+
+def satellite_entry(sat, ts, now, t_now):
+    period_s = 2 * math.pi / sat.model.no_kozai * 60.0
+    times = ts.from_datetimes([now + timedelta(seconds=period_s * k / (GLOBE_SAMPLES - 1))
+                               for k in range(GLOBE_SAMPLES)])
+    at = sat.at(times)
+    pos = at.position.km
+    track = [[round(float(pos[0][k]), 1), round(float(pos[1][k]), 1), round(float(pos[2][k]), 1)]
+             for k in range(GLOBE_SAMPLES)]
+    sub_track = wgs84.subpoint(at)
+    ground = [[round(float(la), 3), round(float(lo), 3)]
+              for la, lo in zip(sub_track.latitude.degrees, sub_track.longitude.degrees)]
+    here = sat.at(t_now)
+    sub = wgs84.subpoint(here)
+    v = here.velocity.km_per_s
+    return {
+        "name": sat.name,
+        "lat": round(sub.latitude.degrees, 3),
+        "lon": round(sub.longitude.degrees, 3),
+        "alt_km": round(sub.elevation.km, 1),
+        "speed_kms": round(math.sqrt(sum(float(c) ** 2 for c in v)), 3),
+        "period_s": round(period_s, 1),
+        "track": track,
+        "ground": ground,
+    }
+
+@app.route("/api/globe/sat")
+def api_globe_sat():
+    raw = request.args.get("catnr", "").strip()
+    if not raw.isdigit() or len(raw) > 9:
+        return jsonify({"error": "Enter a NORAD catalogue number with up to 9 digits, such as 25544 for the ISS."}), 400
+    try:
+        text = get_tle_text("cat:" + raw, TLE_URL_CAT.format(catnr=raw))
+    except requests.RequestException as e:
+        print(f"catnr tle error: {e}", flush=True)
+        return jsonify({"error": "Satellite data isn't available right now. Try again in a few minutes."}), 502
+    tles = parse_tle(text)
+    if not tles:
+        return jsonify({"error": f"No satellite found with catalogue number {raw}."}), 404
+    name, l1, l2 = tles[0]
+    ts = load.timescale()
+    now = datetime.now(timezone.utc)
+    sat = EarthSatellite(l1, l2, name, ts)
+    return jsonify({"satellite": satellite_entry(sat, ts, now, ts.from_datetime(now))})
 
 @app.route("/api/globe")
 def api_globe():
