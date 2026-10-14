@@ -729,6 +729,14 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% endif %}
 {% endif %}
 <p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a></p>
+{% if eclipse %}
+<h2>Next possible eclipse</h2>
+<div class="place"><strong>{{ eclipse['name'] }}</strong>
+<div class="meta">{{ eclipse['when'] }} UTC</div>
+<div class="meta">{% if eclipse['visible'] %}Visible from here at that time.{% else %}Not visible from here: below the horizon at that time.{% endif %}</div>
+</div>
+<p class="meta">Approximate, within about an hour. Check a published eclipse table before planning.</p>
+{% endif %}
 <h2>Planets</h2>
 {% if planets_dark %}<p class="meta">The sky is still too bright to see planets well at this time.</p>{% endif %}
 {% for p in planets %}
@@ -965,7 +973,13 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% else %}
 <p>No showers peak in the next 60 days.</p>
 {% endfor %}
-<p class="meta">Eclipses aren't listed yet.</p>
+<h2>Possible eclipses</h2>
+<p class="meta">Next 12 months. This is a simplified check, so it can miss an eclipse or list one that doesn't happen. Times are approximate, within about an hour. Check a published eclipse table before planning.</p>
+{% for e in eclipses %}
+<div class="place"><strong>{{ e['name'] }}</strong><div class="meta">{{ e['when'] }} UTC</div></div>
+{% else %}
+<p>No possible eclipses in the next 12 months.</p>
+{% endfor %}
 {% endblock %}
 """}
 
@@ -1244,7 +1258,7 @@ def place_page(listing_id):
     when_now = origin or datetime.now(timezone.utc)
     planets_dark, planets = planets_at(place, when_now)
     return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
-                           planets=planets, planets_dark=planets_dark,
+                           planets=planets, planets_dark=planets_dark, eclipse=eclipse_for_place(place),
                            tonight=tonight, custom=origin is not None,
                            at_value=at_value if origin is not None else "",
                            at_label=origin.strftime("%Y-%m-%d %H:%M") if origin is not None else "",
@@ -1689,10 +1703,68 @@ def upcoming_showers(now, days=60):
     found.sort(key=lambda m: datetime.strptime(m["when"], "%a %d %b %Y"))
     return found
 
+# ---------- Eclipses (simplified, approximate) ----------
+def moon_ecliptic(when):
+    """Moon's ecliptic longitude and latitude (degrees), plus days since J2000. Low-precision series."""
+    d = when.timestamp() / 86400.0 + 2440587.5 - 2451545.0
+    lam = (218.316 + 13.176396 * d + 6.289 * math.sin(math.radians((134.963 + 13.064993 * d) % 360))) % 360
+    F = (93.272 + 483.202 * d) % 360
+    beta = 5.128 * math.sin(math.radians(F))
+    return lam, beta, d
+
+def moon_altitude_deg(lat, lon, when):
+    lam, beta, d = moon_ecliptic(when)
+    eps = math.radians(23.439 - 3.56e-7 * d)
+    lr, br = math.radians(lam), math.radians(beta)
+    ra = math.atan2(math.sin(lr) * math.cos(eps) - math.tan(br) * math.sin(eps), math.cos(lr))
+    dec = math.asin(math.sin(br) * math.cos(eps) + math.cos(br) * math.sin(eps) * math.sin(lr))
+    lst = math.radians((280.46061837 + 360.98564736629 * d + lon) % 360)
+    H = lst - ra
+    latr = math.radians(lat)
+    sin_alt = math.sin(dec) * math.sin(latr) + math.cos(dec) * math.cos(latr) * math.cos(H)
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+
+ECLIPSE_LIMIT_DEG = 1.5  # Moon within this distance of the node at new or full moon
+
+def eclipse_candidates(start, days=365):
+    """New and full moons in the window, kept when the Moon is close enough to the node."""
+    found = []
+    prev = None
+    for h in range(days * 24 + 1):
+        t = start + timedelta(hours=h)
+        k = int(elongation_deg(t) // 180)
+        if prev is not None and k != prev:
+            _, beta, _ = moon_ecliptic(t)
+            if abs(beta) <= ECLIPSE_LIMIT_DEG:
+                found.append({"time": t, "kind": "solar" if k == 0 else "lunar"})
+        prev = k
+    return found
+
+ECLIPSE_NAMES = {"solar": "Possible solar eclipse", "lunar": "Possible lunar eclipse"}
+
+def eclipse_list():
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return [{"name": ECLIPSE_NAMES[c["kind"]], "when": c["time"].strftime("%a %d %b %Y, %H:%M")}
+            for c in eclipse_candidates(now)]
+
+def eclipse_for_place(place):
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    cands = eclipse_candidates(now)
+    if not cands:
+        return None
+    c = cands[0]
+    t = c["time"]
+    lat, lon = place["latitude"], place["longitude"]
+    if c["kind"] == "solar":
+        visible = sun_altitude_deg(lat, lon, t) > 0
+    else:
+        visible = moon_altitude_deg(lat, lon, t) > 0
+    return {"name": ECLIPSE_NAMES[c["kind"]], "when": t.strftime("%a %d %b %Y, %H:%M"), "visible": visible}
+
 @app.route("/calendar")
 def calendar_page():
     now = datetime.now(timezone.utc)
-    return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now),
+    return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now), eclipses=eclipse_list(),
                            title="Calendar", section="calendar")
 
 # ---------- Offline support (installable app) ----------
