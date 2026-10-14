@@ -1049,9 +1049,10 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 {% endblock %}
 {% block content %}
 <h1>Globe</h1>
-<p class="meta">Real satellite positions from the stations group, drawn over a rotating Earth. Drag to turn the globe and scroll to zoom.</p>
-<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites"></div>
+<p class="meta">Real satellite positions from the stations group, drawn over a rotating Earth. Countries under each satellite's path are shaded red. Drag to turn the globe and scroll to zoom.</p>
+<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"></div>
 <p class="meta" id="globe-status" role="status" aria-live="polite"></p>
+<p class="meta" id="country-status"></p>
 <div class="globe-controls">
   <button class="btn quiet" type="button" data-speed="1" aria-pressed="true">Real time</button>
   <button class="btn quiet" type="button" data-speed="60" aria-pressed="false">60 times faster</button>
@@ -1067,8 +1068,10 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   var R = 6371;
   var DEG = Math.PI / 180;
   var EARTH_RATE_DEG_PER_DAY = 360.98564736629;
+  var COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
   var wrap = document.getElementById("globe");
   var statusEl = document.getElementById("globe-status");
+  var countryStatusEl = document.getElementById("country-status");
   var listEl = document.getElementById("sat-list");
   var infoEl = document.getElementById("sat-info");
 
@@ -1077,7 +1080,12 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     return;
   }
 
-  // Simplified outlines as [longitude, latitude]. Approximate, chosen for the look of the Earth.
+  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
+  var countries = [];
+  var tierA = {}, tierB = {};
+  var selCountries = [];
+
+  // Simplified land outlines as [longitude, latitude]. Approximate, for the look of the Earth.
   var LAND = [
     [[-168,66],[-156,71],[-120,70],[-95,72],[-80,68],[-62,60],[-55,50],[-66,44],[-76,35],[-81,25],[-83,29],[-97,26],[-97,18],[-88,15],[-83,9],[-77,8],[-80,7],[-86,12],[-105,20],[-112,30],[-117,32],[-124,40],[-124,48],[-135,58],[-150,60],[-165,62]],
     [[-80,8],[-60,10],[-50,0],[-35,-7],[-40,-22],[-48,-26],[-58,-38],[-65,-42],[-68,-52],[-74,-50],[-73,-37],[-71,-18],[-81,-5],[-80,0]],
@@ -1094,19 +1102,21 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   var ARCTIC = [[-180,80],[-90,82],[0,80],[90,82],[180,80],[180,90],[-180,90]];
   var ANTARCTIC = [[-180,-72],[-120,-75],[-60,-70],[0,-72],[60,-68],[120,-70],[180,-72],[180,-90],[-180,-90]];
 
-  function earthTexture() {
-    var W = 1024, H = 512;
-    var c = document.createElement("canvas");
-    c.width = W; c.height = H;
-    var g = c.getContext("2d");
+  var W = 1024, H = 512;
+  function xy(lon, lat) { return [(lon + 180) / 360 * W, (90 - lat) / 180 * H]; }
+
+  // The base Earth is drawn once. Borders and highlights are painted over it.
+  var baseCanvas = document.createElement("canvas");
+  baseCanvas.width = W; baseCanvas.height = H;
+  (function drawBase() {
+    var g = baseCanvas.getContext("2d");
     var sea = g.createLinearGradient(0, 0, 0, H);
     sea.addColorStop(0, "#15406A");
     sea.addColorStop(0.5, "#1F6191");
     sea.addColorStop(1, "#15406A");
     g.fillStyle = sea;
     g.fillRect(0, 0, W, H);
-    function xy(lon, lat) { return [(lon + 180) / 360 * W, (90 - lat) / 180 * H]; }
-    function poly(pts, color) {
+    function fillPts(pts, color) {
       g.beginPath();
       pts.forEach(function (p, i) {
         var q = xy(p[0], p[1]);
@@ -1116,12 +1126,12 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       g.fillStyle = color;
       g.fill();
     }
-    LAND.forEach(function (p) { poly(p, "#4E7D44"); });
+    LAND.forEach(function (p) { fillPts(p, "#4E7D44"); });
     g.globalAlpha = 0.9;
-    poly(DESERT, "#B9A46A");
+    fillPts(DESERT, "#B9A46A");
     g.globalAlpha = 1;
-    poly(ARCTIC, "#E8EEF2");
-    poly(ANTARCTIC, "#E8EEF2");
+    fillPts(ARCTIC, "#E8EEF2");
+    fillPts(ANTARCTIC, "#E8EEF2");
     var seed = 7;
     function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
     g.globalAlpha = 0.35;
@@ -1134,10 +1144,143 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       g.fill();
     }
     g.globalAlpha = 1;
-    var tex = new THREE.CanvasTexture(c);
-    tex.anisotropy = 4;
-    return tex;
+  })();
+
+  var earthCanvas = document.createElement("canvas");
+  earthCanvas.width = W; earthCanvas.height = H;
+  var earthCtx = earthCanvas.getContext("2d");
+  var earthTex = new THREE.CanvasTexture(earthCanvas);
+  earthTex.anisotropy = 4;
+
+  // Trace rings as one path. A jump of more than 180 degrees of longitude starts a new segment,
+  // so countries that cross the date line don't draw a stripe across the map.
+  function tracePaths(ctx, rings) {
+    ctx.beginPath();
+    rings.forEach(function (ring) {
+      var prev = null;
+      ring.forEach(function (p) {
+        var q = xy(p[0], p[1]);
+        if (prev === null || Math.abs(p[0] - prev[0]) > 180) ctx.moveTo(q[0], q[1]);
+        else ctx.lineTo(q[0], q[1]);
+        prev = p;
+      });
+    });
   }
+
+  function paintEarth() {
+    earthCtx.drawImage(baseCanvas, 0, 0);
+    countries.forEach(function (c) {
+      var a = tierA[c.name], b = tierB[c.name];
+      if (!a && !b) return;
+      tracePaths(earthCtx, c.rings);
+      earthCtx.fillStyle = a ? "rgba(201,85,58,0.85)" : "rgba(201,85,58,0.4)";
+      earthCtx.fill();
+    });
+    countries.forEach(function (c) {
+      tracePaths(earthCtx, c.rings);
+      earthCtx.strokeStyle = "rgba(220,235,250,0.45)";
+      earthCtx.lineWidth = 1;
+      earthCtx.stroke();
+    });
+    earthTex.needsUpdate = true;
+  }
+
+  function bboxOf(ring) {
+    var b = [180, 90, -180, -90];
+    ring.forEach(function (p) {
+      if (p[0] < b[0]) b[0] = p[0];
+      if (p[1] < b[1]) b[1] = p[1];
+      if (p[0] > b[2]) b[2] = p[0];
+      if (p[1] > b[3]) b[3] = p[1];
+    });
+    return b;
+  }
+
+  function parseCountries(gj) {
+    var out = [];
+    gj.features.forEach(function (f) {
+      var g = f.geometry;
+      if (!g) return;
+      var polys = g.type === "Polygon" ? [g.coordinates] : (g.type === "MultiPolygon" ? g.coordinates : []);
+      if (!polys.length) return;
+      var rings = [];
+      polys.forEach(function (p) { p.forEach(function (r) { rings.push(r); }); });
+      out.push({
+        name: (f.properties && (f.properties.name || f.properties.ADMIN)) || "Unknown",
+        polys: polys,
+        boxes: polys.map(function (p) { return bboxOf(p[0]); }),
+        rings: rings
+      });
+    });
+    return out;
+  }
+
+  // Ray casting: is the point (lon, lat) inside the ring?
+  function inRing(ring, lon, lat) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      var xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // points are [lat, lon]. Adds each country that contains a point to acc.
+  function countriesUnder(points, acc) {
+    (points || []).forEach(function (p) {
+      var lat = p[0], lon = p[1];
+      countries.forEach(function (c) {
+        if (acc[c.name]) return;
+        for (var k = 0; k < c.polys.length; k++) {
+          var b = c.boxes[k];
+          if (lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) continue;
+          if (inRing(c.polys[k][0], lon, lat)) { acc[c.name] = true; return; }
+        }
+      });
+    });
+    return acc;
+  }
+
+  function selectedSatellite() {
+    if (!data || !selectedName) return null;
+    return data.satellites.find(function (x) { return x.name === selectedName; }) || null;
+  }
+
+  function updateHighlights() {
+    tierA = {};
+    tierB = {};
+    selCountries = [];
+    if (data) {
+      data.satellites.forEach(function (s) { countriesUnder(s.ground, tierB); });
+      var sel = selectedSatellite();
+      if (sel) {
+        tierA = countriesUnder(sel.ground, {});
+        selCountries = Object.keys(tierA).sort();
+      } else {
+        data.satellites.forEach(function (s) { countriesUnder([[s.lat, s.lon]], tierA); });
+      }
+    }
+    paintEarth();
+  }
+
+  var earthMat = new THREE.MeshPhongMaterial({ map: earthTex, shininess: 14, specular: 0x335577 });
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  wrap.appendChild(renderer.domElement);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+  scene.add(new THREE.AmbientLight(0x6A7486, 1.0));
+  var sunLight = new THREE.DirectionalLight(0xffffff, 1.1);
+  scene.add(sunLight);
+
+  var earthGroup = new THREE.Group();
+  scene.add(earthGroup);
+  earthGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 72), earthMat));
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(1.05, 64, 48),
+    new THREE.MeshBasicMaterial({ color: 0x7EC8FF, transparent: true, opacity: 0.1, side: THREE.BackSide })
+  ));
+  paintEarth();
 
   var glowTex = (function () {
     var c = document.createElement("canvas");
@@ -1151,26 +1294,6 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
   })();
-
-  var renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  wrap.appendChild(renderer.domElement);
-  var scene = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
-  scene.add(new THREE.AmbientLight(0x6A7486, 1.0));
-  var sunLight = new THREE.DirectionalLight(0xffffff, 1.1);
-  scene.add(sunLight);
-
-  var earthGroup = new THREE.Group();
-  scene.add(earthGroup);
-  earthGroup.add(new THREE.Mesh(
-    new THREE.SphereGeometry(1, 96, 72),
-    new THREE.MeshPhongMaterial({ map: earthTexture(), shininess: 14, specular: 0x335577 })
-  ));
-  scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(1.05, 64, 48),
-    new THREE.MeshBasicMaterial({ color: 0x7EC8FF, transparent: true, opacity: 0.1, side: THREE.BackSide })
-  ));
 
   // Earth-centred km (x, y, z) to scene units. Scene Y is the Earth's spin axis.
   function sc(p, k) { return new THREE.Vector3(p[0] * k, p[2] * k, -p[1] * k); }
@@ -1212,8 +1335,6 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       if (o.material && o.material.dispose) o.material.dispose();
     });
   }
-
-  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
 
   function buildSatellites(list) {
     sats.forEach(function (s) {
@@ -1269,6 +1390,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         selectedName = s.data.name;
         renderList();
         updateInfo();
+        updateHighlights();
       });
       listEl.appendChild(b);
     });
@@ -1276,7 +1398,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   function updateInfo() {
     infoEl.textContent = "";
-    var d = data && selectedName && data.satellites.find(function (x) { return x.name === selectedName; });
+    var d = selectedSatellite();
     if (!d) {
       infoEl.textContent = "Choose a satellite to track it.";
       return;
@@ -1289,6 +1411,11 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       ["Speed", d.speed_kms.toFixed(2) + " km/s"],
       ["Orbit time", (d.period_s / 60).toFixed(1) + " minutes"]
     ];
+    if (selCountries.length) {
+      var shown = selCountries.slice(0, 15).join(", ");
+      var extra = selCountries.length > 15 ? " and " + (selCountries.length - 15) + " more" : "";
+      rows.push(["Passing over", shown + extra]);
+    }
     rows.forEach(function (r) {
       var line = document.createElement("div");
       line.className = "sat-info-row";
@@ -1313,10 +1440,24 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         buildSatellites(d.satellites);
         renderList();
         updateInfo();
+        updateHighlights();
         statusEl.textContent = "Positions as of " + d.fetched_at.replace("T", " ").slice(0, 16) + " UTC.";
       })
       .catch(function () {
         statusEl.textContent = "Satellite positions can't be loaded right now.";
+      });
+  }
+
+  function loadCountries() {
+    fetch(COUNTRIES_URL)
+      .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.json(); })
+      .then(function (gj) {
+        countries = parseCountries(gj);
+        countryStatusEl.textContent = "Country borders from Natural Earth (public domain).";
+        updateHighlights();
+      })
+      .catch(function () {
+        countryStatusEl.textContent = "Country borders can't be loaded right now. The satellite positions still work.";
       });
   }
 
@@ -1396,6 +1537,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     requestAnimationFrame(frame);
   }
 
+  loadCountries();
   load();
   setInterval(load, 60000);
   requestAnimationFrame(frame);
@@ -2525,7 +2667,7 @@ def forgot():
     return render_template("forgot.html", error=error, title="Reset password", section="login")
 
 # ---------- Globe: satellite snapshot ----------
-GLOBE_SAMPLES = 72
+GLOBE_SAMPLES = 144
 GLOBE_MAX_SATS = 40
 
 def globe_snapshot(now=None):
@@ -2538,12 +2680,15 @@ def globe_snapshot(now=None):
         period_s = 2 * math.pi / sat.model.no_kozai * 60.0
         times = ts.from_datetimes([now + timedelta(seconds=period_s * k / (GLOBE_SAMPLES - 1))
                                    for k in range(GLOBE_SAMPLES)])
-        pos = sat.at(times).position.km
+        at = sat.at(times)
+        pos = at.position.km
         track = [[round(float(pos[0][k]), 1), round(float(pos[1][k]), 1), round(float(pos[2][k]), 1)]
                  for k in range(GLOBE_SAMPLES)]
+        sub_track = wgs84.subpoint(at)
+        ground = [[round(float(la), 3), round(float(lo), 3)]
+                  for la, lo in zip(sub_track.latitude.degrees, sub_track.longitude.degrees)]
         here = sat.at(t_now)
         sub = wgs84.subpoint(here)
-        p = here.position.km
         v = here.velocity.km_per_s
         out.append({
             "name": sat.name,
@@ -2553,6 +2698,7 @@ def globe_snapshot(now=None):
             "speed_kms": round(math.sqrt(sum(float(c) ** 2 for c in v)), 3),
             "period_s": round(period_s, 1),
             "track": track,
+            "ground": ground,
         })
     sun = sun_unit_vector(now)
     return {
