@@ -588,6 +588,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
+    <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
     <button id="redlight" class="btn quiet" type="button">Red light: off</button>
@@ -1034,7 +1035,264 @@ RECOVERY_TEMPLATES = {"forgot.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES})
+GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
+{% block head %}
+<style>
+.globe-wrap { height: 60vh; min-height: 320px; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: #05070B; }
+.globe-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.globe-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+.globe-controls .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.sat-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; }
+.sat-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
+.sat-info-row { margin: .25rem 0; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Globe</h1>
+<p class="meta">Real satellite positions from the stations group, drawn over a rotating Earth. Drag to turn the globe and scroll to zoom.</p>
+<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites"></div>
+<p class="meta" id="globe-status" role="status" aria-live="polite"></p>
+<div class="globe-controls">
+  <button class="btn quiet" type="button" data-speed="1" aria-pressed="true">Real time</button>
+  <button class="btn quiet" type="button" data-speed="60" aria-pressed="false">60 times faster</button>
+</div>
+<h2>Satellites</h2>
+<div id="sat-list" class="sat-list"></div>
+<div id="sat-info" class="place meta">Choose a satellite to track it.</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  var R = 6371;
+  var DEG = Math.PI / 180;
+  var EARTH_RATE_DEG_PER_DAY = 360.98564736629;
+  var wrap = document.getElementById("globe");
+  var statusEl = document.getElementById("globe-status");
+  var listEl = document.getElementById("sat-list");
+  var infoEl = document.getElementById("sat-info");
+
+  if (!window.WebGLRenderingContext || !window.THREE) {
+    wrap.textContent = "The 3D globe needs a browser with WebGL.";
+    return;
+  }
+
+  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  wrap.appendChild(renderer.domElement);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+  scene.add(new THREE.AmbientLight(0x404a5a, 0.9));
+  var sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  scene.add(sunLight);
+
+  var earthGroup = new THREE.Group();
+  scene.add(earthGroup);
+  earthGroup.add(new THREE.Mesh(
+    new THREE.SphereGeometry(1, 64, 48),
+    new THREE.MeshPhongMaterial({ color: 0x1B3A5C, shininess: 10 })
+  ));
+  earthGroup.add(new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.SphereGeometry(1.002, 24, 12)),
+    new THREE.LineBasicMaterial({ color: 0x3A5A80, transparent: true, opacity: 0.5 })
+  ));
+
+  // Earth-centred km (x, y, z) to scene units. Scene Y is the Earth's spin axis.
+  function sc(p, k) { return new THREE.Vector3(p[0] * k, p[2] * k, -p[1] * k); }
+
+  function buildSatellites(list) {
+    sats.forEach(function (s) {
+      scene.remove(s.mesh);
+      scene.remove(s.line);
+      s.mesh.geometry.dispose();
+      s.line.geometry.dispose();
+    });
+    sats = list.map(function (d) {
+      var isIss = /ISS/i.test(d.name);
+      var mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(isIss ? 0.035 : 0.022, 12, 8),
+        new THREE.MeshBasicMaterial({ color: isIss ? 0xC9553A : 0xE9E6DC })
+      );
+      scene.add(mesh);
+      var pts = new Float32Array(d.track.length * 3);
+      d.track.forEach(function (p, i) {
+        var v = sc(p, 1 / R);
+        pts[i * 3] = v.x;
+        pts[i * 3 + 1] = v.y;
+        pts[i * 3 + 2] = v.z;
+      });
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
+      var line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
+        color: isIss ? 0xC9553A : 0x5C7DA6, transparent: true, opacity: 0.55
+      }));
+      scene.add(line);
+      return { data: d, mesh: mesh, line: line };
+    });
+  }
+
+  // Position along the stored orbit, looping every orbital period.
+  function satPosition(d, elapsed) {
+    var period = d.period_s;
+    var phase = ((elapsed % period) + period) % period;
+    var n = d.track.length - 1;
+    var idx = (phase / period) * n;
+    var i0 = Math.floor(idx);
+    var i1 = Math.min(i0 + 1, n);
+    var f = idx - i0;
+    var a = d.track[i0], b = d.track[i1];
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  }
+
+  function renderList() {
+    listEl.textContent = "";
+    sats.forEach(function (s) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn quiet sat-btn";
+      b.textContent = s.data.name;
+      b.setAttribute("aria-pressed", selectedName === s.data.name ? "true" : "false");
+      b.addEventListener("click", function () {
+        selectedName = s.data.name;
+        renderList();
+        updateInfo();
+      });
+      listEl.appendChild(b);
+    });
+  }
+
+  function updateInfo() {
+    infoEl.textContent = "";
+    var d = data && selectedName && data.satellites.find(function (x) { return x.name === selectedName; });
+    if (!d) {
+      infoEl.textContent = "Choose a satellite to track it.";
+      return;
+    }
+    var rows = [
+      ["Satellite", d.name],
+      ["Latitude", d.lat.toFixed(2) + " degrees"],
+      ["Longitude", d.lon.toFixed(2) + " degrees"],
+      ["Altitude", Math.round(d.alt_km) + " km"],
+      ["Speed", d.speed_kms.toFixed(2) + " km/s"],
+      ["Orbit time", (d.period_s / 60).toFixed(1) + " minutes"]
+    ];
+    rows.forEach(function (r) {
+      var line = document.createElement("div");
+      line.className = "sat-info-row";
+      var label = document.createElement("strong");
+      label.textContent = r[0] + ": ";
+      line.appendChild(label);
+      line.appendChild(document.createTextNode(r[1]));
+      infoEl.appendChild(line);
+    });
+  }
+
+  function load() {
+    fetch("/api/globe", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) {
+          statusEl.textContent = d.error;
+          return;
+        }
+        data = d;
+        simElapsed = 0;
+        buildSatellites(d.satellites);
+        renderList();
+        updateInfo();
+        statusEl.textContent = "Positions as of " + d.fetched_at.replace("T", " ").slice(0, 16) + " UTC.";
+      })
+      .catch(function () {
+        statusEl.textContent = "Satellite positions can't be loaded right now.";
+      });
+  }
+
+  document.querySelectorAll("[data-speed]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      speed = Number(b.getAttribute("data-speed"));
+      document.querySelectorAll("[data-speed]").forEach(function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+    });
+  });
+
+  var target = new THREE.Vector3();
+  var cam = new THREE.Vector3();
+  var camAz = 0.6, camEl = 0.35, camDist = 4.2;
+  var dragging = false, lastX = 0, lastY = 0;
+
+  function resize() {
+    var w = wrap.clientWidth, h = wrap.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  var canvas = renderer.domElement;
+  canvas.style.touchAction = "none";
+  canvas.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    camAz -= (e.clientX - lastX) * 0.01;
+    camEl = Math.max(-1.4, Math.min(1.4, camEl + (e.clientY - lastY) * 0.01));
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+  canvas.addEventListener("pointerup", function () { dragging = false; });
+  canvas.addEventListener("pointercancel", function () { dragging = false; });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    camDist = Math.max(1.6, Math.min(10, camDist * (e.deltaY > 0 ? 1.1 : 0.9)));
+  }, { passive: false });
+
+  var last = performance.now();
+  function frame(now) {
+    var dt = (now - last) / 1000;
+    last = now;
+    if (data) {
+      simElapsed += dt * speed;
+      var gmst = data.gmst_deg + EARTH_RATE_DEG_PER_DAY * (simElapsed / 86400);
+      earthGroup.rotation.y = gmst * DEG;
+      sunLight.position.copy(sc(data.sun, 10));
+      sats.forEach(function (s) {
+        var v = sc(satPosition(s.data, simElapsed), 1 / R);
+        s.mesh.position.copy(v);
+        var picked = s.data.name === selectedName;
+        s.mesh.scale.setScalar(picked ? 1.8 : 1);
+      });
+      var sel = sats.find(function (s) { return s.data.name === selectedName; });
+      if (sel) target.copy(sel.mesh.position);
+      else target.set(0, 0, 0);
+    }
+    cam.lerp(target, 0.08);
+    camera.position.set(
+      cam.x + camDist * Math.cos(camEl) * Math.sin(camAz),
+      cam.y + camDist * Math.sin(camEl),
+      cam.z + camDist * Math.cos(camEl) * Math.cos(camAz)
+    );
+    camera.lookAt(cam);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+
+  load();
+  setInterval(load, 60000);
+  requestAnimationFrame(frame);
+})();
+</script>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -2153,6 +2411,56 @@ def forgot():
             record_failure(ip_key)
             error = "That username and recovery code don't match."
     return render_template("forgot.html", error=error, title="Reset password", section="login")
+
+# ---------- Globe: satellite snapshot ----------
+GLOBE_SAMPLES = 72
+GLOBE_MAX_SATS = 40
+
+def globe_snapshot(now=None):
+    now = now or datetime.now(timezone.utc)
+    ts = load.timescale()
+    t_now = ts.from_datetime(now)
+    out = []
+    for name, l1, l2 in parse_tle(get_group_text("stations"))[:GLOBE_MAX_SATS]:
+        sat = EarthSatellite(l1, l2, name, ts)
+        period_s = 2 * math.pi / sat.model.no_kozai * 60.0
+        times = ts.from_datetimes([now + timedelta(seconds=period_s * k / (GLOBE_SAMPLES - 1))
+                                   for k in range(GLOBE_SAMPLES)])
+        pos = sat.at(times).position.km
+        track = [[round(float(pos[0][k]), 1), round(float(pos[1][k]), 1), round(float(pos[2][k]), 1)]
+                 for k in range(GLOBE_SAMPLES)]
+        here = sat.at(t_now)
+        sub = wgs84.subpoint(here)
+        p = here.position.km
+        v = here.velocity.km_per_s
+        out.append({
+            "name": sat.name,
+            "lat": round(sub.latitude.degrees, 3),
+            "lon": round(sub.longitude.degrees, 3),
+            "alt_km": round(sub.elevation.km, 1),
+            "speed_kms": round(math.sqrt(sum(float(c) ** 2 for c in v)), 3),
+            "period_s": round(period_s, 1),
+            "track": track,
+        })
+    sun = sun_unit_vector(now)
+    return {
+        "fetched_at": now.isoformat(timespec="seconds"),
+        "gmst_deg": round(float(t_now.gmst) * 15.0, 4),
+        "sun": [round(c, 6) for c in sun],
+        "satellites": out,
+    }
+
+@app.route("/api/globe")
+def api_globe():
+    try:
+        return jsonify(globe_snapshot())
+    except requests.RequestException as e:
+        print(f"globe tle error: {e}", flush=True)
+        return jsonify({"error": "Satellite data isn't available right now. Try again in a few minutes."}), 502
+
+@app.route("/globe")
+def globe_page():
+    return render_template("globe.html", title="Globe", section="globe")
 
 if __name__ == "__main__":
     from waitress import serve
