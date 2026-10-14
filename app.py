@@ -463,6 +463,9 @@ TEMPLATES = {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}: VEMMSUNJ</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0A0D12">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -595,6 +598,9 @@ html.redlight .leaflet-tile-pane { filter: sepia(1) saturate(5) hue-rotate(-45de
   });
   label();
 })();
+</script>
+<script>
+if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); }
 </script>
 </body>
 </html>
@@ -1538,6 +1544,103 @@ def calendar_page():
     now = datetime.now(timezone.utc)
     return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now),
                            title="Calendar", section="calendar")
+
+# ---------- Offline support (installable app) ----------
+MANIFEST = {
+    "name": "VEMMSUNJ",
+    "short_name": "VEMMSUNJ",
+    "start_url": "/listings",
+    "display": "standalone",
+    "background_color": "#0A0D12",
+    "theme_color": "#0A0D12",
+    "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}],
+}
+
+ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="96" fill="#0A0D12"/>
+<circle cx="256" cy="256" r="150" fill="none" stroke="#2A313C" stroke-width="16"/>
+<circle cx="256" cy="256" r="72" fill="#C9553A"/>
+</svg>"""
+
+SERVICE_WORKER = r"""
+const VERSION = "vemmsunj-v1";
+const CACHEABLE = [
+  /^\/listings$/,
+  /^\/places\/\d+$/,
+  /^\/calendar$/,
+  /^\/api\/listings$/,
+  /^\/api\/passes\/\d+$/,
+  /^\/icon\.svg$/
+];
+
+function cacheable(url) {
+  if (url.origin !== self.location.origin) return false;
+  if (url.searchParams.has("at")) return false;
+  return CACHEABLE.some(function (re) { return re.test(url.pathname); });
+}
+
+self.addEventListener("install", function (event) {
+  event.waitUntil(
+    caches.open(VERSION)
+      .then(function (c) { return c.addAll(["/listings", "/calendar", "/icon.svg"]); })
+      .catch(function () {})
+      .then(function () { return self.skipWaiting(); })
+  );
+});
+
+self.addEventListener("activate", function (event) {
+  event.waitUntil(
+    caches.keys()
+      .then(function (keys) {
+        return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
+      })
+      .then(function () { return self.clients.claim(); })
+  );
+});
+
+self.addEventListener("fetch", function (event) {
+  var req = event.request;
+  if (req.method !== "GET") return;
+  var url = new URL(req.url);
+  if (!cacheable(url)) return;
+  event.respondWith(
+    fetch(req)
+      .then(function (res) {
+        if (res.ok) {
+          var copy = res.clone();
+          caches.open(VERSION).then(function (c) { c.put(req, copy); });
+        }
+        return res;
+      })
+      .catch(function () {
+        return caches.match(req).then(function (hit) {
+          return hit || new Response(
+            "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" +
+            "<body style='font-family:sans-serif;background:#0A0D12;color:#E9E6DC;padding:1.5rem'>" +
+            "<h1>You're offline</h1><p>Places you've opened while online are saved on this device. " +
+            "Connect to see the latest passes.</p></body>",
+            { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        });
+      })
+  );
+});
+"""
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return Response(json.dumps(MANIFEST), mimetype="application/manifest+json")
+
+@app.route("/icon.svg")
+def icon():
+    return Response(ICON_SVG, mimetype="image/svg+xml")
+
+@app.route("/sw.js")
+def service_worker():
+    res = Response(SERVICE_WORKER, mimetype="application/javascript")
+    res.headers["Cache-Control"] = "no-cache"
+    res.headers["Service-Worker-Allowed"] = "/"
+    return res
 
 if __name__ == "__main__":
     from waitress import serve
