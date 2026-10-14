@@ -935,6 +935,7 @@ fetch("/api/listings")
   <p><button class="btn" type="submit">{{ button }}</button></p>
 </form>
 <p><a href="{{ link }}">{{ link_text }}</a></p>
+{% if action == '/login' %}<p><a href="/forgot">Forgot password?</a></p>{% endif %}
 {% endblock %}
 """,
 }
@@ -1007,7 +1008,33 @@ ERR_TEMPLATES = {"error.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES})
+RECOVERY_TEMPLATES = {"forgot.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Reset password</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<p class="meta">Enter the recovery code you saved when you signed up. If you lost it, the site owner can reset your password.</p>
+<form method="post" action="/forgot">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="username">Username</label>
+  <input id="username" name="username" required maxlength="30" autocomplete="username">
+  <label for="code">Recovery code</label>
+  <input id="code" name="code" required maxlength="24" autocapitalize="characters" autocomplete="off">
+  <label for="password">New password</label>
+  <input id="password" name="password" type="password" required autocomplete="new-password">
+  <p><button class="btn" type="submit">Reset password</button></p>
+</form>
+<p><a href="/login">Back to log in</a></p>
+{% endblock %}
+""", "recovery_code.html": """{% extends "base.html" %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>Save this recovery code in a notes app or another private place. It's the only way to reset your password without the site owner, and it's shown only once.</p>
+<p style="font-family: var(--serif); font-size: 1.6rem; letter-spacing: .08em;">{{ code }}</p>
+<p><a class="btn" href="/posts">Continue to sightings</a></p>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -1584,10 +1611,12 @@ def signup():
             error = "Password must be at least 8 characters."
         else:
             db = get_db()
+            recovery_code = new_recovery_code()
             try:
                 db.execute(
-                    "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                    (username, generate_password_hash(password), datetime.now(timezone.utc).isoformat(timespec="minutes")),
+                    "INSERT INTO users (username, password_hash, created_at, recovery_hash) VALUES (?, ?, ?, ?)",
+                    (username, generate_password_hash(password), datetime.now(timezone.utc).isoformat(timespec="minutes"),
+                     generate_password_hash(normalize_code(recovery_code))),
                 )
                 db.commit()
             except IntegrityError:
@@ -1595,7 +1624,8 @@ def signup():
                 error = "That username is taken."
             else:
                 session["username"] = username
-                return redirect("/posts")
+                return render_template("recovery_code.html", code=recovery_code,
+                                       heading="Save your recovery code", title="Recovery code", section="login")
     return render_template("auth.html", title="Sign up", button="Create account", action="/signup", error=error,
                            link="/login", link_text="Have an account? Log in", section="login")
 
@@ -2072,6 +2102,57 @@ def server_error(e):
     return render_template("error.html", code=500, heading="Something went wrong",
                            message="The page couldn't load. Try again in a minute. If it keeps happening, the satellite data may still be loading.",
                            title="Error", section=""), 500
+
+# ---------- Account recovery (recovery codes, no email) ----------
+RECOVERY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0, O, 1, I, L
+
+def new_recovery_code():
+    raw = "".join(secrets.choice(RECOVERY_ALPHABET) for _ in range(16))
+    return "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+
+def normalize_code(text):
+    return re.sub(r"[^A-Z0-9]", "", text.upper())
+
+_db_recovery = connect()
+_db_recovery.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT")
+_db_recovery.commit()
+_db_recovery.close()
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        code = normalize_code(request.form.get("code", ""))
+        password = request.form.get("password", "")
+        key = "reset:" + username.lower()
+        ip_key = "reset-ip:" + (request.remote_addr or "unknown")
+        if locked(key) or locked(ip_key, max_fails=20):
+            error = "Too many attempts. Try again in 15 minutes."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+        else:
+            db = get_db()
+            row = db.execute(
+                "SELECT username, recovery_hash FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            ok = bool(row and row["recovery_hash"] and len(code) == 16
+                      and check_password_hash(row["recovery_hash"], code))
+            if ok:
+                new_code = new_recovery_code()
+                db.execute(
+                    "UPDATE users SET password_hash = ?, recovery_hash = ? WHERE username = ?",
+                    (generate_password_hash(password), generate_password_hash(normalize_code(new_code)), row["username"]),
+                )
+                db.commit()
+                clear_failures(key)
+                session["username"] = row["username"]
+                return render_template("recovery_code.html", code=new_code, heading="Password changed",
+                                       title="Recovery code", section="login")
+            record_failure(key)
+            record_failure(ip_key)
+            error = "That username and recovery code don't match."
+    return render_template("forgot.html", error=error, title="Reset password", section="login")
 
 if __name__ == "__main__":
     from waitress import serve
