@@ -17,9 +17,17 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 - **Next possible eclipse:** the next candidate eclipse and whether it's visible from that place.
 - **Sky chart:** a star chart of the sky above the place, with north at the top. See below for the star data.
 
+**Globe**
+- A rotating Earth with ocean, land, desert, ice, and cloud, drawn in the app's own style.
+- Satellites from the stations group as small models with solar panels. The ISS is larger, with its truss.
+- Each satellite's orbit is drawn as a loop. Tap a name to track it, and the camera follows.
+- Countries under each satellite's path are shaded red. Tracking a satellite brightens its countries and lists them.
+- Speed buttons switch between real time and 60 times faster.
+
 **Sightings and accounts**
 - A logbook-style feed of posts with an optional place and time. If both are given, the AI explanation appears under a red rule.
 - Sign up, log in, follow people, and like sightings. Passwords are stored as salted hashes. Failed logins are rate-limited by username and by IP address.
+- Password recovery uses a one-time recovery code, shown at sign-up. Entering it sets a new password and issues a new code.
 - **My log:** a private list for each account. Entries never appear in the public feed.
 - Usernames starting with VEMMSUNJ are reserved for the app's own accounts.
 
@@ -49,7 +57,9 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 
 **Moon phases and eclipses.** Moon phases use a simplified lunar model, accurate to a few degrees. Eclipse dates are approximate, within about an hour, and can miss an eclipse or list one that doesn't happen. Check a published eclipse table before planning.
 
-**Sky chart stars.** The chart currently uses 85 bright stars, with positions and magnitudes typed from standard reference values. They may contain small errors of a few tenths of a degree. The full Yale Bright Star Catalogue (BSC5), which is public domain and distributed by CDS, is planned. It isn't in the app yet, because the build environment couldn't download it.
+**Sky chart stars.** The chart uses 85 bright stars, with positions and magnitudes typed from standard reference values. They may contain small errors of a few tenths of a degree. The app can also load the full Yale Bright Star Catalogue (BSC5), which is public domain. The download from CDS fails from both the phone and the hosting server, because of a certificate problem on CDS's side, so the app keeps the bright stars. The loader stays in place for a later download.
+
+**Globe countries.** Country borders come from Natural Earth's 110-metre data, which is public domain. It is coarse, so small countries may be missed. The browser loads it from GitHub when the Globe page opens.
 
 **The daily bot.** Vercel calls `/api/cron/daily` once a day at 03:00 UTC. The endpoint requires a bearer token set in `CRON_SECRET`, so only Vercel or someone with the secret can trigger it.
 
@@ -95,10 +105,12 @@ After the first deploy, load the planetary data once:
 - Time travel is limited to 7 days ahead, since predictions from current orbit data get less reliable further out.
 - The bot posts at most once a day per place, and skips places where the sun is up.
 - Bot charts are schematic. They show peak altitude and timing, not a real view of the sky.
-- The sky chart shows 85 bright stars until the full catalogue is added.
+- The sky chart shows 85 bright stars. The full catalogue can't currently be downloaded.
+- Globe country borders are coarse, and small countries may be missed.
+- The Globe needs an internet connection for Three.js and the country borders.
 - Eclipse dates are approximate.
 - Sighting explanations depend on Gemini's free-tier quota. When it runs out, explanations show an error until it resets.
-- There is no email verification and no password reset yet.
+- There is no email verification. Accounts created before recovery codes existed have no code, so the site owner resets their password with `reset_password.py`.
 - Identification uses orbit data only. It can't confirm a satellite from a photo.
 
 ## Credits
@@ -108,6 +120,9 @@ After the first deploy, load the planetary data once:
 - Earth images: NASA EPIC, public domain.
 - Map tiles and data: OpenStreetMap contributors. Maps use Leaflet.
 - Fonts: Fraunces and Atkinson Hyperlegible, from Google Fonts.
+- Globe rendering: Three.js (MIT licence), loaded from cdnjs.
+- Country borders: Natural Earth, public domain.
+- Star data: Yale Bright Star Catalogue, public domain (not yet loaded).
 
 ## Status
 
