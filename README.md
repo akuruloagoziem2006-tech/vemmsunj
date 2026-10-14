@@ -1,39 +1,57 @@
 # VEMMSUNJ
 
-VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sightings. It lists observatories and dark-sky viewing spots, shows when satellites pass over each place, and lets people log what they saw. When a sighting includes a place and time, the app checks which satellites were sunlit and above the horizon, and Gemini picks the most likely match from that list.
+VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sightings. It lists observatories and dark-sky viewing spots, shows when satellites and planets are visible from each place, and lets people log what they saw. When a sighting includes a place and time, the app checks which satellites were sunlit and above the horizon, and Gemini picks the most likely match from that list.
 
 ## Features
 
-- **Places:** observatories and dark-sky spots, with an add form.
-- **Place pages:** a 24-hour strip showing each satellite pass above 10 degrees, with the next pass highlighted.
-- **Map:** Leaflet pins. Each popup lists the next passes and links to the place page.
-- **Sightings:** a logbook-style feed. Each entry has an optional place and time, and the AI explanation appears under a red rule.
-- **Recent sightings:** the Places page ends with the five latest posts, so new visitors see activity right away.
-- **Daily bot:** VEMMSUNJ_BOT posts once a day for each place that has passes in the next 24 hours. Each post includes a schematic chart. Every bot post is labeled "Automated."
-- **Example posts:** three sightings by the VEMMSUNJ account are labeled "Example" so the feed isn't empty.
-- **Accounts:** sign up, log in, follow people, and like sightings. Passwords are stored as salted hashes. Failed logins are rate-limited by username and by IP address.
-- **Reserved names:** usernames starting with VEMMSUNJ are reserved for the app's own accounts.
-- **Dark theme:** the app uses one dark theme, since it's mostly used outdoors at night. A row of planets runs under the header.
+**Places and maps**
+- Observatories and dark-sky spots, with an add form and a Near me sort that orders places by distance from the visitor's phone. Location stays in the browser.
+- A map with pins. Each popup lists the next passes and links to the place page.
+- A recent sightings section at the bottom of the Places page.
 
-## How identification works
+**Place pages**
+- **Tonight's best:** the Moon phase, the dark hours in the next 24 hours, and the three highest satellite passes, ranked by peak altitude.
+- **Time travel:** choose a time up to 7 days ahead to see passes from that moment.
+- **Next 24 hours:** a strip showing each satellite pass above 10 degrees.
+- **Planets:** the seven planets with their altitude and compass direction, each with a drawn illustration.
+- **Next possible eclipse:** the next candidate eclipse and whether it's visible from that place.
+- **Sky chart:** a star chart of the sky above the place, with north at the top. See below for the star data.
 
-1. The app downloads orbit data (TLEs) from CelesTrak for the stations, visual, and weather groups.
-2. It checks whether the sun is more than 6 degrees below the horizon at the place, so the sky is dark enough to see satellites.
-3. It keeps only satellites that are sunlit and above 10 degrees at that moment.
-4. Gemini chooses the best match from that list only. It never names a satellite outside the list.
+**Sightings and accounts**
+- A logbook-style feed of posts with an optional place and time. If both are given, the AI explanation appears under a red rule.
+- Sign up, log in, follow people, and like sightings. Passwords are stored as salted hashes. Failed logins are rate-limited by username and by IP address.
+- **My log:** a private list for each account. Entries never appear in the public feed.
+- Usernames starting with VEMMSUNJ are reserved for the app's own accounts.
 
-The app doesn't calculate brightness, so the AI is told not to describe how bright a satellite is.
+**Calendar**
+- Moon phases for the next 60 days.
+- Approximate meteor shower peaks for the next 60 days.
+- Possible eclipses for the next 12 months.
 
-## How the daily bot works
+**Automated posts**
+- **VEMMSUNJ_BOT** posts once a day for each place that has passes in the next 24 hours, with a schematic chart. It skips places where the sun is still up. Every bot post is labelled "Automated."
+- The bot also posts one Earth image a day from NASA's EPIC camera, with credit to NASA. NASA images are public domain.
+- Three example sightings by the VEMMSUNJ account are labelled "Example."
 
-Vercel calls `/api/cron/daily` once a day at 03:00 UTC. The bot does the following for each place:
+**Appearance and use**
+- One dark theme, with a row of planets under the header.
+- A red-light mode, switched from the header. It stays on in this browser until turned off.
+- Installable as an app, and offline support keeps the public pages you've opened recently, so they still load without a signal. Sightings, My log, and sign-in are not saved offline.
+- Friendly error pages, and plain error messages.
 
-1. Skips the place if the sun is still up there, or if it already posted there today.
-2. Takes the next three passes in the next 24 hours from the same orbit data the place pages use.
-3. Posts a summary with the satellite names, times in UTC, and peak altitudes.
-4. Adds a schematic chart. The arcs show peak altitude and are not a real view of the sky.
+## How the calculations work
 
-The endpoint requires a bearer token set in `CRON_SECRET`, so only Vercel or someone with the secret can trigger it.
+**Satellites.** The app downloads orbit data (TLEs) from CelesTrak for the stations, visual, and weather groups. It checks whether the sun is more than 6 degrees below the horizon at the place, then keeps only satellites that are sunlit and above 10 degrees. Passes are calculated for the next 24 hours, or from the chosen time, and cached for an hour. Results are limited to the first 100.
+
+**Identification.** Gemini chooses the best match from the list of satellites above only. It never names a satellite outside the list. The app doesn't calculate brightness, so the AI is told not to describe how bright a satellite is.
+
+**Planets.** Positions come from NASA's DE421 planetary ephemeris, which is public domain. It's downloaded once and stored in the database. If it isn't stored yet, the app falls back to a simplified calculation, accurate to about a degree, and the page says so.
+
+**Moon phases and eclipses.** Moon phases use a simplified lunar model, accurate to a few degrees. Eclipse dates are approximate, within about an hour, and can miss an eclipse or list one that doesn't happen. Check a published eclipse table before planning.
+
+**Sky chart stars.** The chart currently uses 85 bright stars, with positions and magnitudes typed from standard reference values. They may contain small errors of a few tenths of a degree. The full Yale Bright Star Catalogue (BSC5), which is public domain and distributed by CDS, is planned. It isn't in the app yet, because the build environment couldn't download it.
+
+**The daily bot.** Vercel calls `/api/cron/daily` once a day at 03:00 UTC. The endpoint requires a bearer token set in `CRON_SECRET`, so only Vercel or someone with the secret can trigger it.
 
 ## Run it locally
 
@@ -57,7 +75,7 @@ Open http://127.0.0.1:5000. Use HTTPS=0 only for local testing, since the sessio
 | DATABASE_URL | Postgres connection string |
 | GEMINI_API_KEY | Gemini API key for sighting explanations |
 | SECRET_KEY | Signs session cookies. Use a long random value. |
-| CRON_SECRET | Bearer token that protects the daily bot endpoint |
+| CRON_SECRET | Bearer token for the daily bot and the one-time planet data setup |
 | HTTPS | Set to 0 only for local testing. Leave unset in production. |
 | TRUST_PROXY | Set to 1 behind a reverse proxy, such as Vercel |
 | STARLINK | Set to 1 to include the Starlink group. Very slow, so it's off by default. |
@@ -66,15 +84,30 @@ Open http://127.0.0.1:5000. Use HTTPS=0 only for local testing, since the sessio
 
 The app runs as a Flask app on Vercel. Connect the GitHub repository in the Vercel project settings, set the environment variables above, and each push to the main branch deploys automatically. The daily schedule is defined in `vercel.json`.
 
+After the first deploy, load the planetary data once:
+
+    curl -H "Authorization: Bearer $CRON_SECRET" https://your-site/api/cron/ephemeris
+
 ## Known limits
 
-- Passes are cached for an hour and limited to the next 100. The first calculation for a place can take close to a minute.
+- Passes are cached for an hour and limited to the first 100. The first calculation for a place can take close to a minute.
 - Starlink is off, because the full group makes the calculation too slow for a serverless request.
+- Time travel is limited to 7 days ahead, since predictions from current orbit data get less reliable further out.
 - The bot posts at most once a day per place, and skips places where the sun is up.
 - Bot charts are schematic. They show peak altitude and timing, not a real view of the sky.
+- The sky chart shows 85 bright stars until the full catalogue is added.
+- Eclipse dates are approximate.
 - Sighting explanations depend on Gemini's free-tier quota. When it runs out, explanations show an error until it resets.
 - There is no email verification and no password reset yet.
 - Identification uses orbit data only. It can't confirm a satellite from a photo.
+
+## Credits
+
+- Satellite orbit data: CelesTrak.
+- Planetary positions: NASA JPL DE421.
+- Earth images: NASA EPIC, public domain.
+- Map tiles and data: OpenStreetMap contributors. Maps use Leaflet.
+- Fonts: Fraunces and Atkinson Hyperlegible, from Google Fonts.
 
 ## Status
 
