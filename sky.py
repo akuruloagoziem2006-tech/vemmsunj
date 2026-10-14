@@ -109,7 +109,7 @@ def star_altaz(ra_h, dec_d, lat, lon, when):
     az_from_south = math.degrees(math.atan2(math.sin(H), math.cos(H) * math.sin(latr) - math.tan(dec) * math.cos(latr)))
     return alt, (az_from_south + 180) % 360
 
-def sky_svg(lat, lon, when, size=440):
+def sky_svg(lat, lon, when, size=440, catalog=None):
     """Star chart: the whole sky above the horizon, looking straight up. North is up, east is left."""
     c = size / 2
     R = size / 2 - 22
@@ -125,6 +125,18 @@ def sky_svg(lat, lon, when, size=440):
         x = c - (R + 12) * math.sin(rad)
         y = c - (R + 12) * math.cos(rad) + 4
         parts.append(f'<text x="{x:.1f}" y="{y:.1f}" fill="#8C929C" font-family="sans-serif" font-size="13" text-anchor="middle">{label}</text>')
+    if catalog:
+        for ra, dec, mag in catalog:
+            if mag > 6.5:
+                continue
+            alt, az = star_altaz(ra, dec, lat, lon, when)
+            if alt < 0:
+                continue
+            r = R * (90 - alt) / 90
+            x = c - r * math.sin(math.radians(az))
+            y = c - r * math.cos(math.radians(az))
+            radius = max(0.5, 2.2 - 0.3 * mag)
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.2f}" fill="#E9E6DC" opacity=".85"/>')
     for name, ra, dec, mag in STARS:
         alt, az = star_altaz(ra, dec, lat, lon, when)
         if alt < 0:

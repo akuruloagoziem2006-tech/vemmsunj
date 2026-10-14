@@ -1,3 +1,4 @@
+import gzip
 import json
 import math
 from html import escape
@@ -1176,7 +1177,7 @@ SKY_PAGE = """{% extends "base.html" %}
 <p class="meta">{{ place['name'] }}, {{ when_label }} UTC</p>
 {% if too_bright %}<p class="meta">The sky is too bright for faint stars at this time. Only the brightest stars show clearly.</p>{% endif %}
 <figure>{{ chart|safe }}</figure>
-<p class="meta">Bright stars only. North is up and east is left. Positions are approximate.</p>
+{% if full %}<p class="meta">Stars to magnitude 6.5 from the Yale Bright Star Catalogue (public domain). North is up and east is left.</p>{% else %}<p class="meta">Bright stars only. North is up and east is left. Positions are approximate.</p>{% endif %}
 <form method="get" action="/places/{{ place['id'] }}/sky">
   <label for="at">Check another time (UTC)</label>
   <input id="at" name="at" type="datetime-local" value="{{ at_value }}">
@@ -1196,10 +1197,11 @@ def sky_page(listing_id):
         when = datetime.now(timezone.utc)
         at_value = ""
     too_bright = sun_altitude_deg(place["latitude"], place["longitude"], when) > -6.0
-    chart = sky_svg(place["latitude"], place["longitude"], when)
+    catalog = load_catalog_stars()
+    chart = sky_svg(place["latitude"], place["longitude"], when, catalog=catalog)
     return render_template_string(
         SKY_PAGE, place=place, chart=chart, when_label=when.strftime("%Y-%m-%d %H:%M"),
-        too_bright=too_bright, at_value=at_value, title="Sky chart", section="places")
+        too_bright=too_bright, at_value=at_value, full=catalog is not None, title="Sky chart", section="places")
 
 # ---------- Planets from NASA's DE421 data (stored in Neon) ----------
 EPH_URL = "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de421.bsp"
@@ -1276,6 +1278,93 @@ def cron_ephemeris():
     if EPH_PATH.exists():
         EPH_PATH.unlink()
     return jsonify({"stored": "de421", "bytes": len(data)})
+
+# ---------- Full star catalogue (BSC5, stored in Neon) ----------
+BSC_URLS = [
+    "https://cdsarc.u-strasbg.fr/ftp/cats/V/50/bsc5.dat.gz",
+    "https://cdsarc.astro.unistra.fr/ftp/cats/V/50/bsc5.dat.gz",
+]
+
+def fetch_bsc5():
+    last = None
+    for url in BSC_URLS:
+        try:
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+            raw = r.content
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                pass  # already decompressed by the server
+            return raw.decode("latin-1"), url
+        except requests.RequestException as e:
+            last = e
+    raise last
+
+def parse_bsc5(text):
+    """Fixed-width BSC5 lines. Returns [ra_hours, dec_degrees, vmag] for each usable star."""
+    rows = []
+    for line in text.splitlines():
+        if len(line) < 107:
+            continue
+        try:
+            rh = int(line[75:77])
+            rm = int(line[77:79])
+            rs = float(line[79:83])
+            sign = -1 if line[83] == "-" else 1
+            dd = int(line[84:86])
+            dm = int(line[86:88])
+            ds = float(line[88:92])
+            vmag = float(line[102:107])
+        except ValueError:
+            continue
+        ra = rh + rm / 60 + rs / 3600
+        dec = sign * (dd + dm / 60 + ds / 3600)
+        if not (0 <= ra < 24 and -90 <= dec <= 90 and -2 <= vmag <= 8):
+            continue
+        rows.append([round(ra, 4), round(dec, 4), round(vmag, 2)])
+    return rows
+
+def star_check(rows):
+    """Finds the row nearest Sirius, so the stored data can be checked by eye."""
+    ra0, dec0 = 6.7525, -16.716
+    best = min(rows, key=lambda r: (r[0] - ra0) ** 2 + (r[1] - dec0) ** 2)
+    sep = math.hypot((best[0] - ra0) * 15 * math.cos(math.radians(dec0)), best[1] - dec0)
+    return {"ra_hours": best[0], "dec_degrees": best[1], "vmag": best[2], "separation_deg": round(sep, 3)}
+
+@app.route("/api/cron/stars")
+def cron_stars():
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    try:
+        text, source = fetch_bsc5()
+    except requests.RequestException as e:
+        return jsonify({"error": "download failed", "detail": e.__class__.__name__}), 502
+    rows = parse_bsc5(text)
+    if len(rows) < 8000:
+        lines = text.splitlines()
+        return jsonify({"error": "parsed too few stars; the layout may differ",
+                        "parsed": len(rows),
+                        "sample_line": lines[1000][:110] if len(lines) > 1000 else None}), 500
+    db = connect()
+    db.execute("CREATE TABLE IF NOT EXISTS star_catalog (name TEXT PRIMARY KEY, body TEXT NOT NULL, stored_at TEXT NOT NULL)")
+    db.execute("DELETE FROM star_catalog WHERE name = ?", ("bsc5",))
+    db.execute("INSERT INTO star_catalog (name, body, stored_at) VALUES (?, ?, ?)",
+               ("bsc5", json.dumps(rows, separators=(",", ":")), datetime.now(timezone.utc).isoformat(timespec="minutes")))
+    db.commit()
+    db.close()
+    return jsonify({"stored": len(rows), "source": source, "sirius_check": star_check(rows)})
+
+def load_catalog_stars():
+    """The stored catalogue, or None if it hasn't been loaded yet."""
+    try:
+        db = connect()
+        row = db.execute("SELECT body FROM star_catalog WHERE name = ?", ("bsc5",)).fetchone()
+        db.close()
+    except Exception:
+        return None
+    return json.loads(row["body"]) if row else None
 
 # ---------- Routes: places ----------
 @app.route("/")
