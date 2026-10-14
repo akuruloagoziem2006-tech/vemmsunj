@@ -111,4 +111,4 @@ After the first deploy, load the planetary data once:
 
 ## Status
 
-This is an early version. No license has been chosen yet.
+This is an early version. The code is released under the MIT License. See the LICENSE file. Third-party data and images keep their own terms, as listed under Credits.
