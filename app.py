@@ -12,12 +12,14 @@ from urllib.parse import unquote, urlparse
 
 import pg8000.dbapi
 import requests
-from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, session
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, render_template_string, request, session
 from jinja2 import DictLoader
 from pg8000.dbapi import IntegrityError
 from skyfield.api import EarthSatellite, Loader, wgs84
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from sky import sky_svg, star_altaz
 
 app = Flask(__name__)
 if os.environ.get("TRUST_PROXY") == "1":
@@ -726,6 +728,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
+<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a></p>
 <h2>Planets</h2>
 {% if planets_dark %}<p class="meta">The sky is still too bright to see planets well at this time.</p>{% endif %}
 {% for p in planets %}
@@ -1127,6 +1130,39 @@ def planet_svg(name):
         parts.append('<ellipse cx="60" cy="60" rx="54" ry="13" fill="none" stroke="#C9B57E" stroke-width="3" transform="rotate(-18 60 60)" clip-path="url(#front)"/>')
     parts.append("</svg>")
     return "".join(parts)
+
+# ---------- Sky chart ----------
+SKY_PAGE = """{% extends "base.html" %}
+{% block content %}
+<p><a href="/places/{{ place['id'] }}{% if at_value %}?at={{ at_value }}{% endif %}">Back to {{ place['name'] }}</a></p>
+<h1>Sky chart</h1>
+<p class="meta">{{ place['name'] }}, {{ when_label }} UTC</p>
+{% if too_bright %}<p class="meta">The sky is too bright for faint stars at this time. Only the brightest stars show clearly.</p>{% endif %}
+<figure>{{ chart|safe }}</figure>
+<p class="meta">Bright stars only. North is up and east is left. Positions are approximate.</p>
+<form method="get" action="/places/{{ place['id'] }}/sky">
+  <label for="at">Check another time (UTC)</label>
+  <input id="at" name="at" type="datetime-local" value="{{ at_value }}">
+  <p><button class="btn quiet" type="submit">Show sky</button></p>
+</form>
+{% endblock %}"""
+
+@app.route("/places/<int:listing_id>/sky")
+def sky_page(listing_id):
+    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    at_value = request.args.get("at", "").strip()
+    try:
+        when = parse_when(at_value) if at_value else datetime.now(timezone.utc)
+    except ValueError:
+        when = datetime.now(timezone.utc)
+        at_value = ""
+    too_bright = sun_altitude_deg(place["latitude"], place["longitude"], when) > -6.0
+    chart = sky_svg(place["latitude"], place["longitude"], when)
+    return render_template_string(
+        SKY_PAGE, place=place, chart=chart, when_label=when.strftime("%Y-%m-%d %H:%M"),
+        too_bright=too_bright, at_value=at_value, title="Sky chart", section="places")
 
 # ---------- Routes: places ----------
 @app.route("/")
