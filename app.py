@@ -1719,7 +1719,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
 <p class="meta" id="compass-status" role="status" aria-live="polite"></p>
 <canvas id="sky" style="width:100%;height:420px;display:block;border:1px solid var(--rule);border-radius:4px"></canvas>
 <label for="corr">North correction: <span id="corr-val">0</span> degrees</label>
-<input id="corr" type="range" min="-45" max="45" value="0">
+<input id="corr" type="range" min="-180" max="180" value="0">
 <p class="meta">Compass north is magnetic and can be off by several degrees. Adjust this until a known object, such as the Moon when it's up, lines up with the sky.</p>
 <h2>Above the horizon now</h2>
 <div id="sky-list"></div>
@@ -1739,7 +1739,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   var listEl = document.getElementById("sky-list");
   var corrEl = document.getElementById("corr");
   var corrVal = document.getElementById("corr-val");
-  var objects = [], orient = null, correction = 0, cam = { az: 0, alt: 0 };
+  var objects = [], orient = null, correction = 0, rawAz = 0, cam = { az: 0, alt: 0 }, absolute = false, gotAbsolute = false;
   var sensorTimer = null, attached = false;
 
   function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
@@ -1755,13 +1755,14 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   // Back camera direction from the W3C device orientation angles (Z-X-Y rotation).
   function updateCamera() {
     if (!orient) return;
-    var a = orient.alpha * D, b = orient.beta * D, g = orient.gamma * D;
+    var a = (orient.alpha || 0) * D, b = (orient.beta || 0) * D, g = (orient.gamma || 0) * D;
     var sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), sg = Math.sin(g), cg = Math.cos(g);
     var east = -sg * ca - cg * sb * sa;
     var north = -sg * sa + cg * sb * ca;
     var up = -cg * cb;
     cam.alt = Math.asin(Math.max(-1, Math.min(1, up))) / D;
-    cam.az = (Math.atan2(east, north) / D + correction + 360) % 360;
+    rawAz = (Math.atan2(east, north) / D + 360) % 360;
+    cam.az = (rawAz + correction + 360) % 360;
   }
 
   function colorFor(o) {
@@ -1833,8 +1834,26 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
         meta.className = "meta";
         meta.textContent = o.kind + ", " + dirName(o.az) + ", " + Math.round(o.alt) + " degrees up";
         row.appendChild(meta);
+        if (!absolute) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn quiet";
+          btn.textContent = "I am pointing at this";
+          btn.addEventListener("click", (function (obj) {
+            return function () { calibrate(obj); };
+          })(o));
+          row.appendChild(btn);
+        }
         listEl.appendChild(row);
       });
+  }
+
+  function calibrate(o) {
+    if (!orient) { statusEl.textContent = "Tap Start compass first, then point the camera at the object."; return; }
+    correction = wrap180(o.az - rawAz);
+    corrEl.value = Math.round(correction);
+    corrVal.textContent = Math.round(correction);
+    statusEl.textContent = "Aligned to " + (o.name || "that bright star") + ". Move the phone to check the other objects.";
   }
 
   function loadSky() {
@@ -1850,21 +1869,24 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   }
 
   function onOrient(e) {
-    if (e.alpha === null || e.alpha === undefined) return;
+    if (e.beta === null && e.gamma === null) return;
+    if (e.absolute) gotAbsolute = true;
+    else if (gotAbsolute) return;
+    absolute = !!e.absolute;
     var first = !orient;
     orient = e;
     if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
-    if (first) statusEl.textContent = "Move your phone slowly to scan the sky.";
+    if (first) statusEl.textContent = absolute ? "Move your phone slowly to scan the sky." : "This phone has no magnetic compass, so up and down works but direction doesn't. Point the camera at an object in the list and tap the button marked I am pointing at this.";
   }
 
   function attach() {
     if (attached) return;
     attached = true;
-    var ev = ("ondeviceorientationabsolute" in window) ? "deviceorientationabsolute" : "deviceorientation";
-    window.addEventListener(ev, onOrient, true);
+    if ("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute", onOrient, true);
+    window.addEventListener("deviceorientation", onOrient, true);
     statusEl.textContent = "Waiting for motion readings...";
     sensorTimer = setTimeout(function () {
-      if (!orient) statusEl.textContent = "No compass readings yet. Your device may lack a magnetometer, or the browser is blocking motion sensors. The list below still works.";
+      if (!orient) statusEl.textContent = "No motion readings yet. Check that motion sensors are allowed for this site in Chrome settings.";
     }, 4000);
   }
 
