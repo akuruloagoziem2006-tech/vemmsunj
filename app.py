@@ -20,7 +20,7 @@ from skyfield.api import EarthSatellite, Loader, wgs84
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from sky import sky_svg, star_altaz
+from sky import STARS, sky_svg, star_altaz
 
 app = Flask(__name__)
 if os.environ.get("TRUST_PROXY") == "1":
@@ -744,7 +744,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
-<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a></p>
+<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a></p>
 {% if eclipse %}
 <h2>Next possible eclipse</h2>
 <div class="place"><strong>{{ eclipse['name'] }}</strong>
@@ -1707,7 +1707,216 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES})
+COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
+{% block content %}
+<h1>Star compass</h1>
+<p class="meta">Point the back camera of your phone at the sky to see what's in front of it. Time is UTC.</p>
+<p class="meta">Place: {{ place['name'] }}. <a href="/places/{{ place['id'] }}">Back to place</a></p>
+<p>
+  <button id="start" class="btn" type="button">Start compass</button>
+  <button id="locate" class="btn quiet" type="button">Use my location</button>
+</p>
+<p class="meta" id="compass-status" role="status" aria-live="polite"></p>
+<canvas id="sky" style="width:100%;height:420px;display:block;border:1px solid var(--rule);border-radius:4px"></canvas>
+<label for="corr">North correction: <span id="corr-val">0</span> degrees</label>
+<input id="corr" type="range" min="-45" max="45" value="0">
+<p class="meta">Compass north is magnetic and can be off by several degrees. Adjust this until a known object, such as the Moon when it's up, lines up with the sky.</p>
+<h2>Above the horizon now</h2>
+<div id="sky-list"></div>
+<p class="meta">Positions are calculated for this moment and refresh every minute. Stars use the built-in list unless the full catalogue is loaded.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var LAT = {{ place['latitude'] }};
+  var LON = {{ place['longitude'] }};
+  var D = Math.PI / 180;
+  var HFOV = 35, VFOV = 26;
+  var COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  var statusEl = document.getElementById("compass-status");
+  var canvas = document.getElementById("sky");
+  var ctx = canvas.getContext("2d");
+  var listEl = document.getElementById("sky-list");
+  var corrEl = document.getElementById("corr");
+  var corrVal = document.getElementById("corr-val");
+  var objects = [], orient = null, correction = 0, cam = { az: 0, alt: 0 };
+  var sensorTimer = null, attached = false;
+
+  function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
+  function dirName(az) { return COMPASS[Math.round(az / 45) % 8]; }
+
+  function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Back camera direction from the W3C device orientation angles (Z-X-Y rotation).
+  function updateCamera() {
+    if (!orient) return;
+    var a = orient.alpha * D, b = orient.beta * D, g = orient.gamma * D;
+    var sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), sg = Math.sin(g), cg = Math.cos(g);
+    var east = -sg * ca - cg * sb * sa;
+    var north = -sg * sa + cg * sb * ca;
+    var up = -cg * cb;
+    cam.alt = Math.asin(Math.max(-1, Math.min(1, up))) / D;
+    cam.az = (Math.atan2(east, north) / D + correction + 360) % 360;
+  }
+
+  function colorFor(o) {
+    if (o.kind === "moon") return "#E9E6DC";
+    if (o.kind === "planet") return "#E8C27A";
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? "#C9553A" : "#C9D6E8";
+    return "#E9E6DC";
+  }
+
+  function radiusFor(o) {
+    if (o.kind === "moon") return 7;
+    if (o.kind === "planet") return 5;
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? 5 : 3;
+    return Math.max(1.2, Math.min(6, 4 - 0.5 * (o.mag || 0)));
+  }
+
+  function drawSky() {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    ctx.fillStyle = "#05070B";
+    ctx.fillRect(0, 0, W, H);
+    if (!orient) {
+      ctx.fillStyle = "#8C929C";
+      ctx.font = "14px sans-serif";
+      ctx.fillText("Tap Start compass to see the sky in front of your phone.", 16, H / 2);
+      return;
+    }
+    var hy = H / 2 + cam.alt / VFOV * H / 2;
+    if (hy >= 0 && hy <= H) {
+      ctx.strokeStyle = "#3A4452";
+      ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
+      ctx.fillStyle = "#8C929C"; ctx.font = "12px sans-serif";
+      ctx.fillText("Horizon", 8, hy - 6);
+    }
+    objects.forEach(function (o) {
+      var d = wrap180(o.az - cam.az) * Math.cos(cam.alt * D);
+      var da = o.alt - cam.alt;
+      if (Math.abs(d) > HFOV || Math.abs(da) > VFOV) return;
+      var x = W / 2 + d / HFOV * W / 2;
+      var y = H / 2 - da / VFOV * H / 2;
+      var r = radiusFor(o);
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colorFor(o); ctx.fill();
+      if (o.name) {
+        ctx.fillStyle = "#E9E6DC"; ctx.font = "12px sans-serif";
+        ctx.fillText(o.name, x + r + 4, y + 4);
+      }
+    });
+    ctx.strokeStyle = "#C9553A"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 14, H / 2); ctx.lineTo(W / 2 + 14, H / 2);
+    ctx.moveTo(W / 2, H / 2 - 14); ctx.lineTo(W / 2, H / 2 + 14);
+    ctx.stroke();
+    ctx.fillStyle = "#8C929C"; ctx.font = "12px sans-serif";
+    ctx.fillText("Facing " + dirName(cam.az) + ", " + Math.round(cam.alt) + " degrees up", 8, H - 10);
+  }
+
+  function renderList() {
+    listEl.textContent = "";
+    objects.filter(function (o) { return o.alt > 0; })
+      .sort(function (a, b) { return b.alt - a.alt; })
+      .slice(0, 30)
+      .forEach(function (o) {
+        var row = document.createElement("div");
+        row.className = "place";
+        var name = document.createElement("strong");
+        name.textContent = o.name || "Bright star";
+        row.appendChild(name);
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = o.kind + ", " + dirName(o.az) + ", " + Math.round(o.alt) + " degrees up";
+        row.appendChild(meta);
+        listEl.appendChild(row);
+      });
+  }
+
+  function loadSky() {
+    fetch("/api/sky?lat=" + LAT + "&lon=" + LON, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { statusEl.textContent = d.error; return; }
+        objects = d.objects;
+        renderList();
+        if (!orient) statusEl.textContent = "Sky as of " + d.time.replace("T", " ") + " UTC. Tap Start compass to scan the sky.";
+      })
+      .catch(function () { statusEl.textContent = "Sky data can't be loaded right now."; });
+  }
+
+  function onOrient(e) {
+    if (e.alpha === null || e.alpha === undefined) return;
+    var first = !orient;
+    orient = e;
+    if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
+    if (first) statusEl.textContent = "Move your phone slowly to scan the sky.";
+  }
+
+  function attach() {
+    if (attached) return;
+    attached = true;
+    var ev = ("ondeviceorientationabsolute" in window) ? "deviceorientationabsolute" : "deviceorientation";
+    window.addEventListener(ev, onOrient, true);
+    statusEl.textContent = "Waiting for motion readings...";
+    sensorTimer = setTimeout(function () {
+      if (!orient) statusEl.textContent = "No compass readings yet. Your device may lack a magnetometer, or the browser is blocking motion sensors. The list below still works.";
+    }, 4000);
+  }
+
+  function start() {
+    var DOE = window.DeviceOrientationEvent;
+    if (!DOE) { statusEl.textContent = "This device has no motion sensors. The list below still works."; return; }
+    if (typeof DOE.requestPermission === "function") {
+      DOE.requestPermission()
+        .then(function (state) {
+          if (state === "granted") attach();
+          else statusEl.textContent = "Motion access was refused. Allow it in browser settings.";
+        })
+        .catch(function () { statusEl.textContent = "Couldn't ask for motion access."; });
+    } else {
+      attach();
+    }
+  }
+
+  function locate() {
+    if (!navigator.geolocation) { statusEl.textContent = "Location isn't available in this browser."; return; }
+    statusEl.textContent = "Finding your location...";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      LAT = pos.coords.latitude;
+      LON = pos.coords.longitude;
+      statusEl.textContent = "Using your location.";
+      loadSky();
+    }, function () {
+      statusEl.textContent = "Location was blocked. Using the place's location.";
+    }, { timeout: 10000, maximumAge: 300000 });
+  }
+
+  document.getElementById("start").addEventListener("click", start);
+  document.getElementById("locate").addEventListener("click", locate);
+  corrEl.addEventListener("input", function () {
+    correction = Number(corrEl.value);
+    corrVal.textContent = correction;
+  });
+  window.addEventListener("resize", resize);
+  resize();
+  loadSky();
+  setInterval(loadSky, 60000);
+  (function frame() {
+    updateCamera();
+    drawSky();
+    requestAnimationFrame(frame);
+  })();
+})();
+</script>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES, **COMPASS_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -2173,6 +2382,75 @@ def alarm_list(passes):
         if start > now and len(out) < 8:
             out.append({"satellite": p["satellite"], "start": start.isoformat(), "peak": p["max_altitude_deg"]})
     return out
+
+# ---------- Star compass ----------
+def sky_objects(lat, lon, when):
+    """Stars, planets, the Moon, and stations satellites above the horizon, as altitude and azimuth."""
+    out = []
+    ts = load.timescale()
+    t = ts.from_datetime(when)
+    observer = wgs84.latlon(lat, lon)
+    catalog = load_catalog_stars()
+    if catalog:
+        for ra, dec, mag in catalog:
+            if mag > 4.5:
+                continue
+            alt, az = star_altaz(ra, dec, lat, lon, when)
+            if alt > 0:
+                out.append({"name": "", "kind": "star", "alt": round(alt, 2), "az": round(az, 2), "mag": mag})
+    else:
+        for name, ra, dec, mag in STARS:
+            alt, az = star_altaz(ra, dec, lat, lon, when)
+            if alt > 0:
+                out.append({"name": name, "kind": "star", "alt": round(alt, 2), "az": round(az, 2), "mag": mag})
+    try:
+        eph = get_planet_kernel()
+        for name, key in [("Moon", "moon")] + PLANET_KERNEL_NAMES:
+            try:
+                alt, az, _ = (eph["earth"] + observer).at(t).observe(eph[key]).apparent().altaz()
+            except Exception:
+                continue
+            if alt.degrees > 0:
+                out.append({"name": name, "kind": "moon" if name == "Moon" else "planet",
+                            "alt": round(alt.degrees, 2), "az": round(az.degrees, 2)})
+    except Exception:
+        pass
+    try:
+        for name, l1, l2 in parse_tle(get_group_text("stations")):
+            sat = EarthSatellite(l1, l2, name, ts)
+            alt, az, _ = (sat - observer).at(t).altaz()
+            if alt.degrees > 0:
+                out.append({"name": name, "kind": "satellite", "alt": round(alt.degrees, 2), "az": round(az.degrees, 2)})
+    except requests.RequestException:
+        pass
+    return out
+
+@app.route("/api/sky")
+def api_sky():
+    try:
+        lat = float(request.args.get("lat", ""))
+        lon = float(request.args.get("lon", ""))
+    except ValueError:
+        lat = lon = None
+    if lat is None or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return jsonify({"error": "Give a valid latitude and longitude."}), 400
+    now = datetime.now(timezone.utc)
+    try:
+        objs = sky_objects(lat, lon, now)
+    except Exception as e:
+        print(f"sky error: {e}", flush=True)
+        return jsonify({"error": "Sky data isn't available right now. Try again in a few minutes."}), 502
+    return jsonify({"time": now.isoformat(timespec="minutes"), "objects": objs})
+
+@app.route("/compass")
+def compass_page():
+    pid = request.args.get("place", "1")
+    if not pid.isdigit():
+        abort(404)
+    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?", (int(pid),)).fetchone()
+    if place is None:
+        abort(404)
+    return render_template("compass.html", place=place, title="Star compass", section="compass")
 
 # ---------- Routes: places ----------
 @app.route("/")
