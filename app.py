@@ -1739,7 +1739,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   var listEl = document.getElementById("sky-list");
   var corrEl = document.getElementById("corr");
   var corrVal = document.getElementById("corr-val");
-  var objects = [], orient = null, correction = 0, rawAz = 0, cam = { az: 0, alt: 0 }, absolute = false, gotAbsolute = false;
+  var objects = [], orient = null, correction = 0, rawAz = 0, cam = { az: 0, alt: 0 }, absolute = false, gotAbsolute = false, tiltOnly = false, gotOrientation = false;
   var sensorTimer = null, attached = false;
 
   function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
@@ -1757,14 +1757,18 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     if (!orient) return;
     var a = (orient.alpha || 0) * D, b = (orient.beta || 0) * D, g = (orient.gamma || 0) * D;
     var sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), sg = Math.sin(g), cg = Math.cos(g);
-    var east = -sg * ca - cg * sb * sa;
-    var north = -sg * sa + cg * sb * ca;
     var up = -cg * cb;
     cam.alt = Math.asin(Math.max(-1, Math.min(1, up))) / D;
+    if (tiltOnly) {
+      rawAz = 0;
+      cam.az = (correction + 360) % 360;
+      return;
+    }
+    var east = -sg * ca - cg * sb * sa;
+    var north = -sg * sa + cg * sb * ca;
     rawAz = (Math.atan2(east, north) / D + 360) % 360;
     cam.az = (rawAz + correction + 360) % 360;
   }
-
   function colorFor(o) {
     if (o.kind === "moon") return "#E9E6DC";
     if (o.kind === "planet") return "#E8C27A";
@@ -1873,23 +1877,42 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     if (e.absolute) gotAbsolute = true;
     else if (gotAbsolute) return;
     absolute = !!e.absolute;
+    gotOrientation = true;
+    tiltOnly = false;
     var first = !orient;
     orient = e;
     if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
-    if (first) statusEl.textContent = absolute ? "Move your phone slowly to scan the sky." : "This phone has no magnetic compass, so up and down works but direction doesn't. Point the camera at an object in the list and tap the button marked I am pointing at this.";
+    if (first) statusEl.textContent = absolute
+      ? "Move your phone slowly to scan the sky."
+      : "Move your phone slowly. Direction is relative, so tap I am pointing at this on a known object to line things up.";
   }
 
+  // Fallback for phones with no orientation events: the accelerometer measures gravity, which gives tilt.
+  function onMotion(e) {
+    if (gotOrientation) return;
+    var g = e.accelerationIncludingGravity;
+    if (!g || g.x === null || g.y === null || g.z === null) return;
+    var first = !tiltOnly;
+    tiltOnly = true;
+    orient = {
+      alpha: 0,
+      beta: Math.atan2(g.y, g.z) / D,
+      gamma: Math.atan2(-g.x, Math.hypot(g.y, g.z)) / D
+    };
+    if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
+    if (first) statusEl.textContent = "This phone can't sense turning, so up and down works but left and right doesn't. Turn to face an object, then tap I am pointing at this next to it.";
+  }
   function attach() {
     if (attached) return;
     attached = true;
     if ("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute", onOrient, true);
     window.addEventListener("deviceorientation", onOrient, true);
+    window.addEventListener("devicemotion", onMotion, true);
     statusEl.textContent = "Waiting for motion readings...";
     sensorTimer = setTimeout(function () {
       if (!orient) statusEl.textContent = "No motion readings yet. Check that motion sensors are allowed for this site in Chrome settings.";
     }, 4000);
   }
-
   function start() {
     var DOE = window.DeviceOrientationEvent;
     if (!DOE) { statusEl.textContent = "This device has no motion sensors. The list below still works."; return; }
