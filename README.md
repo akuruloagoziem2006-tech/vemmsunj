@@ -16,6 +16,8 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 - **Planets:** the seven planets with their altitude and compass direction, each with a drawn illustration.
 - **Next possible eclipse:** the next candidate eclipse and whether it's visible from that place.
 - **Sky chart:** a star chart of the sky above the place, with north at the top. See below for the star data.
+- **Sky conditions:** cloud cover, visibility, humidity, and rain chance for the next six hours.
+- **Pass reminders:** a browser notification two minutes before each pass in the next 24 hours. Reminders are scheduled while the page is open.
 
 **Globe**
 - A rotating Earth with ocean, land, desert, ice, and cloud, drawn in the app's own style.
@@ -35,6 +37,7 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 - Moon phases for the next 60 days.
 - Approximate meteor shower peaks for the next 60 days.
 - Possible eclipses for the next 12 months.
+- Space weather: the current planetary Kp index from NOAA, with a plain-language level.
 
 **Automated posts**
 - **VEMMSUNJ_BOT** posts once a day for each place that has passes in the next 24 hours, with a schematic chart. It skips places where the sun is still up. Every bot post is labelled "Automated."
@@ -123,6 +126,8 @@ After the first deploy, load the planetary data once:
 - Globe rendering: Three.js (MIT licence), loaded from cdnjs.
 - Country borders: Natural Earth, public domain.
 - Star data: Yale Bright Star Catalogue, public domain (not yet loaded).
+- Sky conditions: weather forecast data from Open-Meteo, licensed under CC BY 4.0.
+- Space weather: planetary Kp index from NOAA Space Weather Prediction Center, public domain.
 
 ## Status
 
