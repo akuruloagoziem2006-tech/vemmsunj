@@ -763,6 +763,62 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 </div>
 {% endfor %}
 <p class="meta">{% if planets and planets[0]['exact'] %}Calculated from NASA's DE421 planetary data. Times are UTC.{% else %}Estimated from simplified orbits, accurate to about a degree. Times are UTC.{% endif %}</p>
+{% if weather %}
+<h2>Sky conditions</h2>
+<p class="meta">Average cloud cover for the next 6 hours: {{ weather['avg_cloud'] }}. Forecast by Open-Meteo (CC BY 4.0).</p>
+{% for r in weather['rows'] %}
+<div class="place"><strong>{{ r['time'] }} UTC</strong>
+<div class="meta">Cloud {{ r['cloud'] }} · visibility {{ r['vis'] }} · humidity {{ r['humidity'] }} · rain chance {{ r['rain'] }}</div></div>
+{% endfor %}
+{% endif %}
+{% if alarm_passes %}
+<h2>Pass reminders</h2>
+<p class="meta">Get a notification 2 minutes before each pass in the next 24 hours. Keep this page open, since reminders are scheduled in the browser.</p>
+<button id="alarm-go" class="btn quiet" type="button">Turn on reminders</button>
+<span id="alarm-status" class="meta" role="status" aria-live="polite"></span>
+<script>
+(function () {
+  var passes = {{ alarm_passes|tojson }};
+  var btn = document.getElementById("alarm-go");
+  var out = document.getElementById("alarm-status");
+  var LEAD_MS = 2 * 60 * 1000;
+  var timers = [];
+  function notify(title, body) {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification(title, { body: body });
+      });
+    } else {
+      new Notification(title, { body: body });
+    }
+  }
+  function schedule() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    var now = Date.now(), count = 0;
+    passes.forEach(function (p) {
+      var at = Date.parse(p.start) - LEAD_MS;
+      if (at <= now) return;
+      count++;
+      timers.push(setTimeout(function () {
+        notify("Satellite pass soon", p.satellite + " peaks at " + p.peak + " degrees. It starts in 2 minutes.");
+      }, at - now));
+    });
+    out.textContent = count ? "Reminders set for " + count + " passes." : "No upcoming passes to remind you about.";
+  }
+  btn.addEventListener("click", function () {
+    if (!("Notification" in window)) {
+      out.textContent = "Notifications aren't supported in this browser.";
+      return;
+    }
+    Notification.requestPermission().then(function (perm) {
+      if (perm === "granted") schedule();
+      else out.textContent = "Notifications are blocked. Allow them in your browser settings, then try again.";
+    });
+  });
+})();
+</script>
+{% endif %}
 <h2>Next 24 hours</h2>
 <p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is the start of the window.</p>
 {% if error %}
@@ -1041,6 +1097,14 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% else %}
 <p>No showers peak in the next 60 days.</p>
 {% endfor %}
+<h2>Space weather</h2>
+{% if kp %}
+<div class="place"><strong>Planetary Kp index: {{ kp['kp'] }}</strong>
+<div class="meta">{{ kp['level'] }}. Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div></div>
+<p class="meta">Kp measures disturbance in Earth's magnetic field. Values of 5 and above can bring aurora to lower latitudes. An aurora map isn't included yet.</p>
+{% else %}
+<p class="meta">Space weather isn't available right now.</p>
+{% endif %}
 <h2>Possible eclipses</h2>
 <p class="meta">Next 12 months. This is a simplified check, so it can miss an eclipse or list one that doesn't happen. Times are approximate, within about an hour. Check a published eclipse table before planning.</p>
 {% for e in eclipses %}
@@ -2002,6 +2066,114 @@ def load_catalog_stars():
         return None
     return json.loads(row["body"]) if row else None
 
+# ---------- Sky conditions, space weather, pass reminders ----------
+_kv = connect()
+_kv.execute("CREATE TABLE IF NOT EXISTS cache_kv (key TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at REAL NOT NULL)")
+_kv.commit()
+_kv.close()
+
+WX_URL = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+          "&hourly=cloud_cover,visibility,relative_humidity_2m,precipitation_probability"
+          "&forecast_days=2&timezone=UTC")
+KP_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+
+def cache_get(key, max_age):
+    db = connect()
+    try:
+        row = db.execute("SELECT body, fetched_at FROM cache_kv WHERE key = ?", (key,)).fetchone()
+    finally:
+        db.close()
+    if row and time.time() - row["fetched_at"] < max_age:
+        return row["body"]
+    return None
+
+def cache_put(key, body):
+    db = connect()
+    try:
+        db.execute("DELETE FROM cache_kv WHERE key = ?", (key,))
+        db.execute("INSERT INTO cache_kv (key, body, fetched_at) VALUES (?, ?, ?)", (key, body, time.time()))
+        db.commit()
+    finally:
+        db.close()
+
+def _fmt(v, unit=""):
+    return "n/a" if v is None else f"{round(v)}{unit}"
+
+def weather_for(place):
+    """Next six hours of cloud cover, visibility, humidity and rain chance. None if unavailable."""
+    key = f"wx:{place['id']}"
+    try:
+        body = cache_get(key, 1800)
+        if body is None:
+            r = requests.get(WX_URL.format(lat=place["latitude"], lon=place["longitude"]), timeout=15)
+            r.raise_for_status()
+            body = r.text
+            cache_put(key, body)
+        h = json.loads(body)["hourly"]
+    except (requests.RequestException, KeyError, ValueError) as e:
+        print(f"weather error: {e}", flush=True)
+        return None
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    rows, clouds = [], []
+    for i, t in enumerate(h["time"]):
+        when = datetime.fromisoformat(t).replace(tzinfo=timezone.utc)
+        if when < now:
+            continue
+        if len(rows) >= 6:
+            break
+        cloud = h["cloud_cover"][i]
+        vis = h["visibility"][i]
+        if cloud is not None:
+            clouds.append(cloud)
+        rows.append({
+            "time": when.strftime("%a %H:%M"),
+            "cloud": _fmt(cloud, "%"),
+            "vis": "n/a" if vis is None else f"{vis / 1000:.1f} km",
+            "humidity": _fmt(h["relative_humidity_2m"][i], "%"),
+            "rain": _fmt(h["precipitation_probability"][i], "%"),
+        })
+    if not rows:
+        return None
+    avg = f"{round(sum(clouds) / len(clouds))}%" if clouds else "n/a"
+    return {"rows": rows, "avg_cloud": avg}
+
+def kp_status():
+    """Current planetary Kp index from NOAA. None if unavailable."""
+    try:
+        body = cache_get("kp", 900)
+        if body is None:
+            r = requests.get(KP_URL, timeout=15)
+            r.raise_for_status()
+            body = r.text
+            cache_put("kp", body)
+        latest = json.loads(body)[-1]
+        if isinstance(latest, dict):
+            kp, when = float(latest.get("Kp", latest.get("kp"))), latest.get("time_tag", "")
+        else:
+            kp, when = float(latest[1]), latest[0]
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+        print(f"kp error: {e}", flush=True)
+        return None
+    if kp < 4:
+        level = "Quiet"
+    elif kp < 5:
+        level = "Active"
+    else:
+        level = "Storm. Aurora may be visible farther south than usual."
+    return {"kp": round(kp, 2), "time": str(when)[:16], "level": level}
+
+def alarm_list(passes):
+    """Upcoming passes for the browser reminder script."""
+    now = datetime.now(timezone.utc)
+    out = []
+    for p in passes:
+        start = datetime.fromisoformat(p["start"])
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if start > now and len(out) < 8:
+            out.append({"satellite": p["satellite"], "start": start.isoformat(), "peak": p["max_altitude_deg"]})
+    return out
+
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
@@ -2083,7 +2255,7 @@ def place_page(listing_id):
     when_now = origin or datetime.now(timezone.utc)
     planets_dark, planets = planets_at(place, when_now)
     return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
-                           planets=planets, planets_dark=planets_dark, eclipse=eclipse_for_place(place),
+                           planets=planets, planets_dark=planets_dark, eclipse=eclipse_for_place(place), weather=weather_for(place), alarm_passes=alarm_list(passes),
                            tonight=tonight, custom=origin is not None,
                            at_value=at_value if origin is not None else "",
                            at_label=origin.strftime("%Y-%m-%d %H:%M") if origin is not None else "",
@@ -2593,7 +2765,7 @@ def eclipse_for_place(place):
 @app.route("/calendar")
 def calendar_page():
     now = datetime.now(timezone.utc)
-    return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now), eclipses=eclipse_list(),
+    return render_template("calendar.html", phases=moon_phase_events(), showers=upcoming_showers(now), eclipses=eclipse_list(), kp=kp_status(),
                            title="Calendar", section="calendar")
 
 # ---------- Offline support (installable app) ----------
