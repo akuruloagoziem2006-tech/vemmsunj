@@ -39,6 +39,10 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 - Possible eclipses for the next 12 months.
 - Space weather: the current planetary Kp index from NOAA, with a plain-language level.
 
+**Aurora**
+- A map of NOAA's OVATION aurora forecast, drawn as a green overlay. Brighter means a higher chance.
+- Open a place from its page to see the forecast chance at that location.
+
 **Automated posts**
 - **VEMMSUNJ_BOT** posts once a day for each place that has passes in the next 24 hours, with a schematic chart. It skips places where the sun is still up. Every bot post is labelled "Automated."
 - The bot also posts one Earth image a day from NASA's EPIC camera, with credit to NASA. NASA images are public domain.
@@ -128,6 +132,7 @@ After the first deploy, load the planetary data once:
 - Star data: Yale Bright Star Catalogue, public domain (not yet loaded).
 - Sky conditions: weather forecast data from Open-Meteo, licensed under CC BY 4.0.
 - Space weather: planetary Kp index from NOAA Space Weather Prediction Center, public domain.
+- Aurora forecast: NOAA Space Weather Prediction Center, OVATION model, public domain.
 
 ## Status
 
