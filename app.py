@@ -3410,7 +3410,7 @@ def calendar_page():
 MANIFEST = {
     "name": "VEMMSUNJ",
     "short_name": "VEMMSUNJ",
-    "start_url": "/listings",
+    "start_url": "/",
     "display": "standalone",
     "background_color": "#0A0D12",
     "theme_color": "#0A0D12",
@@ -3424,8 +3424,9 @@ ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>"""
 
 SERVICE_WORKER = r"""
-const VERSION = "vemmsunj-v1";
+const VERSION = "vemmsunj-v2";
 const CACHEABLE = [
+  /^\/$/,
   /^\/listings$/,
   /^\/places\/\d+$/,
   /^\/calendar$/,
@@ -3443,7 +3444,7 @@ function cacheable(url) {
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(VERSION)
-      .then(function (c) { return c.addAll(["/listings", "/calendar", "/icon.svg"]); })
+      .then(function (c) { return c.addAll(["/", "/listings", "/calendar", "/icon.svg"]); })
       .catch(function () {})
       .then(function () { return self.skipWaiting(); })
   );
