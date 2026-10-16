@@ -647,6 +647,11 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 }
 #map { width: 100%; }
 </style>
+<style>
+.feed { margin-left: 0; margin-right: auto; max-width: 40rem; }
+.feed .entry { text-align: left; }
+.feed .entry img { margin-left: 0; margin-right: auto; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1091,6 +1096,7 @@ fetch("/api/listings")
 
 "feed.html": """{% extends "base.html" %}
 {% block content %}
+<div class="feed">
 <h1>Sightings</h1>
 <nav class="tabs">
   <a href="/posts" {% if view != 'following' %}aria-current="page"{% endif %}>All</a>
@@ -1145,6 +1151,7 @@ fetch("/api/listings")
 {% else %}
 {% if view == 'following' %}<p>Nobody you follow has posted yet.</p>{% else %}<div class="place"><p><strong>Be the first to log a sky sighting.</strong></p><p class="meta">Add place and time so the app can help identify what you saw.</p></div>{% endif %}
 {% endfor %}
+</div>
 {% endblock %}
 """,
 
