@@ -632,6 +632,13 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
   .place-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
+<style>
+.map-full { margin-left: -1.25rem; margin-right: -1.25rem; }
+#map { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
+@media (max-width: 480px) {
+  .map-full { margin-left: -1rem; margin-right: -1rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -943,7 +950,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% block content %}
 <h1>Map</h1>
 <p class="meta">Tap a pin to see its next passes. Times are UTC.</p>
-<div id="map"></div>
+<div class="map-full"><div id="map"></div></div>
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
