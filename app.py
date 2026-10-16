@@ -589,6 +589,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
     <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
+    <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
     <button id="redlight" class="btn quiet" type="button">Red light: off</button>
@@ -1961,7 +1962,78 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES, **COMPASS_TEMPLATES})
+AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
+{% block content %}
+<h1>Aurora</h1>
+<p class="meta">NOAA's forecast of where aurora is likely to be seen. Brighter green means a higher chance.</p>
+{% if kp %}<p>Planetary Kp index: <strong>{{ kp['kp'] }}</strong>. {{ kp['level'] }}.</p>{% endif %}
+{% if place %}<p>Place: <strong>{{ place['name'] }}</strong>. <a href="/places/{{ place['id'] }}">Back to place</a></p>{% endif %}
+<p class="meta" id="aurora-place"></p>
+<div id="map" style="height:60vh;border:1px solid var(--rule);border-radius:4px"></div>
+<p class="meta" id="aurora-status" role="status" aria-live="polite"></p>
+<p class="meta">Forecast: NOAA Space Weather Prediction Center, OVATION model (public domain). Updated about every 30 minutes.</p>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  var PLACE = {% if place %}{ lat: {{ place['latitude'] }}, lon: {{ place['longitude'] }}, name: {{ place['name']|tojson }} }{% else %}null{% endif %};
+  var statusEl = document.getElementById("aurora-status");
+  var placeEl = document.getElementById("aurora-place");
+  var map = L.map("map", { minZoom: 1 }).setView([50, -30], 2);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
+  if (PLACE) {
+    L.marker([PLACE.lat, PLACE.lon]).addTo(map).bindTooltip(PLACE.name);
+    map.setView([PLACE.lat, PLACE.lon], 3);
+  }
+  fetch("/api/aurora", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.error) { statusEl.textContent = d.error; return; }
+      var W = 360, H = 180;
+      var c = document.createElement("canvas");
+      c.width = W;
+      c.height = H;
+      var ctx = c.getContext("2d");
+      var img = ctx.createImageData(W, H);
+      var lookup = {};
+      d.points.forEach(function (p) {
+        var lon = p[0], lat = p[1], prob = p[2];
+        var x = Math.min(W - 1, Math.max(0, Math.round(lon + 180)));
+        var y = Math.min(H - 1, Math.max(0, Math.round(90 - lat)));
+        var i = (y * W + x) * 4;
+        img.data[i] = 120;
+        img.data[i + 1] = 255;
+        img.data[i + 2] = 170;
+        img.data[i + 3] = Math.round(prob / 100 * 210);
+        lookup[Math.round(lon) + "," + Math.round(lat)] = prob;
+      });
+      ctx.putImageData(img, 0, 0);
+      if (d.points.length) {
+        L.imageOverlay(c.toDataURL("image/png"), [[-90, -180], [90, 180]], {
+          opacity: 0.85, interactive: false
+        }).addTo(map);
+        statusEl.textContent = "Observed " + d.observed + ", forecast " + d.forecast + " (UTC).";
+      } else {
+        statusEl.textContent = "No aurora is forecast right now.";
+      }
+      if (PLACE) {
+        var prob = lookup[Math.round(PLACE.lon) + "," + Math.round(PLACE.lat)] || 0;
+        placeEl.textContent = "Forecast chance of aurora at " + PLACE.name + ": " + prob + "% (nearest 1-degree grid point).";
+      }
+    })
+    .catch(function () {
+      statusEl.textContent = "The aurora forecast can't be loaded right now.";
+    });
+})();
+</script>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES, **COMPASS_TEMPLATES, **AURORA_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -2496,6 +2568,42 @@ def compass_page():
     if place is None:
         abort(404)
     return render_template("compass.html", place=place, title="Star compass", section="compass")
+
+# ---------- Aurora forecast (NOAA OVATION, public domain) ----------
+AURORA_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
+
+def aurora_grid():
+    body = cache_get("aurora", 900)
+    if body is None:
+        r = requests.get(AURORA_URL, timeout=20)
+        r.raise_for_status()
+        raw = json.loads(r.text)
+        pts = []
+        for lon, lat, prob in raw.get("coordinates", []):
+            if prob and prob > 0:
+                lo = lon - 360 if lon > 180 else lon
+                pts.append([lo, lat, int(prob)])
+        body = json.dumps({"observed": raw.get("Observation Time", ""),
+                           "forecast": raw.get("Forecast Time", ""),
+                           "points": pts})
+        cache_put("aurora", body)
+    return json.loads(body)
+
+@app.route("/api/aurora")
+def api_aurora():
+    try:
+        return jsonify(aurora_grid())
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        print(f"aurora error: {e}", flush=True)
+        return jsonify({"error": "The aurora forecast isn't available right now. Try again in a few minutes."}), 502
+
+@app.route("/aurora")
+def aurora_page():
+    pid = request.args.get("place", "").strip()
+    place = None
+    if pid.isdigit():
+        place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?", (int(pid),)).fetchone()
+    return render_template("aurora.html", place=place, kp=kp_status(), title="Aurora", section="aurora")
 
 # ---------- Routes: places ----------
 @app.route("/")
