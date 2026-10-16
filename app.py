@@ -612,6 +612,12 @@ main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
 .brand-panel { left: 0; right: auto; top: 2.2rem; min-width: 13rem; }
 .brandmenu:not([open]) > .brand-panel { display: none; }
 </style>
+<style>
+main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25rem; padding-right: 1.25rem; }
+@media (max-width: 480px) {
+  main { padding-left: 1rem; padding-right: 1rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
