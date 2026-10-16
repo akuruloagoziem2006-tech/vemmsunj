@@ -663,6 +663,14 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 <style>
 .calendar-page { margin-left: 0; margin-right: auto; max-width: 40rem; }
 </style>
+<style>
+.globe-full {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+.globe-full .globe-wrap { border-radius: 0; border-left: 0; border-right: 0; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1303,7 +1311,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 {% block content %}
 <h1>Globe</h1>
 <p class="meta">Real satellite positions from the stations group, drawn over a rotating Earth. Countries under each satellite's path are shaded red. Drag to turn the globe and scroll to zoom.</p>
-<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"><div id="globe-loading" class="globe-loading">Loading globe…</div></div>
+<div class="globe-full"><div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"><div id="globe-loading" class="globe-loading">Loading globe…</div></div></div>
 <p class="meta" id="globe-status" role="status" aria-live="polite"></p>
 <p class="meta" id="country-status"></p>
 <div class="globe-controls">
@@ -1806,6 +1814,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     camDist = Math.max(1.6, Math.min(10, camDist * (e.deltaY > 0 ? 1.1 : 0.9)));
   }, { passive: false });
 
+  setTimeout(resize, 250);
   var last = performance.now();
   function frame(now) {
     var dt = (now - last) / 1000;
