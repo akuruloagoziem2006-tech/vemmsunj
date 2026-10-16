@@ -652,6 +652,14 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 .feed .entry { text-align: left; }
 .feed .entry img { margin-left: 0; margin-right: auto; }
 </style>
+<style>
+.aurora-full {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+.aurora-full #map { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -2096,7 +2104,7 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
 {% if kp %}<p>Planetary Kp index: <strong>{{ kp['kp'] }}</strong>. {{ kp['level'] }}.</p>{% endif %}
 {% if place %}<p>Place: <strong>{{ place['name'] }}</strong>. <a href="/places/{{ place['id'] }}">Back to place</a></p>{% endif %}
 <p class="meta" id="aurora-place"></p>
-<div id="map" style="height:60vh;border:1px solid var(--rule);border-radius:4px"></div>
+<div class="aurora-full"><div id="map" style="height:60vh"></div></div>
 <p class="meta" id="aurora-status" role="status" aria-live="polite"></p>
 <p class="meta">Forecast: NOAA Space Weather Prediction Center, OVATION model (public domain). Updated about every 30 minutes.</p>
 {% endblock %}
@@ -2108,6 +2116,8 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   var statusEl = document.getElementById("aurora-status");
   var placeEl = document.getElementById("aurora-place");
   var map = L.map("map", { minZoom: 1 }).setView([50, -30], 2);
+  setTimeout(function () { map.invalidateSize(); }, 250);
+  window.addEventListener("resize", function () { map.invalidateSize(); });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
