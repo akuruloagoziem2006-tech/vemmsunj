@@ -917,6 +917,22 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp
 const map = L.map("map").setView([39.8, -98.6], 4);
 
 const satMarkers = {};
+function satSvg(iss) {
+  const panels = iss
+    ? '<rect x="2" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="8" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="27" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="33" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="2" y="18.6" width="36" height="1.4" fill="#D9DEE6"/>' +
+      '<rect x="15" y="16" width="10" height="6" fill="#C9A24A" stroke="#8C7A52" stroke-width=".5"/>' +
+      '<rect x="18" y="4" width="4" height="32" fill="#D9DEE6" stroke="#8C929C" stroke-width=".4"/>'
+    : '<rect x="2" y="15" width="14" height="10" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="24" y="15" width="14" height="10" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
+      '<rect x="16" y="12" width="8" height="16" rx="1" fill="#D9DEE6" stroke="#8C929C" stroke-width=".5"/>' +
+      '<rect x="18" y="6" width="4" height="6" fill="#C9A24A"/>';
+  return '<svg viewBox="0 0 40 40" width="100%" height="100%" style="transform-origin:50% 50%">' +
+    panels + '</svg>';
+}
 let satSnap = [];
 function groundAt(s, e) {
   const n = s.ground.length - 1;
@@ -946,9 +962,15 @@ function drawSats() {
       d.satellites.forEach(s => {
         if (!satMarkers[s.name]) {
           const iss = /ISS/i.test(s.name);
-          const col = iss ? "#C9553A" : "#E9E6DC";
-          satMarkers[s.name] = L.circleMarker([s.lat, s.lon], {
-            radius: iss ? 7 : 4, color: col, fillColor: col, fillOpacity: 0.9, weight: 1
+          const size = iss ? 34 : 22;
+          satMarkers[s.name] = L.marker([s.lat, s.lon], {
+            icon: L.divIcon({
+              className: "sat-icon",
+              html: satSvg(iss),
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2]
+            }),
+            keyboard: false
           }).bindTooltip(esc(s.name)).addTo(map);
         }
       });
@@ -959,7 +981,18 @@ function tickSats() {
   satSnap.forEach(o => {
     const e = (Date.now() - o.t0) / 1000;
     const m = satMarkers[o.s.name];
-    if (m) m.setLatLng(groundAt(o.s, e));
+    if (!m) return;
+    const here = groundAt(o.s, e);
+    const ahead = groundAt(o.s, e + 10);
+    m.setLatLng(here);
+    const dlat = ahead[0] - here[0];
+    let dlon = ahead[1] - here[1];
+    if (dlon > 180) dlon -= 360;
+    if (dlon < -180) dlon += 360;
+    const heading = Math.atan2(dlon * Math.cos(here[0] * Math.PI / 180), dlat) * 180 / Math.PI;
+    const el = m.getElement();
+    const svg = el && el.querySelector("svg");
+    if (svg) svg.style.transform = "rotate(" + heading.toFixed(1) + "deg)";
   });
 }
 setInterval(tickSats, 1000);
