@@ -618,6 +618,20 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
   main { padding-left: 1rem; padding-right: 1rem; }
 }
 </style>
+<style>
+.place-grid { display: grid; grid-template-columns: 1fr; gap: 1.2rem; margin: 1.2rem 0 2rem; }
+.place-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 1.1rem 1.1rem 1rem; display: flex; flex-direction: column; gap: .35rem;
+}
+.place-card h2 { font-size: 1.2rem; margin: 0 0 .2rem; }
+.place-card .meta { overflow-wrap: anywhere; }
+.card-actions { margin-top: auto; padding-top: .6rem; }
+.card-actions .btn.quiet { padding: .4rem .8rem; }
+@media (min-width: 560px) {
+  .place-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -733,16 +747,19 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   });
 })();
 </script>
+<div class="place-grid">
 {% for r in rows %}
-<article class="place" data-lat="{{ r['latitude'] }}" data-lon="{{ r['longitude'] }}">
+<article class="place-card" data-lat="{{ r['latitude'] }}" data-lon="{{ r['longitude'] }}">
   <h2><a href="/places/{{ r['id'] }}">{{ r['name'] }}</a></h2>
   {% if r['address'] %}<div class="meta">{{ r['address'] }}</div>{% endif %}
   <div class="meta">{{ '%.4f'|format(r['latitude']) }}, {{ '%.4f'|format(r['longitude']) }}</div>
   {% if r['website'] %}<div class="meta"><a href="{{ r['website'] }}">Website</a></div>{% endif %}
+  <div class="card-actions"><a class="btn quiet" href="/places/{{ r['id'] }}">Open place</a></div>
 </article>
 {% else %}
 <p>No places in this list yet. <a href="/listings/new">Add one</a>.</p>
 {% endfor %}
+</div>
 <section class="recent">
   <h2>Recent sightings</h2>
   {% for s in recent %}
