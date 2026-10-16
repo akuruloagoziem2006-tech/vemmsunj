@@ -639,6 +639,14 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
   .map-full { margin-left: -1rem; margin-right: -1rem; }
 }
 </style>
+<style>
+.map-full {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+#map { width: 100%; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -957,6 +965,8 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 <script>
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const map = L.map("map").setView([39.8, -98.6], 4);
+setTimeout(function () { map.invalidateSize(); }, 250);
+window.addEventListener("resize", function () { map.invalidateSize(); });
 
 const satMarkers = {};
 function satSvg(iss) {
