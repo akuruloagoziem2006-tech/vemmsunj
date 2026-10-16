@@ -603,11 +603,33 @@ main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
   .actions .btn { flex: 1 1 100%; }
 }
 </style>
+<style>
+.brandmenu { position: relative; }
+.brandmenu summary { list-style: none; cursor: pointer; }
+.brandmenu summary::-webkit-details-marker { display: none; }
+.brandmenu summary .caret { font-size: .8em; color: var(--muted); }
+.brandmenu[open] summary .caret { color: var(--accent); }
+.brand-panel { left: 0; right: auto; top: 2.2rem; min-width: 13rem; }
+.brandmenu:not([open]) > .brand-panel { display: none; }
+</style>
 </head>
 <body>
 <header class="site">
   <div class="brandbox">
-    <a class="brand" href="/">VEMMSUNJ</a>
+    <details class="brandmenu">
+      <summary class="brand">VEMMSUNJ <span class="caret" aria-hidden="true">▾</span></summary>
+      <div class="menu-panel brand-panel">
+        <a href="/">Home</a>
+        <a href="/listings">Places</a>
+        <a href="/map">Map</a>
+        <a href="/posts">Sightings</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/globe">Globe</a>
+        <a href="/aurora">Aurora</a>
+        {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
+        <button id="redlight" class="btn quiet" type="button">Red light: off</button>
+      </div>
+    </details>
     <span class="tagline">Sky-watching map for observatories, satellite passes, and sightings</span>
     <span class="steps">Pick a place → check tonight's passes → log what you saw</span>
   </div>
@@ -616,16 +638,6 @@ main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
-    <details class="menu">
-      <summary>More</summary>
-      <div class="menu-panel">
-        <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
-        <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
-        <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
-        {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
-        <button id="redlight" class="btn quiet" type="button">Red light: off</button>
-      </div>
-    </details>
   </nav>
 </header>
 <div class="planets" aria-hidden="true">
