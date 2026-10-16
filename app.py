@@ -577,23 +577,55 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 </style>
 {% block head %}{% endblock %}
+<style>
+.steps { color: var(--muted); font-size: .85rem; }
+.menu { position: relative; }
+.menu summary { color: var(--muted); cursor: pointer; list-style: none; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu[open] summary { color: var(--text); }
+.menu-panel { position: absolute; right: 0; top: 2rem; z-index: 30; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .8rem; display: flex; flex-direction: column; gap: .6rem; min-width: 11rem; }
+.menu-panel a { color: var(--text); text-decoration: none; }
+.menu-panel a:hover { color: var(--accent); }
+.actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .8rem 0; }
+.actions .btn { min-width: 9rem; text-align: center; }
+.tonight-title { border-left: 4px solid var(--accent); padding-left: .7rem; }
+main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
+.place, .entry { padding: 1.4rem 0; }
+.globe-wrap { position: relative; }
+.globe-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); background: #05070B; z-index: 1; }
+.hero { padding: 1.5rem 0 .5rem; }
+.hero-title { font-size: 2.6rem; margin-bottom: .3rem; }
+.hero-lede { font-size: 1.15rem; color: var(--muted); margin: 0 0 .6rem; }
+.how { padding-left: 1.2rem; }
+.how li { margin: .5rem 0; }
+@media (max-width: 480px) {
+  .hero-title { font-size: 2.1rem; }
+  .actions .btn { flex: 1 1 100%; }
+}
+</style>
 </head>
 <body>
 <header class="site">
   <div class="brandbox">
-    <a class="brand" href="/listings">VEMMSUNJ</a>
+    <a class="brand" href="/">VEMMSUNJ</a>
     <span class="tagline">Sky-watching map for observatories, satellite passes, and sightings</span>
+    <span class="steps">Pick a place → check tonight's passes → log what you saw</span>
   </div>
-  <nav>
+  <nav class="primary">
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
-    <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
-    <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
-    <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
-    {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
-    <button id="redlight" class="btn quiet" type="button">Red light: off</button>
     {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
+    <details class="menu">
+      <summary>More</summary>
+      <div class="menu-panel">
+        <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
+        <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
+        <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
+        {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a>{% endif %}
+        <button id="redlight" class="btn quiet" type="button">Red light: off</button>
+      </div>
+    </details>
   </nav>
 </header>
 <div class="planets" aria-hidden="true">
@@ -638,11 +670,11 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <a href="/listings?category=observatory" {% if category == 'observatory' %}aria-current="page"{% endif %}>Observatories</a>
   <a href="/listings?category=dark-sky" {% if category == 'dark-sky' %}aria-current="page"{% endif %}>Dark-sky spots</a>
 </nav>
-<p>
+<div class="actions">
   <a class="btn" href="/listings/new">Add a place</a>
   <button id="nearme" class="btn quiet" type="button">Near me</button>
   <span id="nearme-status" class="meta" role="status" aria-live="polite"></span>
-</p>
+</div>
 <script>
 (function () {
   var btn = document.getElementById("nearme");
@@ -727,7 +759,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <h2>Passes from {{ at_label }} UTC</h2>
   <p class="meta">The next 24 hours from that time. Predictions use current orbit data, so they're less reliable further ahead.</p>
 {% else %}
-<h2>Tonight's best</h2>
+<h2 class="tonight-title">Tonight's best</h2>
 <p>{{ tonight['phase'] }}, {{ tonight['illum'] }}% lit.</p>
 {% if tonight['dark'] is none %}
   <p class="meta">Dark hours are unavailable right now.</p>
@@ -966,7 +998,7 @@ fetch("/api/listings")
       });
       bounds.push([r.latitude, r.longitude]);
     });
-    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 6 });
   });
 </script>
 {% endblock %}
@@ -1026,7 +1058,7 @@ fetch("/api/listings")
   </div>
 </article>
 {% else %}
-{% if view == 'following' %}<p>Nobody you follow has posted yet.</p>{% else %}<div class="place"><p><strong>Be the first to log a sky sighting.</strong></p><p class="meta">Add the place and time so the app can help identify what you saw.</p></div>{% endif %}
+{% if view == 'following' %}<p>Nobody you follow has posted yet.</p>{% else %}<div class="place"><p><strong>Be the first to log a sky sighting.</strong></p><p class="meta">Add place and time so the app can help identify what you saw.</p></div>{% endif %}
 {% endfor %}
 {% endblock %}
 """,
@@ -1166,7 +1198,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 {% block content %}
 <h1>Globe</h1>
 <p class="meta">Real satellite positions from the stations group, drawn over a rotating Earth. Countries under each satellite's path are shaded red. Drag to turn the globe and scroll to zoom.</p>
-<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"></div>
+<div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"><div id="globe-loading" class="globe-loading">Loading globe…</div></div>
 <p class="meta" id="globe-status" role="status" aria-live="polite"></p>
 <p class="meta" id="country-status"></p>
 <div class="globe-controls">
@@ -1192,6 +1224,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   var EARTH_RATE_DEG_PER_DAY = 360.98564736629;
   var COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
   var wrap = document.getElementById("globe");
+  var loadingEl = document.getElementById("globe-loading");
   var statusEl = document.getElementById("globe-status");
   var countryStatusEl = document.getElementById("country-status");
   var listEl = document.getElementById("sat-list");
@@ -1696,6 +1729,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     );
     camera.lookAt(cam);
     renderer.render(scene, camera);
+    if (loadingEl) { loadingEl.remove(); loadingEl = null; }
     requestAnimationFrame(frame);
   }
 
@@ -2033,7 +2067,45 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 
-app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES, **COMPASS_TEMPLATES, **AURORA_TEMPLATES})
+HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1 class="hero-title">VEMMSUNJ</h1>
+  <p class="hero-lede">Sky-watching map for observatories, satellite passes, and sightings.</p>
+  <div class="actions">
+    <a class="btn" href="/listings">Explore places</a>
+    <a class="btn quiet" href="/map">Open map</a>
+    <a class="btn quiet" href="/posts">Log a sighting</a>
+  </div>
+</section>
+<section>
+  <h2>How it works</h2>
+  <ol class="how">
+    <li><strong>Pick a place.</strong> Choose an observatory or a dark-sky spot.</li>
+    <li><strong>Check tonight's passes.</strong> See which satellites and planets are above it.</li>
+    <li><strong>Log what you saw.</strong> Add the place and time so the app can help identify it.</li>
+  </ol>
+</section>
+<section class="recent">
+  <h2>Recent sightings</h2>
+  {% for s in recent %}
+  <article class="entry">
+    <div class="meta">
+      <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
+      · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
+    </div>
+    <p>{{ s['body'] }}</p>
+    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="Schematic of satellite passes" width="100%">{% endif %}
+  </article>
+  {% else %}
+  <p>No sightings yet. <a href="/posts">Be the first to log one</a>.</p>
+  {% endfor %}
+  <p><a href="/posts">All sightings</a></p>
+</section>
+{% endblock %}
+"""}
+
+app.jinja_env.loader = DictLoader({**TEMPLATES, **LOG_TEMPLATES, **CAL_TEMPLATES, **ERR_TEMPLATES, **RECOVERY_TEMPLATES, **GLOBE_TEMPLATES, **COMPASS_TEMPLATES, **AURORA_TEMPLATES, **HOME_TEMPLATES})
 
 # ---------- Tonight's best ----------
 def sun_longitude_deg(d):
@@ -2608,7 +2680,11 @@ def aurora_page():
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
-    return redirect("/listings")
+    recent = get_db().execute(
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 3"
+    ).fetchall()
+    return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
 
 @app.route("/listings")
 def listings():
@@ -3487,6 +3563,39 @@ def api_globe():
 @app.route("/globe")
 def globe_page():
     return render_template("globe.html", title="Globe", section="globe")
+
+# ---------- Sightings alias ----------
+@app.route("/sightings")
+def sightings_alias():
+    qs = request.query_string.decode()
+    return redirect("/posts" + ("?" + qs if qs else ""))
+
+# ---------- Solid example sightings (reseeded once) ----------
+EXAMPLE_POSTS_V2 = [
+    ("Griffith Observatory", "Example sighting. A steady light moving from west to east about 20 minutes after sunset. Add the place and time, and the app checks which satellites were sunlit and above the horizon at that moment."),
+    ("Cherry Springs State Park", "Example sighting. A faint streak across the Milky Way, away from city lights. Dark-sky parks are good places to watch, because the sky stays dark for longer."),
+    ("Mauna Kea Observatories", "Example sighting. A short line of satellites crossing above the summit. Tonight's best on any place page lists the highest passes, so you know what to look for."),
+]
+
+def reseed_examples():
+    db = connect()
+    try:
+        db.execute("CREATE TABLE IF NOT EXISTS seed_flags (key TEXT PRIMARY KEY)")
+        if not db.execute("SELECT 1 FROM seed_flags WHERE key = ?", ("examples_v2",)).fetchone():
+            db.execute("DELETE FROM likes WHERE post_id IN (SELECT id FROM posts WHERE author = ?)", ("VEMMSUNJ",))
+            db.execute("DELETE FROM posts WHERE author = ?", ("VEMMSUNJ",))
+            for place, body in EXAMPLE_POSTS_V2:
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) "
+                    "SELECT ?, ?, id, NULL, NULL, ? FROM listings WHERE name = ?",
+                    ("VEMMSUNJ", body, "2026-10-10T00:00", place),
+                )
+            db.execute("INSERT INTO seed_flags (key) VALUES (?)", ("examples_v2",))
+        db.commit()
+    finally:
+        db.close()
+
+reseed_examples()
 
 if __name__ == "__main__":
     from waitress import serve
