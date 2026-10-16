@@ -660,6 +660,9 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 }
 .aurora-full #map { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
 </style>
+<style>
+.calendar-page { margin-left: 0; margin-right: auto; max-width: 40rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1215,6 +1218,7 @@ LOG_TEMPLATES = {"log.html": """{% extends "base.html" %}
 
 CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% block content %}
+<div class="calendar-page">
 <h1>Calendar</h1>
 <p class="meta">Times are UTC, rounded to the nearest hour. The next 60 days.</p>
 <h2>Moon phases</h2>
@@ -1234,7 +1238,7 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% if kp %}
 <div class="place"><strong>Planetary Kp index: {{ kp['kp'] }}</strong>
 <div class="meta">{{ kp['level'] }}. Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div></div>
-<p class="meta">Kp measures disturbance in Earth's magnetic field. Values of 5 and above can bring aurora to lower latitudes. An aurora map isn't included yet.</p>
+<p class="meta">Kp measures disturbance in Earth's magnetic field. Values of 5 and above can bring aurora to lower latitudes. See the Aurora page for the forecast map.</p>
 {% else %}
 <p class="meta">Space weather isn't available right now.</p>
 {% endif %}
@@ -1245,6 +1249,7 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% else %}
 <p>No possible eclipses in the next 12 months.</p>
 {% endfor %}
+</div>
 {% endblock %}
 """}
 
