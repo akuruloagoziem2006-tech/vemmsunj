@@ -2000,7 +2000,7 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
 {% block head %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
 {% block content %}
 <h1>Aurora</h1>
-<p class="meta">NOAA's forecast of where aurora is likely to be seen. Brighter green means a higher chance.</p>
+<p class="meta">NOAA's forecast of where aurora is likely to be seen. Brighter green means a higher chance. Hover over a country to see its name.</p>
 {% if kp %}<p>Planetary Kp index: <strong>{{ kp['kp'] }}</strong>. {{ kp['level'] }}.</p>{% endif %}
 {% if place %}<p>Place: <strong>{{ place['name'] }}</strong>. <a href="/places/{{ place['id'] }}">Back to place</a></p>{% endif %}
 <p class="meta" id="aurora-place"></p>
@@ -2019,6 +2019,21 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
+  var COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
+  fetch(COUNTRIES_URL)
+    .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.json(); })
+    .then(function (gj) {
+      L.geoJSON(gj, {
+        style: { color: "#8FB7D6", weight: 1, fillOpacity: 0 },
+        onEachFeature: function (f, layer) {
+          var name = (f.properties && (f.properties.name || f.properties.ADMIN)) || "";
+          if (name) layer.bindTooltip(name, { sticky: true });
+        }
+      }).addTo(map);
+    })
+    .catch(function () {
+      placeEl.textContent = "Country borders can't be loaded right now. The aurora forecast still works.";
+    });
   if (PLACE) {
     L.marker([PLACE.lat, PLACE.lon]).addTo(map).bindTooltip(PLACE.name);
     map.setView([PLACE.lat, PLACE.lon], 3);
@@ -2042,7 +2057,7 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
         img.data[i] = 120;
         img.data[i + 1] = 255;
         img.data[i + 2] = 170;
-        img.data[i + 3] = Math.round(prob / 100 * 210);
+        img.data[i + 3] = Math.min(235, Math.round(40 + prob * 5));
         lookup[Math.round(lon) + "," + Math.round(lat)] = prob;
       });
       ctx.putImageData(img, 0, 0);
