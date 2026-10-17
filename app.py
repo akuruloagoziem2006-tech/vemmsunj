@@ -734,6 +734,18 @@ th { color: var(--muted); font-weight: 600; }
 .place-card a { text-decoration: underline; text-underline-offset: .2em; }
 .place-grid { margin-top: 1.4rem; }
 </style>
+<style>
+/* Place page review */
+.table-wrap { overflow-x: auto; margin: .6rem 0 1rem; -webkit-overflow-scrolling: touch; }
+table.data { width: 100%; border-collapse: collapse; font-size: .9rem; font-variant-numeric: tabular-nums; }
+table.data th, table.data td { text-align: left; padding: .5rem .45rem; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.data th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+table.data tbody tr:last-child td { border-bottom: 0; }
+.strip { margin-top: 1rem; }
+.strip .tick span { font-size: .85rem; color: var(--muted); }
+.strip .now { border-left-color: var(--accent); }
+main h2 { margin-top: 2.6rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -942,10 +954,11 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% if weather %}
 <h2>Sky conditions</h2>
 <p class="meta">Average cloud cover for the next 6 hours: {{ weather['avg_cloud'] }}. Forecast by Open-Meteo (CC BY 4.0).</p>
-{% for r in weather['rows'] %}
-<div class="place"><strong>{{ r['time'] }} UTC</strong>
-<div class="meta">Cloud {{ r['cloud'] }} · visibility {{ r['vis'] }} · humidity {{ r['humidity'] }} · rain chance {{ r['rain'] }}</div></div>
-{% endfor %}
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Time (UTC)</th><th>Cloud</th><th>Visibility</th><th>Humidity</th><th>Rain</th></tr></thead>
+<tbody>
+{% for r in weather['rows'] %}<tr><td>{{ r['time'] }}</td><td>{{ r['cloud'] }}</td><td>{{ r['vis'] }}</td><td>{{ r['humidity'] }}</td><td>{{ r['rain'] }}</td></tr>{% endfor %}
+</tbody></table></div>
 {% endif %}
 {% if alarm_passes %}
 <h2>Pass reminders</h2>
@@ -1008,14 +1021,11 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
     {% for t in ticks %}<div class="tick" style="left: {{ t['left'] }}%"><span>{{ t['label'] }}</span></div>{% endfor %}
     {% for p in items %}<div class="pass" style="left: {{ p['left'] }}%; width: {{ p['width'] }}%" title="{{ p['satellite'] }}, {{ p['start'] }} UTC, peak {{ p['peak'] }} degrees"></div>{% endfor %}
   </div>
-  {% for p in items[:10] %}
-    <div class="place">
-      <strong>{{ p['satellite'] }}</strong>
-      <div class="meta">Starts {{ p['start'] }} UTC, peak {{ p['peak'] }} degrees</div>
-    </div>
-  {% else %}
-    <p>No passes in the next 24 hours.</p>
-  {% endfor %}
+  <div class="table-wrap"><table class="data">
+<thead><tr><th>Satellite</th><th>Starts (UTC)</th><th>Peak</th></tr></thead>
+<tbody>
+{% for p in items[:10] %}<tr><td>{{ p['satellite'] }}</td><td>{{ p['start'] }}</td><td>{{ p['peak'] }}°</td></tr>{% else %}<tr><td colspan="3">No passes in the next 24 hours.</td></tr>{% endfor %}
+</tbody></table></div>
 {% endif %}
 {% endblock %}
 """,
