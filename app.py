@@ -784,6 +784,30 @@ main h2 { margin-top: 2.6rem; }
 .leaflet-control-attribution a { color: var(--muted) !important; }
 .leaflet-tooltip { background: var(--surface); color: var(--text); border: 1px solid var(--rule); font-size: .85rem; }
 </style>
+<style>
+/* Globe review */
+.sat-list { gap: .5rem; margin: .6rem 0 1.2rem; }
+.sat-btn { font-size: .88rem; padding: .4rem .75rem; border-radius: 999px; }
+.sat-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.sat-btn[aria-pressed="true"]:hover { filter: brightness(1.05); }
+.sat-btn[aria-pressed="false"]:hover { border-color: var(--accent); color: var(--text); }
+.globe-controls { margin: .9rem 0 .4rem; }
+.globe-controls .btn { font-size: .9rem; }
+.globe-controls .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.globe-controls .btn[aria-pressed="false"] { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+.catnr-row { margin: 1.2rem 0 1.4rem; }
+.catnr-row label { display: block; margin-top: 0; }
+.catnr-line { display: flex; gap: .5rem; align-items: stretch; margin-top: .35rem; }
+.catnr-line input { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+.catnr-line .btn { margin-top: 0; white-space: nowrap; }
+#catnr-status { margin: .5rem 0 0; min-height: 1.2em; }
+#sat-info { padding: .9rem 1rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; min-height: 3rem; }
+#sat-info table.data th { width: 8.5rem; color: var(--muted); text-transform: none; letter-spacing: 0; font-size: .85rem; font-weight: 600; white-space: nowrap; }
+#sat-info table.data td { white-space: normal; font-size: .92rem; }
+#sat-info table.data td.wrap { line-height: 1.5; }
+#sat-info table.data tr:last-child th, #sat-info table.data tr:last-child td { border-bottom: 0; }
+#globe-status, #country-status { margin: .55rem 0 0; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1445,9 +1469,11 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 <div id="sat-list" class="sat-list"></div>
 <div class="catnr-row">
   <label for="catnr">Track any satellite by NORAD catalogue number</label>
-  <input id="catnr" name="catnr" inputmode="numeric" maxlength="9" placeholder="25544">
-  <p><button id="catnr-go" class="btn quiet" type="button">Track</button>
-  <span id="catnr-status" class="meta" role="status" aria-live="polite"></span></p>
+  <div class="catnr-line">
+    <input id="catnr" name="catnr" inputmode="numeric" maxlength="9" placeholder="for example 25544">
+    <button id="catnr-go" class="btn quiet" type="button">Track</button>
+  </div>
+  <p id="catnr-status" class="meta" role="status" aria-live="polite"></p>
 </div>
 <div id="sat-info" class="place meta">Choose a satellite to track it.</div>
 {% endblock %}
@@ -1771,7 +1797,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   function renderList() {
     listEl.textContent = "";
-    sats.forEach(function (s) {
+    sats.slice().sort(function (a, b) { return a.data.name.localeCompare(b.data.name); }).forEach(function (s) {
       var b = document.createElement("button");
       b.type = "button";
       b.className = "btn quiet sat-btn";
@@ -1807,15 +1833,20 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       var extra = selCountries.length > 15 ? " and " + (selCountries.length - 15) + " more" : "";
       rows.push(["Passing over", shown + extra]);
     }
+    var table = document.createElement("table");
+    table.className = "data";
     rows.forEach(function (r) {
-      var line = document.createElement("div");
-      line.className = "sat-info-row";
-      var label = document.createElement("strong");
-      label.textContent = r[0] + ": ";
-      line.appendChild(label);
-      line.appendChild(document.createTextNode(r[1]));
-      infoEl.appendChild(line);
+      var tr = document.createElement("tr");
+      var th = document.createElement("th");
+      th.textContent = r[0];
+      var td = document.createElement("td");
+      td.textContent = r[1];
+      if (r[0] === "Passing over") td.className = "wrap";
+      tr.appendChild(th);
+      tr.appendChild(td);
+      table.appendChild(tr);
     });
+    infoEl.appendChild(table);
   }
 
   var extras = [];
