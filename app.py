@@ -671,6 +671,58 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 }
 .globe-full .globe-wrap { border-radius: 0; border-left: 0; border-right: 0; }
 </style>
+<style>
+/* Professional pass: shared type, spacing, controls, cards, and footer. Layout and behaviour are unchanged. */
+body { line-height: 1.6; -webkit-font-smoothing: antialiased; }
+main { max-width: 44rem; padding-top: 2rem; padding-bottom: 3rem; }
+h1 { font-size: 2.1rem; letter-spacing: -0.02em; margin: 0 0 .4rem; }
+h2 { font-size: 1.3rem; margin: 2.4rem 0 .9rem; padding-bottom: .45rem; border-bottom: 1px solid var(--rule); }
+p { margin: .6rem 0; max-width: 68ch; }
+.meta { font-size: .9rem; line-height: 1.5; color: var(--muted); }
+a { text-underline-offset: .2em; }
+a:hover { text-decoration-thickness: 2px; }
+
+header.site { padding: 1rem 1.5rem; }
+header.site nav a { font-size: .95rem; }
+
+.btn { font-size: .95rem; font-weight: 600; letter-spacing: .01em; padding: .6rem 1.1rem; border-radius: 6px; transition: background .15s, color .15s, border-color .15s, transform .05s; }
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: translateY(1px); }
+.btn.quiet { font-weight: 500; }
+.btn.quiet:hover { border-color: var(--accent); color: var(--text); filter: none; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+button.btn { margin-top: .9rem; }
+
+label { font-size: .9rem; font-weight: 600; margin-top: 1.1rem; }
+input, select, textarea { margin-top: .35rem; border-radius: 6px; border-color: var(--rule); font-size: 1rem; padding: .55rem .7rem; }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.place, .entry { padding: 1.25rem 0; }
+.entry p { margin: .5rem 0; }
+.place-card { border-radius: 8px; padding: 1.25rem; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.place-card h2 { font-size: 1.2rem; margin: 0 0 .3rem; padding: 0; border: 0; }
+.note, .error { background: var(--surface); padding: .6rem .9rem; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+.tabs { border-bottom: 1px solid var(--rule); padding-bottom: .6rem; }
+.tabs a { font-size: .95rem; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--rule); font-size: .95rem; }
+th { color: var(--muted); font-weight: 600; }
+
+.site-footer { border-top: 1px solid var(--rule); margin-top: 3rem; padding: 1.5rem 0 2rem; color: var(--muted); font-size: .85rem; }
+.site-footer .inner { max-width: 44rem; padding: 0 1.25rem; margin: 0; }
+.site-footer p { margin: .3rem 0; max-width: none; }
+.site-footer a { color: var(--muted); }
+.site-footer a:hover { color: var(--text); }
+@media (max-width: 480px) {
+  main { padding-top: 1.5rem; }
+  h1 { font-size: 1.8rem; }
+  h2 { margin-top: 2rem; }
+  .site-footer .inner { padding: 0 1rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -710,6 +762,12 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
   <i style="--c:#3E66C9;--s:11px"></i>
 </div>
 <main>{% block content %}{% endblock %}</main>
+<footer class="site-footer">
+  <div class="inner">
+    <p><strong>VEMMSUNJ</strong> · Released under the MIT licence.</p>
+    <p>Data from CelesTrak, NASA JPL, NASA EPIC, NOAA Space Weather Prediction Center, Open-Meteo, OpenStreetMap, and Natural Earth. Full credits are in the README.</p>
+  </div>
+</footer>
 {% block scripts %}{% endblock %}
 <script>
 (function () {
