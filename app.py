@@ -762,6 +762,28 @@ main h2 { margin-top: 2.6rem; }
   .entry img { max-height: 18rem; }
 }
 </style>
+<style>
+/* Map page review */
+.map-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; font-size: .88rem; color: var(--muted); margin: .4rem 0 .9rem; }
+.map-legend span { display: inline-flex; align-items: center; }
+.sw { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin-right: .4rem; }
+.sw.pin { background: #2A81CB; }
+.sw.sat { background: #C9553A; }
+#map { height: 68vh; min-height: 360px; }
+@media (max-width: 480px) { #map { height: 62vh; min-height: 320px; } }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--text); border: 1px solid var(--rule); box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.leaflet-popup-content-wrapper { border-radius: 8px; }
+.leaflet-popup-content { margin: .85rem 1rem; font: .93rem/1.5 var(--sans); }
+.leaflet-popup-content b { font-family: var(--serif); font-size: 1.02rem; font-weight: 600; }
+.leaflet-popup-content hr { border: 0; border-top: 1px solid var(--rule); margin: .55rem 0; }
+.leaflet-popup-close-button { color: var(--muted) !important; }
+.leaflet-container a { color: var(--accent); }
+.leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--rule) !important; }
+.leaflet-control-zoom a:hover { background: var(--rule) !important; }
+.leaflet-control-attribution { background: rgba(10,13,18,.75) !important; color: var(--muted) !important; font-size: .7rem; }
+.leaflet-control-attribution a { color: var(--muted) !important; }
+.leaflet-tooltip { background: var(--surface); color: var(--text); border: 1px solid var(--rule); font-size: .85rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1077,6 +1099,10 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% block content %}
 <h1>Map</h1>
 <p class="meta">Tap a pin to see its next passes. Times are UTC.</p>
+<div class="map-legend" aria-label="Map key">
+  <span><span class="sw pin" aria-hidden="true"></span>Observatory or dark-sky spot</span>
+  <span><span class="sw sat" aria-hidden="true"></span>Satellite, moving along its ground track</span>
+</div>
 <div class="map-full"><div id="map"></div></div>
 {% endblock %}
 {% block scripts %}
