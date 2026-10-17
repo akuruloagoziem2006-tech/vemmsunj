@@ -746,6 +746,22 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .strip .now { border-left-color: var(--accent); }
 main h2 { margin-top: 2.6rem; }
 </style>
+<style>
+/* Sightings review */
+.composer { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem 1.1rem; margin: 1rem 0 1.6rem; }
+.composer textarea { min-height: 6.5rem; }
+.composer button.btn { margin-top: .8rem; }
+.entry { padding: 1.4rem 0; }
+.entry p { margin: .55rem 0; }
+.entry .meta { line-height: 1.5; }
+.entry form.inline { display: inline; margin: 0 .3rem 0 0; }
+.entry form.inline .btn.quiet { margin-top: 0; padding: .2rem .6rem; font-size: .85rem; }
+.entry img { max-height: 24rem; width: auto; max-width: 100%; height: auto; object-fit: contain; background: #000; border-radius: 6px; margin: .7rem 0 0; }
+@media (max-width: 480px) {
+  .composer { padding: .9rem; }
+  .entry img { max-height: 18rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -1201,6 +1217,7 @@ fetch("/api/listings")
   <a href="/posts?view=following" {% if view == 'following' %}aria-current="page"{% endif %}>Following</a>
 </nav>
 {% if username %}
+<section class="composer">
 <form method="post" action="/posts">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <p class="meta">Posting as {{ username }}</p>
@@ -1215,6 +1232,7 @@ fetch("/api/listings")
   <input id="seen_at" name="seen_at">
   <p><button class="btn" type="submit">Post sighting</button></p>
 </form>
+</section>
 {% else %}
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
 {% endif %}
@@ -1231,7 +1249,7 @@ fetch("/api/listings")
         <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
       </form>
     {% endif %}
-    <br>{{ p['created_at'] }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
+    <br>{{ p['created_at']|nice_time }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
   </div>
   <p>{{ p['body'] }}</p>
   {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="Schematic of satellite passes at {{ p['listing_name'] }}" width="100%">{% endif %}
@@ -3807,6 +3825,16 @@ def reseed_examples():
         db.close()
 
 reseed_examples()
+
+@app.template_filter("nice_time")
+def nice_time(value):
+    try:
+        when = datetime.fromisoformat(str(value))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return when.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    except (ValueError, TypeError):
+        return value
 
 if __name__ == "__main__":
     from waitress import serve
