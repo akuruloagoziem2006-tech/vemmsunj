@@ -723,6 +723,17 @@ th { color: var(--muted); font-weight: 600; }
   .site-footer .inner { padding: 0 1rem; }
 }
 </style>
+<style>
+/* Places page review */
+.seg { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--rule); border-radius: 8px; border-bottom: 1px solid var(--rule); margin: 0 0 1.2rem; }
+.seg a { padding: .45rem .95rem; border-radius: 6px; color: var(--muted); text-decoration: none; font-weight: 500; }
+.seg a:hover { color: var(--text); }
+.seg a[aria-current="page"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.place-card .meta { font-variant-numeric: tabular-nums; }
+.place-card .meta:nth-of-type(2) { color: var(--muted); font-size: .85rem; }
+.place-card a { text-decoration: underline; text-underline-offset: .2em; }
+.place-grid { margin-top: 1.4rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -795,7 +806,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 "places.html": """{% extends "base.html" %}
 {% block content %}
 <h1>{{ title }}</h1>
-<nav class="tabs">
+<nav class="tabs seg">
   <a href="/listings?category=observatory" {% if category == 'observatory' %}aria-current="page"{% endif %}>Observatories</a>
   <a href="/listings?category=dark-sky" {% if category == 'dark-sky' %}aria-current="page"{% endif %}>Dark-sky spots</a>
 </nav>
