@@ -1032,6 +1032,39 @@ header.site { position: relative; z-index: 2000; }
 {% block scripts %}{% endblock %}
 <script>
 (function () {
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.classList || !form.classList.contains("ajax")) return;
+    e.preventDefault();
+    var btn = form.querySelector("button");
+    if (btn) btn.disabled = true;
+    var isLike = form.action.indexOf("/like") !== -1;
+    fetch(form.action, {
+      method: "POST",
+      body: new FormData(form),
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "fetch" }
+    }).then(function (r) {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    }).then(function (d) {
+      if (isLike) {
+        btn.textContent = d.liked ? "Unlike" : "Like";
+        var text = form.closest(".entry").querySelector(".like-text");
+        if (text) text.textContent = d.count + (d.count === 1 ? " like" : " likes");
+      } else {
+        btn.textContent = d.following ? "Unfollow" : "Follow";
+      }
+      if (btn) btn.disabled = false;
+    }).catch(function () {
+      form.classList.remove("ajax");
+      form.submit();
+    });
+  });
+})();
+</script>
+<script>
+(function () {
   var root = document.documentElement;
   var btn = document.getElementById("redlight");
   if (localStorage.getItem("redlight") === "on") root.classList.add("redlight");
@@ -1473,7 +1506,7 @@ fetch("/api/listings")
     {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
     {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
     {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
-      <form class="inline" method="post" action="/follow/{{ p['author'] }}">
+      <form class="inline ajax" method="post" action="/follow/{{ p['author'] }}">
         <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
@@ -1485,9 +1518,9 @@ fetch("/api/listings")
   {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="Schematic of satellite passes at {{ p['listing_name'] }}" width="100%">{% endif %}
   {% if p['ai_explanation'] %}<p class="note">{{ p['ai_explanation'] }}</p>{% endif %}
   <div class="meta">
-    {{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}
+    <span class="like-text">{{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}</span>
     {% if username %}
-      <form class="inline" method="post" action="/posts/{{ p['id'] }}/like">
+      <form class="inline ajax" method="post" action="/posts/{{ p['id'] }}/like">
         <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['id'] in liked %}Unlike{% else %}Like{% endif %}</button>
@@ -3444,35 +3477,44 @@ def logout():
 @app.route("/follow/<username>", methods=["POST"])
 def follow(username):
     me = session.get("username")
+    wants_json = request.headers.get("X-Requested-With") == "fetch"
     if not me:
-        return redirect("/login")
+        return (jsonify({"error": "log in first"}), 401) if wants_json else redirect("/login")
     if username == me:
-        return redirect(safe_next(request.form.get("next", "")))
+        return jsonify({"following": False}) if wants_json else redirect(safe_next(request.form.get("next", "")))
     db = get_db()
     if not db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
         abort(404)
     if db.execute("SELECT 1 FROM follows WHERE follower = ? AND followee = ?", (me, username)).fetchone():
         db.execute("DELETE FROM follows WHERE follower = ? AND followee = ?", (me, username))
+        following = False
     else:
         db.execute("INSERT INTO follows (follower, followee) VALUES (?, ?)", (me, username))
+        following = True
     db.commit()
+    if wants_json:
+        return jsonify({"following": following})
     return redirect(safe_next(request.form.get("next", "")))
-
 @app.route("/posts/<int:post_id>/like", methods=["POST"])
 def toggle_like(post_id):
     me = session.get("username")
+    wants_json = request.headers.get("X-Requested-With") == "fetch"
     if not me:
-        return redirect("/login")
+        return (jsonify({"error": "log in first"}), 401) if wants_json else redirect("/login")
     db = get_db()
     if not db.execute("SELECT 1 FROM posts WHERE id = ?", (post_id,)).fetchone():
         abort(404)
     if db.execute("SELECT 1 FROM likes WHERE username = ? AND post_id = ?", (me, post_id)).fetchone():
         db.execute("DELETE FROM likes WHERE username = ? AND post_id = ?", (me, post_id))
+        liked = False
     else:
         db.execute("INSERT INTO likes (username, post_id) VALUES (?, ?)", (me, post_id))
+        liked = True
     db.commit()
-    return redirect(f"/posts#post-{post_id}")
-
+    if wants_json:
+        count = db.execute("SELECT COUNT(*) FROM likes WHERE post_id = ?", (post_id,)).fetchone()[0]
+        return jsonify({"liked": liked, "count": count})
+    return redirect(safe_next(request.form.get("next", "")))
 # ---------- Schematic pass charts ----------
 def bot_chart(place_name, upcoming):
     """A labeled schematic of up to three passes. Arc heights show peak altitude, not a real sky view."""
