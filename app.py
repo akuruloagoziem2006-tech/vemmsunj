@@ -961,6 +961,14 @@ main .btn { min-height: 2.6rem; }
   .map-legend { font-size: .95rem; }
 }
 </style>
+<style>
+/* The header and its menu sit above the map and every other layer */
+header.site { position: relative; z-index: 2000; }
+.brandmenu { z-index: 2000; }
+.brand-panel { z-index: 2001 !important; }
+.leaflet-container, .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 400 !important; }
+.leaflet-control-container { z-index: 800 !important; }
+</style>
 </head>
 <body>
 <header class="site">
