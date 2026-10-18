@@ -973,6 +973,17 @@ header.site { position: relative; z-index: 2000; }
 /* Aurora map: square, so the whole world fits with no grey bands */
 .aurora-full #map { height: 100vw !important; min-height: 0 !important; }
 </style>
+<style>
+/* Sightings restructure: feed first, composer on demand, actions in a row */
+.composer-wrap { margin: .4rem 0 1.4rem; }
+.composer-wrap > summary { list-style: none; cursor: pointer; display: inline-block; }
+.composer-wrap > summary::-webkit-details-marker { display: none; }
+.composer-wrap[open] > summary { margin-bottom: .8rem; }
+.entry { scroll-margin-top: 1rem; }
+.entry:target { background: var(--surface); border-radius: 6px; padding-left: .7rem; padding-right: .7rem; }
+.entry .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.entry .meta form.inline { margin: 0; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1432,6 +1443,8 @@ fetch("/api/listings")
   <a href="/posts?view=following" {% if view == 'following' %}aria-current="page"{% endif %}>Following</a>
 </nav>
 {% if username %}
+<details class="composer-wrap">
+<summary class="btn">Log a sighting</summary>
 <section class="composer">
 <form method="post" action="/posts">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -1448,18 +1461,20 @@ fetch("/api/listings")
   <p><button class="btn" type="submit">Post sighting</button></p>
 </form>
 </section>
+</details>
 {% else %}
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
 {% endif %}
 
 {% for p in posts %}
-<article class="entry">
+<article class="entry" id="post-{{ p[\'id\'] }}">
   <div class="meta">
     <strong>{{ p['author'] }}</strong>
     {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
     {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
     {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
       <form class="inline" method="post" action="/follow/{{ p['author'] }}">
+        <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
       </form>
@@ -1473,6 +1488,7 @@ fetch("/api/listings")
     {{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}
     {% if username %}
       <form class="inline" method="post" action="/posts/{{ p['id'] }}/like">
+        <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['id'] in liked %}Unlike{% else %}Like{% endif %}</button>
       </form>
@@ -3431,7 +3447,7 @@ def follow(username):
     if not me:
         return redirect("/login")
     if username == me:
-        return redirect("/posts")
+        return redirect(safe_next(request.form.get("next", "")))
     db = get_db()
     if not db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
         abort(404)
@@ -3440,7 +3456,7 @@ def follow(username):
     else:
         db.execute("INSERT INTO follows (follower, followee) VALUES (?, ?)", (me, username))
     db.commit()
-    return redirect("/posts")
+    return redirect(safe_next(request.form.get("next", "")))
 
 @app.route("/posts/<int:post_id>/like", methods=["POST"])
 def toggle_like(post_id):
@@ -3455,7 +3471,7 @@ def toggle_like(post_id):
     else:
         db.execute("INSERT INTO likes (username, post_id) VALUES (?, ?)", (me, post_id))
     db.commit()
-    return redirect("/posts")
+    return redirect(f"/posts#post-{post_id}")
 
 # ---------- Schematic pass charts ----------
 def bot_chart(place_name, upcoming):
@@ -4086,6 +4102,11 @@ def nice_time(value):
         return when.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
     except (ValueError, TypeError):
         return value
+
+def safe_next(value):
+    if value.startswith("/posts") and not value.startswith("//"):
+        return value
+    return "/posts"
 
 if __name__ == "__main__":
     from waitress import serve
