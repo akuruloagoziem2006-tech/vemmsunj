@@ -830,6 +830,32 @@ main h2 { margin-top: 2.6rem; }
 .colour-key .meta { margin: 0 0 0 .3rem; }
 .meta.note { background: var(--surface); border-left: 3px solid var(--rule); padding: .5rem .75rem; border-radius: 0 6px 6px 0; margin-top: .7rem; }
 </style>
+<style>
+/* Home and sign-in review */
+.hero { border-bottom: 1px solid var(--rule); padding-bottom: 1.6rem; margin-bottom: .4rem; }
+.hero .actions .btn { min-width: 10rem; text-align: center; }
+.how { list-style: none; padding: 0; margin: .6rem 0 0; counter-reset: step; }
+.how li {
+  counter-increment: step; position: relative; background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 8px; padding: .85rem 1rem .85rem 3.4rem; margin: .6rem 0;
+}
+.how li::before {
+  content: counter(step); position: absolute; left: .9rem; top: .85rem;
+  width: 1.75rem; height: 1.75rem; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: .9rem;
+}
+form[action="/login"], form[action="/signup"], form[action="/forgot"] {
+  max-width: 24rem; background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 1.2rem 1.3rem 1.3rem; margin-top: 1rem;
+}
+form[action="/login"] button.btn, form[action="/signup"] button.btn, form[action="/forgot"] button.btn {
+  width: 100%; margin-top: 1.2rem; padding: .7rem 1rem;
+}
+form[action="/login"] input, form[action="/signup"] input, form[action="/forgot"] input { max-width: 100%; }
+main > p a { text-underline-offset: .2em; }
+</style>
 </head>
 <body>
 <header class="site">
