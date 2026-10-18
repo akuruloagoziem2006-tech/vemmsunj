@@ -808,6 +808,15 @@ main h2 { margin-top: 2.6rem; }
 #sat-info table.data tr:last-child th, #sat-info table.data tr:last-child td { border-bottom: 0; }
 #globe-status, #country-status { margin: .55rem 0 0; }
 </style>
+<style>
+/* Calendar review */
+.kp-block { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 0 8px 8px 0; padding: .9rem 1rem; margin: .6rem 0 1rem; }
+.kp-block .kp-value { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+.kp-block .kp-level { font-weight: 600; margin: .25rem 0 .15rem; }
+.kp-block .meta { margin: 0; }
+.calendar-page table.data td:first-child { font-weight: 600; }
+.calendar-page .meta.note { background: var(--surface); border-left: 3px solid var(--rule); padding: .5rem .75rem; border-radius: 0 6px 6px 0; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1377,18 +1386,22 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 <h1>Calendar</h1>
 <p class="meta">Times are UTC, rounded to the nearest hour. The next 60 days.</p>
 <h2>Moon phases</h2>
-{% for e in phases %}
-<div class="place"><strong>{{ e['name'] }}</strong><div class="meta">{{ e['when'] }}</div></div>
-{% else %}
-<p>No phases found in this window.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Phase</th><th>Date (UTC)</th></tr></thead>
+<tbody>
+{% for e in phases %}<tr><td>{{ e['name'] }}</td><td>{{ e['when'] }}</td></tr>
+{% else %}<tr><td colspan="2">No phases found in this window.</td></tr>
 {% endfor %}
+</tbody></table></div>
 <h2>Meteor showers</h2>
 <p class="meta">Peak dates are approximate. They shift by a day or two from year to year, so check the International Meteor Organization for exact times.</p>
-{% for m in showers %}
-<div class="place"><strong>{{ m['name'] }}</strong><div class="meta">Around {{ m['when'] }}</div></div>
-{% else %}
-<p>No showers peak in the next 60 days.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Shower</th><th>Peak (about)</th></tr></thead>
+<tbody>
+{% for m in showers %}<tr><td>{{ m['name'] }}</td><td>{{ m['when'] }}</td></tr>
+{% else %}<tr><td colspan="2">No showers peak in the next 60 days.</td></tr>
 {% endfor %}
+</tbody></table></div>
 <h2>Space weather</h2>
 {% if kp %}
 <div class="place"><strong>Planetary Kp index: {{ kp['kp'] }}</strong>
@@ -1399,11 +1412,13 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% endif %}
 <h2>Possible eclipses</h2>
 <p class="meta">Next 12 months. This is a simplified check, so it can miss an eclipse or list one that doesn't happen. Times are approximate, within about an hour. Check a published eclipse table before planning.</p>
-{% for e in eclipses %}
-<div class="place"><strong>{{ e['name'] }}</strong><div class="meta">{{ e['when'] }} UTC</div></div>
-{% else %}
-<p>No possible eclipses in the next 12 months.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Eclipse</th><th>Date (UTC)</th></tr></thead>
+<tbody>
+{% for e in eclipses %}<tr><td>{{ e['name'] }}</td><td>{{ e['when'] }}</td></tr>
+{% else %}<tr><td colspan="2">No possible eclipses in the next 12 months.</td></tr>
 {% endfor %}
+</tbody></table></div>
 </div>
 {% endblock %}
 """}
