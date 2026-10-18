@@ -856,6 +856,60 @@ form[action="/login"] button.btn, form[action="/signup"] button.btn, form[action
 form[action="/login"] input, form[action="/signup"] input, form[action="/forgot"] input { max-width: 100%; }
 main > p a { text-underline-offset: .2em; }
 </style>
+<style>
+.compass-full {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+.compass-full #sky { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
+</style>
+<style>
+/* Compass alignment: full-width sky view, with text kept indented */
+main:has(#sky) { max-width: none; padding-left: 0; padding-right: 0; margin-left: 0; margin-right: 0; }
+main:has(#sky) > *:not(.compass-full) { margin-left: 1.25rem; margin-right: 1.25rem; }
+main:has(#sky) .compass-full { width: 100%; margin: 0; }
+main:has(#sky) .compass-full #sky { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
+@media (max-width: 480px) {
+  main:has(#sky) > *:not(.compass-full) { margin-left: 1rem; margin-right: 1rem; }
+}
+</style>
+<style>
+/* Compass: stop sideways overflow and let the sky fill its container */
+html:has(#sky), body:has(#sky) { overflow-x: hidden; max-width: 100%; }
+main:has(#sky) { width: 100%; box-sizing: border-box; }
+main:has(#sky) .compass-full { width: 100%; max-width: 100%; box-sizing: border-box; margin: 0; }
+main:has(#sky) #sky { display: block; width: 100%; max-width: 100%; box-sizing: border-box; }
+</style>
+<style>
+/* Responsive pass for every page */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { max-width: 100%; }
+img, svg, canvas, video, iframe { max-width: 100%; height: auto; }
+canvas { display: block; }
+main { width: 100%; max-width: 44rem; margin-left: 0; margin-right: auto; padding: 1.25rem; }
+@media (min-width: 768px) { main { padding: 2rem 2.25rem; } }
+main p, main li, main h1, main h2, main h3, main td, main th { overflow-wrap: anywhere; }
+input, select, textarea, button { max-width: 100%; }
+.actions, .tabs, .globe-controls, .sat-list, .map-legend, .menu-panel { flex-wrap: wrap; max-width: 100%; }
+.seg { display: flex; width: max-content; max-width: 100%; }
+.table-wrap { max-width: 100%; }
+.hero-title { font-size: clamp(1.8rem, 7vw, 2.6rem); }
+.place-grid { grid-template-columns: 1fr; }
+@media (min-width: 560px) { .place-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#map { max-width: 100%; }
+
+/* Compass: text stays indented, the slider fits its row, and the sky view runs edge to edge */
+main:has(#sky) { max-width: none; padding: 1.25rem; }
+main:has(#sky) > * { margin-left: 0 !important; margin-right: 0 !important; }
+main:has(#sky) > input[type=range] { display: block; width: 100% !important; margin: .4rem 0 0 !important; padding: 0; }
+main:has(#sky) .compass-full { width: auto !important; margin-left: -1.25rem !important; margin-right: -1.25rem !important; }
+main:has(#sky) .compass-full #sky { width: 100%; }
+@media (max-width: 480px) {
+  main:has(#sky) { padding: 1rem; }
+  main:has(#sky) .compass-full { margin-left: -1rem !important; margin-right: -1rem !important; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -2074,7 +2128,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   <button id="locate" class="btn quiet" type="button">Use my location</button>
 </p>
 <p class="meta" id="compass-status" role="status" aria-live="polite"></p>
-<canvas id="sky" style="width:100%;height:420px;display:block;border:1px solid var(--rule);border-radius:4px"></canvas>
+<div class="compass-full"><canvas id="sky" style="width:100%;height:420px;display:block"></canvas></div>
 <label for="corr">North correction: <span id="corr-val">0</span> degrees</label>
 <input id="corr" type="range" min="-180" max="180" value="0">
 <p class="meta">Compass north is magnetic and can be off by several degrees. Adjust this until a known object, such as the Moon when it's up, lines up with the sky.</p>
@@ -2307,6 +2361,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   window.addEventListener("resize", resize);
   resize();
   loadSky();
+  setTimeout(resize, 250);
   setInterval(loadSky, 60000);
   (function frame() {
     updateCamera();
