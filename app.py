@@ -969,6 +969,10 @@ header.site { position: relative; z-index: 2000; }
 .leaflet-container, .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 400 !important; }
 .leaflet-control-container { z-index: 800 !important; }
 </style>
+<style>
+/* Aurora map: square, so the whole world fits with no grey bands */
+.aurora-full #map { height: 100vw !important; min-height: 0 !important; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -2463,7 +2467,10 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   var PLACE = {% if place %}{ lat: {{ place['latitude'] }}, lon: {{ place['longitude'] }}, name: {{ place['name']|tojson }} }{% else %}null{% endif %};
   var statusEl = document.getElementById("aurora-status");
   var placeEl = document.getElementById("aurora-place");
-  var map = L.map("map", { minZoom: 1 }).setView([50, -30], 2);
+  var map = L.map("map", { maxZoom: 6, maxBoundsViscosity: 1.0 });
+  map.fitBounds([[-85, -180], [85, 180]], { animate: false });
+  map.setMinZoom(map.getZoom());
+  map.setMaxBounds([[-85, -180], [85, 180]]);
   setTimeout(function () { map.invalidateSize(); }, 250);
   window.addEventListener("resize", function () { map.invalidateSize(); });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
