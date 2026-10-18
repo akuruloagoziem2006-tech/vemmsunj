@@ -817,6 +817,19 @@ main h2 { margin-top: 2.6rem; }
 .calendar-page table.data td:first-child { font-weight: 600; }
 .calendar-page .meta.note { background: var(--surface); border-left: 3px solid var(--rule); padding: .5rem .75rem; border-radius: 0 6px 6px 0; }
 </style>
+<style>
+/* Aurora review */
+.lede { font-size: 1.05rem; color: var(--text); margin: .4rem 0 .2rem; }
+.kp-block { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 0 8px 8px 0; padding: .9rem 1rem; margin: 1rem 0; }
+.kp-block .kp-value { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+.kp-block .kp-level { font-weight: 600; margin: .25rem 0 .15rem; }
+.kp-block .meta { margin: 0; }
+.colour-key { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .7rem 0 .9rem; }
+.colour-key .key-label { font-size: .8rem; color: var(--muted); }
+.colour-key .key-bar { width: 9rem; height: .6rem; border-radius: 3px; background: linear-gradient(90deg, rgba(120,255,170,.15), rgba(120,255,170,.9)); border: 1px solid var(--rule); }
+.colour-key .meta { margin: 0 0 0 .3rem; }
+.meta.note { background: var(--surface); border-left: 3px solid var(--rule); padding: .5rem .75rem; border-radius: 0 6px 6px 0; margin-top: .7rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -2283,13 +2296,24 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
 {% block head %}<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
 {% block content %}
 <h1>Aurora</h1>
-<p class="meta">NOAA's forecast of where aurora is likely to be seen. Brighter green means a higher chance. Hover over a country to see its name.</p>
-{% if kp %}<p>Planetary Kp index: <strong>{{ kp['kp'] }}</strong>. {{ kp['level'] }}.</p>{% endif %}
+<p class="lede">NOAA's forecast of where aurora is likely to be seen.</p>
+<p class="meta">Brighter green means a higher chance. Hover over a country to see its name.</p>
+{% if kp %}
+<div class="kp-block">
+  <div class="kp-value">Kp {{ kp['kp'] }}</div>
+  <div class="kp-level">{{ kp['level'] }}</div>
+  <div class="meta">Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div>
+</div>
+{% endif %}
+<div class="colour-key" aria-hidden="true">
+  <span class="key-label">Low</span><span class="key-bar"></span><span class="key-label">High</span>
+  <span class="meta">chance of aurora</span>
+</div>
 {% if place %}<p>Place: <strong>{{ place['name'] }}</strong>. <a href="/places/{{ place['id'] }}">Back to place</a></p>{% endif %}
-<p class="meta" id="aurora-place"></p>
+<p class="meta note" id="aurora-place"></p>
 <div class="aurora-full"><div id="map" style="height:60vh"></div></div>
 <p class="meta" id="aurora-status" role="status" aria-live="polite"></p>
-<p class="meta">Forecast: NOAA Space Weather Prediction Center, OVATION model (public domain). Updated about every 30 minutes.</p>
+<p class="meta note">Forecast: NOAA Space Weather Prediction Center, OVATION model (public domain). Updated about every 30 minutes.</p>
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
