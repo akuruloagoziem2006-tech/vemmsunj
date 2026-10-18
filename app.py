@@ -910,6 +910,37 @@ main:has(#sky) .compass-full #sky { width: 100%; }
   main:has(#sky) .compass-full { margin-left: -1rem !important; margin-right: -1rem !important; }
 }
 </style>
+<style>
+/* Full-circle globe: the box is square, so the sphere is never cut */
+.globe-full .globe-wrap { width: 100% !important; height: min(100vw, 90vh) !important; min-height: 0 !important; max-height: none; border-radius: 0; border-left: 0; border-right: 0; }
+.globe-full .globe-wrap canvas { width: 100% !important; height: 100% !important; }
+
+/* No sideways scrolling anywhere */
+body { overflow-x: hidden; }
+
+/* Visual pages: the picture runs edge to edge, and the text beside it stays indented */
+.map-full, .aurora-full, .globe-full {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+.map-full #map, .aurora-full #map { width: 100%; border-radius: 0; border-left: 0; border-right: 0; }
+
+/* Every page shares one heading and spacing scale */
+main h1 { font-size: clamp(1.7rem, 6vw, 2.1rem); margin-bottom: .5rem; }
+main h2 { font-size: clamp(1.15rem, 4.5vw, 1.3rem); margin-top: 2.2rem; }
+main > p, main > .meta { max-width: 42rem; }
+main p, main li { font-size: 1rem; line-height: 1.6; }
+main .meta { font-size: .9rem; }
+main .btn { min-height: 2.6rem; }
+
+/* Phones: controls and actions stack cleanly, and cards use the full width */
+@media (max-width: 560px) {
+  main .actions .btn, main .globe-controls .btn { flex: 1 1 auto; }
+  main .place-card { padding: 1rem; }
+  main .table-wrap { margin-left: -.25rem; margin-right: -.25rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -2042,7 +2073,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   var target = new THREE.Vector3();
   var cam = new THREE.Vector3();
-  var camAz = 0.6, camEl = 0.35, camDist = 4.2;
+  var camAz = 0.6, camEl = 0.35, camDist = 3.8;
   var dragging = false, lastX = 0, lastY = 0;
 
   function resize() {
@@ -2077,6 +2108,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   }, { passive: false });
 
   setTimeout(resize, 250);
+  if (window.ResizeObserver) { new ResizeObserver(function () { resize(); }).observe(wrap); }
   var last = performance.now();
   function frame(now) {
     var dt = (now - last) / 1000;
