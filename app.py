@@ -941,6 +941,26 @@ main .btn { min-height: 2.6rem; }
   main .table-wrap { margin-left: -.25rem; margin-right: -.25rem; }
 }
 </style>
+<style>
+/* Big screens: wider text column, three place cards, and visuals capped so they stay in proportion */
+@media (min-width: 900px) {
+  main { max-width: 56rem; padding: 2.5rem 3rem; }
+  main h1 { font-size: 2.4rem; }
+}
+@media (min-width: 1100px) {
+  main { max-width: 64rem; }
+  .place-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4rem; }
+}
+/* Globe: a full square up to 900px tall, so it never grows past the screen */
+.globe-full .globe-wrap { height: min(100vw, 80vh, 900px) !important; }
+/* Map and Aurora: keep the map a comfortable height on tall, wide screens */
+#map { height: min(68vh, 760px); }
+/* Compass sky view: height follows the screen, and the drawing keeps its proportion */
+#sky { height: min(60vh, 520px) !important; }
+@media (min-width: 900px) {
+  .map-legend { font-size: .95rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
