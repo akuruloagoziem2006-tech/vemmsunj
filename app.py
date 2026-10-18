@@ -2468,9 +2468,16 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   var statusEl = document.getElementById("aurora-status");
   var placeEl = document.getElementById("aurora-place");
   var map = L.map("map", { maxZoom: 6, maxBoundsViscosity: 1.0 });
-  map.fitBounds([[-85, -180], [85, 180]], { animate: false });
-  map.setMinZoom(map.getZoom());
-  map.setMaxBounds([[-85, -180], [85, 180]]);
+  function fitWorld() {
+    map.invalidateSize({ animate: false });
+    var z = map.getBoundsZoom([[-85, -180], [85, 180]], false);
+    map.setMinZoom(z);
+    map.setMaxBounds([[-85, -180], [85, 180]]);
+    map.setView([0, 0], z, { animate: false });
+  }
+  fitWorld();
+  setTimeout(fitWorld, 300);
+  window.addEventListener("resize", fitWorld);
   setTimeout(function () { map.invalidateSize(); }, 250);
   window.addEventListener("resize", function () { map.invalidateSize(); });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
