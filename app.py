@@ -4198,6 +4198,25 @@ def record_usage(resp):
     return resp
 
 # ---------- Usage page (administrators only) ----------
+@app.route("/admin/users/<username>/delete", methods=["POST"])
+def admin_delete_user(username):
+    me = (session.get("username") or "").lower()
+    if not me or me not in ADMIN_USERNAMES:
+        abort(404)
+    if username.lower() in ADMIN_USERNAMES or username in ("VEMMSUNJ", "VEMMSUNJ_BOT") or username.lower() == me:
+        abort(403)
+    db = get_db()
+    if db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone() is None:
+        abort(404)
+    db.execute("DELETE FROM likes WHERE username = ? OR post_id IN (SELECT id FROM posts WHERE author = ?)", (username, username))
+    db.execute("DELETE FROM follows WHERE follower = ? OR followee = ?", (username, username))
+    db.execute("DELETE FROM observations WHERE username = ?", (username,))
+    db.execute("DELETE FROM posts WHERE author = ?", (username,))
+    db.execute("DELETE FROM login_failures WHERE key = ?", (username.lower(),))
+    db.execute("DELETE FROM users WHERE username = ?", (username,))
+    db.commit()
+    return redirect("/admin")
+
 @app.route("/admin")
 def admin_page():
     me = (session.get("username") or "").lower()
@@ -4238,6 +4257,9 @@ def admin_page():
         "last_login": a["last_login"] or "never",
         "last_seen": a["last_seen"] or "never",
         "posts": posted.get(a["username"], 0),
+        "deletable": (a["username"].lower() not in ADMIN_USERNAMES
+                      and a["username"] not in ("VEMMSUNJ", "VEMMSUNJ_BOT")
+                      and a["username"].lower() != me),
     } for a in accounts]
     return render_template("admin.html", total_users=total_users, active24=active24,
                            posts_total=posts_total, signups=signups, daily=daily, top=top,
@@ -4262,9 +4284,9 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
 
 <h2>Accounts</h2>
 <div class="table-wrap"><table class="data">
-<thead><tr><th>User</th><th>Joined (UTC)</th><th>Last login</th><th>Last seen</th><th>Sightings</th></tr></thead>
+<thead><tr><th>User</th><th>Joined (UTC)</th><th>Last login</th><th>Last seen</th><th>Sightings</th><th></th></tr></thead>
 <tbody>
-{% for r in rows %}<tr><td>{{ r['username'] }}</td><td>{{ r['created_at'] }}</td><td>{{ r['last_login'] }}</td><td>{{ r['last_seen'] }}</td><td>{{ r['posts'] }}</td></tr>
+{% for r in rows %}<tr><td>{{ r['username'] }}</td><td>{{ r['created_at'] }}</td><td>{{ r['last_login'] }}</td><td>{{ r['last_seen'] }}</td><td>{{ r['posts'] }}</td><td>{% if r['deletable'] %}<form method="post" action="/admin/users/{{ r['username'] }}/delete" class="inline" onsubmit="return confirm('Remove this account and all its sightings, likes, follows and log entries? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Remove</button></form>{% else %}<span class="meta">protected</span>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">No accounts yet.</td></tr>
 {% endfor %}
 </tbody></table></div>
