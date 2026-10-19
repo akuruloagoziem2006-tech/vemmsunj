@@ -217,7 +217,7 @@ def inject_globals():
 
 @app.before_request
 def check_csrf():
-    if request.method == "POST":
+    if request.method == "POST" and not request.path.startswith("/api/cron/"):
         sent = request.form.get("csrf_token", "")
         expected = session.get("csrf", "")
         if not expected or not secrets.compare_digest(sent, expected):
