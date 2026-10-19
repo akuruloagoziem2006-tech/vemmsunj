@@ -1160,7 +1160,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="Schematic of satellite passes" width="100%">{% endif %}
+    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
   </article>
   {% else %}
   <p>No sightings yet.</p>
@@ -1515,7 +1515,7 @@ fetch("/api/listings")
     <br>{{ p['created_at']|nice_time }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
   </div>
   <p>{{ p['body'] }}</p>
-  {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="Schematic of satellite passes at {{ p['listing_name'] }}" width="100%">{% endif %}
+  {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="{% if p['image_svg'][:8] == 'https://' %}{{ p['body'][:200] }}{% else %}Schematic of satellite passes at {{ p['listing_name'] }}{% endif %}" width="100%">{% endif %}
   {% if p['ai_explanation'] %}<p class="note">{{ p['ai_explanation'] }}</p>{% endif %}
   <div class="meta">
     <span class="like-text">{{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}</span>
@@ -2848,7 +2848,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="Schematic of satellite passes" width="100%">{% endif %}
+    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
   </article>
   {% else %}
   <p>No sightings yet. <a href="/posts">Be the first to log one</a>.</p>
@@ -3438,7 +3438,7 @@ def aurora_page():
 @app.route("/")
 def index():
     recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, l.name AS listing_name "
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 8) = 'https://') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 3"
     ).fetchall()
     return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
@@ -3451,7 +3451,7 @@ def listings():
     title = "Observatories" if category == "observatory" else "Dark-sky spots"
     rows = get_db().execute("SELECT * FROM listings WHERE category = ? ORDER BY name", (category,)).fetchall()
     recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, l.name AS listing_name "
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 8) = 'https://') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 5"
     ).fetchall()
     return render_template("places.html", rows=rows, title=title, category=category, section="places", recent=recent)
