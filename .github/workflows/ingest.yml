@@ -9,3 +9,4 @@ jobs:
     steps:
       - name: Warm the data caches
         run: curl -fsS --max-time 240 -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://vemmsunj.vercel.app/api/cron/ingest
+# refreshed
