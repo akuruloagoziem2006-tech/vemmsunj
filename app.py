@@ -3461,9 +3461,10 @@ def login():
             ).fetchone()
             if row and check_password_hash(row["password_hash"], password):
                 clear_failures(key)
-                _db = get_db()
-                _db.execute("UPDATE users SET last_login = ? WHERE username = ?", (_now_iso(), row["username"]))
-                _db.commit()
+                if os.environ.get("VERCEL"):
+                    _db = get_db()
+                    _db.execute("UPDATE users SET last_login = ? WHERE username = ?", (_now_iso(), row["username"]))
+                    _db.commit()
                 session["username"] = row["username"]
                 return redirect("/posts")
             record_failure(key)
@@ -4174,6 +4175,8 @@ def _now_iso():
 @app.after_request
 def record_usage(resp):
     try:
+        if not os.environ.get("VERCEL"):
+            return resp
         if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
             return resp
         if request.path.startswith(SKIP_PREFIXES):
