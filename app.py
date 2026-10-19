@@ -3461,6 +3461,9 @@ def login():
             ).fetchone()
             if row and check_password_hash(row["password_hash"], password):
                 clear_failures(key)
+                _db = get_db()
+                _db.execute("UPDATE users SET last_login = ? WHERE username = ?", (_now_iso(), row["username"]))
+                _db.commit()
                 session["username"] = row["username"]
                 return redirect("/posts")
             record_failure(key)
@@ -4149,6 +4152,149 @@ def safe_next(value):
     if value.startswith("/posts") and not value.startswith("//"):
         return value
     return "/posts"
+
+# ---------- Usage statistics (counts only; no IP addresses) ----------
+_stats = connect()
+_stats.execute("""CREATE TABLE IF NOT EXISTS visits (
+    day TEXT NOT NULL,
+    path TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, path))""")
+_stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TEXT")
+_stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
+_stats.commit()
+_stats.close()
+
+ADMIN_USERNAMES = {u.strip().lower() for u in os.environ.get("ADMIN_USERNAMES", "").split(",") if u.strip()}
+SKIP_PREFIXES = ("/api/", "/static/", "/admin", "/sw.js", "/manifest", "/icon.svg", "/posts/")
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat(timespec="minutes")
+
+@app.after_request
+def record_usage(resp):
+    try:
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        if request.path.startswith(SKIP_PREFIXES):
+            return resp
+        page = re.sub(r"/\d+", "/:id", request.path)[:80]
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        db = get_db()
+        db.execute(
+            "INSERT INTO visits (day, path, hits) VALUES (?, ?, 1) "
+            "ON CONFLICT (day, path) DO UPDATE SET hits = visits.hits + 1",
+            (day, page),
+        )
+        me = session.get("username")
+        if me:
+            db.execute("UPDATE users SET last_seen = ? WHERE username = ?", (_now_iso(), me))
+        db.commit()
+    except Exception as e:
+        print(f"usage tracking error: {e}", flush=True)
+    return resp
+
+# ---------- Usage page (administrators only) ----------
+@app.route("/admin")
+def admin_page():
+    me = (session.get("username") or "").lower()
+    if not me or me not in ADMIN_USERNAMES:
+        abort(404)
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    since14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    since7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    cutoff24 = (now - timedelta(hours=24)).isoformat(timespec="minutes")
+    total_users = db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    active24 = db.execute("SELECT COUNT(*) AS n FROM users WHERE last_seen >= ?", (cutoff24,)).fetchone()["n"]
+    posts_total = db.execute(
+        "SELECT COUNT(*) AS n FROM posts WHERE author NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT')"
+    ).fetchone()["n"]
+    signups = db.execute(
+        "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM users "
+        "WHERE substr(created_at, 1, 10) >= ? GROUP BY substr(created_at, 1, 10) ORDER BY day DESC",
+        (since14,),
+    ).fetchall()
+    daily = db.execute(
+        "SELECT day, SUM(hits) AS hits FROM visits WHERE day >= ? GROUP BY day ORDER BY day DESC",
+        (since14,),
+    ).fetchall()
+    top = db.execute(
+        "SELECT path, SUM(hits) AS hits FROM visits WHERE day >= ? GROUP BY path ORDER BY hits DESC LIMIT 15",
+        (since7,),
+    ).fetchall()
+    accounts = db.execute(
+        "SELECT username, created_at, last_login, last_seen FROM users "
+        "ORDER BY COALESCE(last_seen, created_at) DESC LIMIT 200"
+    ).fetchall()
+    posted = {r["author"]: r["n"] for r in db.execute(
+        "SELECT author, COUNT(*) AS n FROM posts GROUP BY author").fetchall()}
+    rows = [{
+        "username": a["username"],
+        "created_at": a["created_at"],
+        "last_login": a["last_login"] or "never",
+        "last_seen": a["last_seen"] or "never",
+        "posts": posted.get(a["username"], 0),
+    } for a in accounts]
+    return render_template("admin.html", total_users=total_users, active24=active24,
+                           posts_total=posts_total, signups=signups, daily=daily, top=top,
+                           rows=rows, title="Usage", section="admin")
+
+ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
+{% block head %}
+<style>
+.stat-row { display: flex; flex-wrap: wrap; gap: .8rem; margin: 1rem 0 .4rem; }
+.stat { flex: 1 1 10rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: .9rem 1rem; display: flex; flex-direction: column; }
+.stat-n { font-family: var(--serif); font-size: 1.8rem; font-weight: 600; line-height: 1.1; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Usage</h1>
+<p class="meta">Visible only to site administrators. Visitors are counted per page and per day. IP addresses are not stored.</p>
+<div class="stat-row">
+  <div class="stat"><span class="stat-n">{{ total_users }}</span><span class="meta">accounts</span></div>
+  <div class="stat"><span class="stat-n">{{ active24 }}</span><span class="meta">active in the last 24 hours</span></div>
+  <div class="stat"><span class="stat-n">{{ posts_total }}</span><span class="meta">sightings from users</span></div>
+</div>
+
+<h2>Accounts</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>User</th><th>Joined (UTC)</th><th>Last login</th><th>Last seen</th><th>Sightings</th></tr></thead>
+<tbody>
+{% for r in rows %}<tr><td>{{ r['username'] }}</td><td>{{ r['created_at'] }}</td><td>{{ r['last_login'] }}</td><td>{{ r['last_seen'] }}</td><td>{{ r['posts'] }}</td></tr>
+{% else %}<tr><td colspan="5">No accounts yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>Signups, last 14 days</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Day (UTC)</th><th>New accounts</th></tr></thead>
+<tbody>
+{% for r in signups %}<tr><td>{{ r['day'] }}</td><td>{{ r['n'] }}</td></tr>
+{% else %}<tr><td colspan="2">No signups in the last 14 days.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>Page views per day, last 14 days</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Day (UTC)</th><th>Page views</th></tr></thead>
+<tbody>
+{% for r in daily %}<tr><td>{{ r['day'] }}</td><td>{{ r['hits'] }}</td></tr>
+{% else %}<tr><td colspan="2">No page views recorded yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>Most viewed pages, last 7 days</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Page</th><th>Views</th></tr></thead>
+<tbody>
+{% for r in top %}<tr><td>{{ r['path'] }}</td><td>{{ r['hits'] }}</td></tr>
+{% else %}<tr><td colspan="2">No page views recorded yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(ADMIN_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
