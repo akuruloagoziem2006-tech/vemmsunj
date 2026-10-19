@@ -1,11 +1,16 @@
 name: Refresh satellite and space-weather data
+
 on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
     steps:
       - name: Warm the data caches
-        run: curl -fsS --max-time 240 -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://vemmsunj.vercel.app/api/cron/ingest
+        run: |
+          curl -fsS --max-time 240 -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://vemmsunj.vercel.app/api/cron/ingest
