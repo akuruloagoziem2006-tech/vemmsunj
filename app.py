@@ -2232,22 +2232,61 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 """}
 
 COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
+{% block head %}
+<style>
+.compass-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .9rem 0 .4rem; }
+.sky-frame { position: relative; }
+.sky-tools { position: absolute; right: .6rem; top: .6rem; display: flex; flex-direction: column; gap: .35rem; }
+.sky-tools .btn { padding: .25rem .7rem; min-height: 2.2rem; background: var(--surface); color: var(--text); border: 1px solid var(--rule); font-size: 1.1rem; }
+.sun-warning { color: var(--accent); background: var(--surface); padding: .5rem .8rem; border-radius: 6px; margin: .6rem 0 0; font-size: .92rem; }
+.guide { margin: .7rem 0 0; padding: .6rem .85rem; background: var(--surface); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; font-size: .95rem; }
+[hidden] { display: none !important; }
+.compass-tune { margin-top: 1rem; }
+.filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0 .9rem; }
+.chip { font: inherit; font-size: .85rem; padding: .35rem .8rem; border-radius: 999px; border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.obj-row { display: flex; justify-content: space-between; align-items: center; gap: .8rem; padding: .85rem 0; border-bottom: 1px solid var(--rule); }
+.obj-row.targeted { background: var(--surface); border-radius: 6px; padding-left: .7rem; padding-right: .7rem; border-bottom-color: transparent; }
+.obj-info { min-width: 0; }
+.obj-actions { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: flex-end; }
+.obj-actions .btn { padding: .35rem .7rem; font-size: .85rem; min-height: 2.2rem; }
+.obj-empty { color: var(--muted); padding: .8rem 0; }
+</style>
+{% endblock %}
 {% block content %}
 <h1>Star compass</h1>
-<p class="meta">Point the back camera of your phone at the sky to see what's in front of it. Time is UTC.</p>
-<p class="meta">Place: {{ place['name'] }}. <a href="/places/{{ place['id'] }}">Back to place</a></p>
-<p>
+<p class="meta">Point the back camera at the sky. Time is UTC. Place: {{ place['name'] }}. <a href="/places/{{ place['id'] }}">Back to place</a></p>
+<div class="compass-actions">
   <button id="start" class="btn" type="button">Start compass</button>
   <button id="locate" class="btn quiet" type="button">Use my location</button>
-</p>
+</div>
 <p class="meta" id="compass-status" role="status" aria-live="polite"></p>
-<div class="compass-full"><canvas id="sky" style="width:100%;height:420px;display:block"></canvas></div>
-<label for="corr">North correction: <span id="corr-val">0</span> degrees</label>
-<input id="corr" type="range" min="-180" max="180" value="0">
-<p class="meta">Compass north is magnetic and can be off by several degrees. Adjust this until a known object, such as the Moon when it's up, lines up with the sky.</p>
-<h2>Above the horizon now</h2>
+<p class="sun-warning" id="sun-warning" hidden>The sun is up here, so most objects won't be visible. Try again after dark.</p>
+<div class="compass-full">
+  <div class="sky-frame">
+    <canvas id="sky"></canvas>
+    <div class="sky-tools">
+      <button id="zoom-in" class="btn" type="button" aria-label="Zoom in">+</button>
+      <button id="zoom-out" class="btn" type="button" aria-label="Zoom out">&minus;</button>
+    </div>
+  </div>
+</div>
+<div class="guide" id="guide" role="status" aria-live="polite" hidden></div>
+<div class="compass-tune">
+  <label for="corr">North correction: <span id="corr-val">0</span> degrees</label>
+  <input id="corr" type="range" min="-180" max="180" value="0">
+  <p class="meta">Compass north is magnetic and can be off by several degrees. Adjust until a known object lines up. On phones without a magnetic compass, tap I am pointing at this on an object you can see instead.</p>
+  <button id="reset-align" class="btn quiet" type="button">Reset alignment</button>
+</div>
+<h2>Objects</h2>
+<div class="filters" role="group" aria-label="Filter objects">
+  <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+  <button class="chip" type="button" data-filter="star" aria-pressed="false">Stars</button>
+  <button class="chip" type="button" data-filter="planet" aria-pressed="false">Planets and Moon</button>
+  <button class="chip" type="button" data-filter="satellite" aria-pressed="false">Satellites</button>
+</div>
 <div id="sky-list"></div>
-<p class="meta">Positions are calculated for this moment and refresh every minute. Stars use the built-in list unless the full catalogue is loaded.</p>
+<p class="meta">Tap a star in the sky, or tap Find on an object, to be guided to it. Positions refresh every minute.</p>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -2255,19 +2294,53 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   var LAT = {{ place['latitude'] }};
   var LON = {{ place['longitude'] }};
   var D = Math.PI / 180;
-  var HFOV = 35, VFOV = 26;
   var COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   var statusEl = document.getElementById("compass-status");
+  var sunEl = document.getElementById("sun-warning");
+  var guideEl = document.getElementById("guide");
   var canvas = document.getElementById("sky");
   var ctx = canvas.getContext("2d");
   var listEl = document.getElementById("sky-list");
   var corrEl = document.getElementById("corr");
   var corrVal = document.getElementById("corr-val");
-  var objects = [], orient = null, correction = 0, rawAz = 0, cam = { az: 0, alt: 0 }, absolute = false, gotAbsolute = false, tiltOnly = false, gotOrientation = false;
+
+  var objects = [], orient = null, correction = 0, rawAz = 0;
+  var cam = { az: 0, alt: 0 };
+  var fov = 35;
+  var target = null, filter = "all";
+  var absolute = false, gotAbsolute = false, tiltOnly = false, gotOrientation = false;
   var sensorTimer = null, attached = false;
 
   function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
   function dirName(az) { return COMPASS[Math.round(az / 45) % 8]; }
+  function vfov() { return fov * 26 / 35; }
+  function kindOf(o) { return o.kind === "moon" ? "planet" : o.kind; }
+  function idOf(o) { return o.kind + ":" + (o.name || Math.round(o.az) + "/" + Math.round(o.alt)); }
+  function findTarget() {
+    if (!target) return null;
+    for (var i = 0; i < objects.length; i++) {
+      if (idOf(objects[i]) === target) return objects[i];
+    }
+    return null;
+  }
+  function project(o) {
+    return { d: wrap180(o.az - cam.az) * Math.cos(cam.alt * D), da: o.alt - cam.alt };
+  }
+  function toScreen(p, W, H) {
+    return { x: W / 2 + p.d / fov * W / 2, y: H / 2 - p.da / vfov() * H / 2 };
+  }
+  function colorFor(o) {
+    if (o.kind === "moon") return "#E9E6DC";
+    if (o.kind === "planet") return "#E8C27A";
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? "#C9553A" : "#C9D6E8";
+    return "#E9E6DC";
+  }
+  function radiusFor(o) {
+    if (o.kind === "moon") return 7;
+    if (o.kind === "planet") return 5;
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? 6 : 4;
+    return Math.max(1.2, Math.min(6, 4 - 0.5 * (o.mag || 0)));
+  }
 
   function resize() {
     var dpr = window.devicePixelRatio || 1;
@@ -2276,7 +2349,6 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // Back camera direction from the W3C device orientation angles (Z-X-Y rotation).
   function updateCamera() {
     if (!orient) return;
     var a = (orient.alpha || 0) * D, b = (orient.beta || 0) * D, g = (orient.gamma || 0) * D;
@@ -2293,23 +2365,13 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     rawAz = (Math.atan2(east, north) / D + 360) % 360;
     cam.az = (rawAz + correction + 360) % 360;
   }
-  function colorFor(o) {
-    if (o.kind === "moon") return "#E9E6DC";
-    if (o.kind === "planet") return "#E8C27A";
-    if (o.kind === "satellite") return /ISS/i.test(o.name) ? "#C9553A" : "#C9D6E8";
-    return "#E9E6DC";
-  }
-
-  function radiusFor(o) {
-    if (o.kind === "moon") return 7;
-    if (o.kind === "planet") return 5;
-    if (o.kind === "satellite") return /ISS/i.test(o.name) ? 5 : 3;
-    return Math.max(1.2, Math.min(6, 4 - 0.5 * (o.mag || 0)));
-  }
 
   function drawSky() {
     var W = canvas.clientWidth, H = canvas.clientHeight;
-    ctx.fillStyle = "#05070B";
+    var bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#04060A");
+    bg.addColorStop(1, "#0B1018");
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
     if (!orient) {
       ctx.fillStyle = "#8C929C";
@@ -2317,63 +2379,130 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
       ctx.fillText("Tap Start compass to see the sky in front of your phone.", 16, H / 2);
       return;
     }
-    var hy = H / 2 + cam.alt / VFOV * H / 2;
-    if (hy >= 0 && hy <= H) {
+    var vf = vfov();
+
+    var hy = H / 2 + cam.alt / vf * H / 2;
+    if (hy < H) {
+      var gy = Math.max(0, hy);
+      ctx.fillStyle = "rgba(18,22,28,0.92)";
+      ctx.fillRect(0, gy, W, H - gy);
       ctx.strokeStyle = "#3A4452";
+      ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
-      ctx.fillStyle = "#8C929C"; ctx.font = "12px sans-serif";
+      ctx.fillStyle = "#8C929C";
+      ctx.font = "11px sans-serif";
       ctx.fillText("Horizon", 8, hy - 6);
     }
+
+    ctx.strokeStyle = "#1C2330";
+    ctx.fillStyle = "#5E6670";
+    ctx.font = "10px sans-serif";
+    [30, 60].forEach(function (a) {
+      var y = H / 2 - (a - cam.alt) / vf * H / 2;
+      if (y < 0 || y > H) return;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      ctx.fillText(a + "°", W - 30, y - 4);
+    });
+
+    [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(function (c) {
+      var d = wrap180(c[1] - cam.az);
+      if (Math.abs(d) > fov) return;
+      var x = W / 2 + d / fov * W / 2;
+      ctx.strokeStyle = "#2A313C";
+      ctx.beginPath(); ctx.moveTo(x, Math.max(0, hy - 8)); ctx.lineTo(x, Math.min(H, hy + 8)); ctx.stroke();
+      ctx.fillStyle = "#8C929C";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(c[0], x - 4, Math.max(14, Math.min(H - 6, hy + 22)));
+    });
+
     objects.forEach(function (o) {
-      var d = wrap180(o.az - cam.az) * Math.cos(cam.alt * D);
-      var da = o.alt - cam.alt;
-      if (Math.abs(d) > HFOV || Math.abs(da) > VFOV) return;
-      var x = W / 2 + d / HFOV * W / 2;
-      var y = H / 2 - da / VFOV * H / 2;
+      if (o.alt <= 0 || (filter !== "all" && kindOf(o) !== filter)) return;
+      var p = project(o);
+      if (Math.abs(p.d) > fov || Math.abs(p.da) > vf) return;
+      var s = toScreen(p, W, H);
       var r = radiusFor(o);
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = colorFor(o); ctx.fill();
-      if (o.name) {
-        ctx.fillStyle = "#E9E6DC"; ctx.font = "12px sans-serif";
-        ctx.fillText(o.name, x + r + 4, y + 4);
+      var col = colorFor(o);
+      if (o.kind === "satellite") {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x + r, s.y);
+        ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x, s.y + r);
+        ctx.stroke();
+      } else {
+        if (o.kind === "star" && o.mag < 1.5) {
+          var glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 3.5);
+          glow.addColorStop(0, "rgba(233,230,220,0.35)");
+          glow.addColorStop(1, "rgba(233,230,220,0)");
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(s.x, s.y, r * 3.5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+      }
+      if (o.name && (o.kind !== "star" || o.mag < 2.5)) {
+        ctx.fillStyle = "#E9E6DC";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(o.name, s.x + r + 4, s.y + 4);
       }
     });
-    ctx.strokeStyle = "#C9553A"; ctx.lineWidth = 1.5;
+
+    var t = findTarget();
+    if (t) {
+      var ts = toScreen(project(t), W, H);
+      if (ts.x >= 0 && ts.x <= W && ts.y >= 0 && ts.y <= H) {
+        ctx.strokeStyle = "#C9553A";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(ts.x, ts.y, 16, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        var dx = ts.x - W / 2, dy = ts.y - H / 2, m = 26;
+        var k = Math.min((W / 2 - m) / (Math.abs(dx) || 1e-6), (H / 2 - m) / (Math.abs(dy) || 1e-6));
+        ctx.save();
+        ctx.translate(W / 2 + dx * k, H / 2 + dy * k);
+        ctx.rotate(Math.atan2(dy, dx));
+        ctx.fillStyle = "#C9553A";
+        ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -8); ctx.lineTo(-8, 8); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    ctx.strokeStyle = "#C9553A";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(W / 2 - 14, H / 2); ctx.lineTo(W / 2 + 14, H / 2);
-    ctx.moveTo(W / 2, H / 2 - 14); ctx.lineTo(W / 2, H / 2 + 14);
+    ctx.moveTo(W / 2 - 12, H / 2); ctx.lineTo(W / 2 + 12, H / 2);
+    ctx.moveTo(W / 2, H / 2 - 12); ctx.lineTo(W / 2, H / 2 + 12);
     ctx.stroke();
-    ctx.fillStyle = "#8C929C"; ctx.font = "12px sans-serif";
+
+    ctx.fillStyle = "#8C929C";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("Field of view " + Math.round(fov * 2) + "°", 8, 16);
     ctx.fillText("Facing " + dirName(cam.az) + ", " + Math.round(cam.alt) + " degrees up", 8, H - 10);
   }
 
-  function renderList() {
-    listEl.textContent = "";
-    objects.filter(function (o) { return o.alt > 0; })
-      .sort(function (a, b) { return b.alt - a.alt; })
-      .slice(0, 30)
-      .forEach(function (o) {
-        var row = document.createElement("div");
-        row.className = "place";
-        var name = document.createElement("strong");
-        name.textContent = o.name || "Bright star";
-        row.appendChild(name);
-        var meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = o.kind + ", " + dirName(o.az) + ", " + Math.round(o.alt) + " degrees up";
-        row.appendChild(meta);
-        if (!absolute) {
-          var btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "btn quiet";
-          btn.textContent = "I am pointing at this";
-          btn.addEventListener("click", (function (obj) {
-            return function () { calibrate(obj); };
-          })(o));
-          row.appendChild(btn);
-        }
-        listEl.appendChild(row);
-      });
+  function updateGuide() {
+    var o = findTarget();
+    if (!o || !orient) { guideEl.hidden = true; return; }
+    guideEl.hidden = false;
+    var name = o.name || "that object";
+    var dAz = wrap180(o.az - cam.az);
+    var dAlt = o.alt - cam.alt;
+    if (Math.abs(dAz) <= 2 && Math.abs(dAlt) <= 2) {
+      guideEl.textContent = "On target: " + name + ". Tap I am pointing at this to lock the alignment.";
+      return;
+    }
+    var parts = [];
+    if (!tiltOnly && Math.abs(dAz) > 2) {
+      parts.push("turn " + (dAz > 0 ? "right" : "left") + " " + Math.round(Math.abs(dAz)) + "°");
+    }
+    if (Math.abs(dAlt) > 2) {
+      parts.push("tilt " + (dAlt > 0 ? "up" : "down") + " " + Math.round(Math.abs(dAlt)) + "°");
+    }
+    var text = parts.join(", then ");
+    if (tiltOnly) {
+      text = (parts.length ? text + ". " : "") + "Turn toward it, then tap I am pointing at this";
+    }
+    guideEl.textContent = "To " + name + ": " + text + ".";
   }
 
   function calibrate(o) {
@@ -2381,7 +2510,58 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     correction = wrap180(o.az - rawAz);
     corrEl.value = Math.round(correction);
     corrVal.textContent = Math.round(correction);
-    statusEl.textContent = "Aligned to " + (o.name || "that bright star") + ". Move the phone to check the other objects.";
+    statusEl.textContent = "Aligned to " + (o.name || "that star") + ". Check the other objects.";
+    updateGuide();
+  }
+
+  function renderList() {
+    listEl.textContent = "";
+    var rows = objects
+      .filter(function (o) { return o.alt > 0 && (filter === "all" || kindOf(o) === filter); })
+      .sort(function (a, b) { return b.alt - a.alt; })
+      .slice(0, 40);
+    if (!rows.length) {
+      var empty = document.createElement("p");
+      empty.className = "obj-empty";
+      empty.textContent = objects.length ? "Nothing above the horizon in this group right now." : "Loading objects...";
+      listEl.appendChild(empty);
+      return;
+    }
+    rows.forEach(function (o) {
+      var id = idOf(o);
+      var row = document.createElement("div");
+      row.className = "obj-row" + (id === target ? " targeted" : "");
+      var info = document.createElement("div");
+      info.className = "obj-info";
+      var name = document.createElement("strong");
+      name.textContent = o.name || "Bright star";
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = o.kind + ", " + dirName(o.az) + ", " + Math.round(o.alt) + " degrees up";
+      info.appendChild(name);
+      info.appendChild(meta);
+      var actions = document.createElement("div");
+      actions.className = "obj-actions";
+      var find = document.createElement("button");
+      find.type = "button";
+      find.className = "btn quiet";
+      find.textContent = id === target ? "Stop guiding" : "Find";
+      find.addEventListener("click", function () {
+        target = id === target ? null : id;
+        renderList();
+        updateGuide();
+      });
+      var point = document.createElement("button");
+      point.type = "button";
+      point.className = "btn quiet";
+      point.textContent = "I am pointing at this";
+      point.addEventListener("click", function () { calibrate(o); });
+      actions.appendChild(find);
+      actions.appendChild(point);
+      row.appendChild(info);
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
   }
 
   function loadSky() {
@@ -2390,7 +2570,9 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
       .then(function (d) {
         if (d.error) { statusEl.textContent = d.error; return; }
         objects = d.objects;
+        sunEl.hidden = !d.sun_up;
         renderList();
+        updateGuide();
         if (!orient) statusEl.textContent = "Sky as of " + d.time.replace("T", " ") + " UTC. Tap Start compass to scan the sky.";
       })
       .catch(function () { statusEl.textContent = "Sky data can't be loaded right now."; });
@@ -2411,7 +2593,6 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
       : "Move your phone slowly. Direction is relative, so tap I am pointing at this on a known object to line things up.";
   }
 
-  // Fallback for phones with no orientation events: the accelerometer measures gravity, which gives tilt.
   function onMotion(e) {
     if (gotOrientation) return;
     var g = e.accelerationIncludingGravity;
@@ -2426,6 +2607,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
     if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
     if (first) statusEl.textContent = "This phone can't sense turning, so up and down works but left and right doesn't. Turn to face an object, then tap I am pointing at this next to it.";
   }
+
   function attach() {
     if (attached) return;
     attached = true;
@@ -2437,6 +2619,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
       if (!orient) statusEl.textContent = "No motion readings yet. Check that motion sensors are allowed for this site in Chrome settings.";
     }, 4000);
   }
+
   function start() {
     var DOE = window.DeviceOrientationEvent;
     if (!DOE) { statusEl.textContent = "This device has no motion sensors. The list below still works."; return; }
@@ -2467,15 +2650,57 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
 
   document.getElementById("start").addEventListener("click", start);
   document.getElementById("locate").addEventListener("click", locate);
+  document.getElementById("zoom-in").addEventListener("click", function () { fov = Math.max(10, fov / 1.25); });
+  document.getElementById("zoom-out").addEventListener("click", function () { fov = Math.min(80, fov * 1.25); });
+  document.getElementById("reset-align").addEventListener("click", function () {
+    correction = 0;
+    corrEl.value = 0;
+    corrVal.textContent = 0;
+    statusEl.textContent = "Alignment reset. Point at a known object and tap I am pointing at this.";
+  });
   corrEl.addEventListener("input", function () {
     correction = Number(corrEl.value);
     corrVal.textContent = correction;
   });
+  document.querySelectorAll(".chip").forEach(function (b) {
+    b.addEventListener("click", function () {
+      filter = b.getAttribute("data-filter");
+      document.querySelectorAll(".chip").forEach(function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+      renderList();
+    });
+  });
+
+  canvas.addEventListener("click", function (e) {
+    if (!orient) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var W = canvas.clientWidth, H = canvas.clientHeight, vf = vfov();
+    var best = null, bestDist = 28;
+    objects.forEach(function (o) {
+      if (o.alt <= 0 || (filter !== "all" && kindOf(o) !== filter)) return;
+      var p = project(o);
+      if (Math.abs(p.d) > fov || Math.abs(p.da) > vf) return;
+      var s = toScreen(p, W, H);
+      var dist = Math.hypot(s.x - mx, s.y - my);
+      if (dist < bestDist) { bestDist = dist; best = o; }
+    });
+    if (best) {
+      target = idOf(best);
+      renderList();
+      updateGuide();
+      statusEl.textContent = "Guiding you to " + (best.name || "that star") + ".";
+    }
+  });
+
   window.addEventListener("resize", resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
   resize();
-  loadSky();
   setTimeout(resize, 250);
+  loadSky();
   setInterval(loadSky, 60000);
+  setInterval(updateGuide, 300);
   (function frame() {
     updateCamera();
     drawSky();
@@ -3157,7 +3382,11 @@ def api_sky():
     except Exception as e:
         print(f"sky error: {e}", flush=True)
         return jsonify({"error": "Sky data isn't available right now. Try again in a few minutes."}), 502
-    return jsonify({"time": now.isoformat(timespec="minutes"), "objects": objs})
+    try:
+        sun_up = sun_altitude_deg(lat, lon, now) > -6.0
+    except Exception:
+        sun_up = False
+    return jsonify({"time": now.isoformat(timespec="minutes"), "objects": objs, "sun_up": sun_up})
 
 @app.route("/compass")
 def compass_page():
