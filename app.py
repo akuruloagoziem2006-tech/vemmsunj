@@ -152,6 +152,8 @@ SEED = [
     ("Cherry Springs State Park", "dark-sky", "Cherry Springs Rd, Coudersport, PA", 41.6631, -77.8230, "https://www.dcnr.pa.gov"),
     ("Death Valley National Park", "dark-sky", "Furnace Creek, Death Valley, CA", 36.4637, -116.8669, "https://www.nps.gov/deva"),
     ("Natural Bridges National Monument", "dark-sky", "Lake Powell Blvd, Lake Powell, UT", 37.6021, -110.0229, "https://www.nps.gov/nabr"),
+    ("SALT, Sutherland Observatory", "observatory", "Sutherland, Northern Cape, South Africa", -32.3758, 20.8107, "https://salt.ac.za"),
+    ("Paranal Observatory (ESO)", "observatory", "Cerro Paranal, Atacama Desert, Chile", -24.6272, -70.4042, "https://www.eso.org/sci/facilities/paranal.html"),
 ]
 
 EXAMPLE_POSTS = [
@@ -466,6 +468,10 @@ TEMPLATES = {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}: VEMMSUNJ</title>
+<meta name="description" content="VEMMSUNJ is a sky-watching map for observatories and dark-sky spots, with satellite passes, planets, aurora forecasts, and sightings from people who log what they see.">
+<meta property="og:title" content="VEMMSUNJ: sky-watching map">
+<meta property="og:description" content="Find dark-sky places, check tonight's satellite passes and planets, and log what you saw.">
+<meta property="og:type" content="website">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0A0D12">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -984,6 +990,15 @@ header.site { position: relative; z-index: 2000; }
 .entry .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
 .entry .meta form.inline { margin: 0; }
 </style>
+<style>
+/* Lighter pages on phones */
+@media (max-width: 560px) {
+  .planet-pic { width: 2.4rem; height: 2.4rem; }
+  main .place { padding: 1rem 0; }
+}
+.near .btn { margin-top: .5rem; }
+.near .place { margin-top: .6rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -1160,7 +1175,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
+    {% if s['has_image'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
   </article>
   {% else %}
   <p>No sightings yet.</p>
@@ -1515,7 +1530,7 @@ fetch("/api/listings")
     <br>{{ p['created_at']|nice_time }}{% if p['listing_name'] %} at {{ p['listing_name'] }}{% endif %}{% if p['seen_at'] %}, seen {{ p['seen_at'] }}{% endif %}
   </div>
   <p>{{ p['body'] }}</p>
-  {% if p['image_svg'] %}<img src="/posts/{{ p['id'] }}/image.svg" alt="{% if p['image_svg'][:4] == 'http' %}{{ p['body'][:200] }}{% else %}Schematic of satellite passes at {{ p['listing_name'] }}{% endif %}" width="100%">{% endif %}
+  {% if p['image_svg'] %}<img loading="lazy" src="/posts/{{ p['id'] }}/image.svg" alt="{% if p['image_svg'][:4] == 'http' %}{{ p['body'][:200] }}{% else %}Schematic of satellite passes at {{ p['listing_name'] }}{% endif %}" width="100%">{% endif %}
   {% if p['ai_explanation'] %}<p class="note">{{ p['ai_explanation'] }}</p>{% endif %}
   <div class="meta">
     <span class="like-text">{{ p['like_count'] }} like{% if p['like_count'] != 1 %}s{% endif %}</span>
@@ -2831,6 +2846,62 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
     <a class="btn quiet" href="/posts">Log a sighting</a>
   </div>
 </section>
+<section class="near" id="near-card">
+  <h2>Near you</h2>
+  <p class="meta">Find the closest observatory or dark-sky spot, then check its passes tonight.</p>
+  <button id="near-go" class="btn quiet" type="button">Find my nearest place</button>
+  <p class="meta" id="near-status" role="status" aria-live="polite"></p>
+  <div id="near-result"></div>
+</section>
+<script>
+(function () {
+  var btn = document.getElementById("near-go");
+  var out = document.getElementById("near-status");
+  var res = document.getElementById("near-result");
+  function km(lat1, lon1, lat2, lon2) {
+    var R = 6371, r = Math.PI / 180;
+    var dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  btn.addEventListener("click", function () {
+    if (!navigator.geolocation) { out.textContent = "Location isn't available in this browser."; return; }
+    out.textContent = "Finding your location...";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      fetch("/api/listings", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (rows) {
+          var best = null, bestD = Infinity;
+          rows.forEach(function (row) {
+            var d = km(pos.coords.latitude, pos.coords.longitude, row.latitude, row.longitude);
+            if (d < bestD) { bestD = d; best = row; }
+          });
+          if (!best) { out.textContent = "No places yet."; return; }
+          res.textContent = "";
+          var box = document.createElement("div");
+          box.className = "place";
+          var name = document.createElement("strong");
+          name.textContent = best.name;
+          var dist = document.createElement("div");
+          dist.className = "meta";
+          dist.textContent = Math.round(bestD).toLocaleString() + " km away";
+          var go = document.createElement("a");
+          go.className = "btn";
+          go.href = "/places/" + best.id;
+          go.textContent = "See tonight's passes";
+          box.appendChild(name);
+          box.appendChild(dist);
+          box.appendChild(go);
+          res.appendChild(box);
+          out.textContent = "Nearest place to you.";
+        })
+        .catch(function () { out.textContent = "Places can't be loaded right now."; });
+    }, function () {
+      out.textContent = "Location was blocked. You can still browse places.";
+    }, { timeout: 10000, maximumAge: 300000 });
+  });
+})();
+</script>
 <section>
   <h2>How it works</h2>
   <ol class="how">
@@ -2848,7 +2919,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
+    {% if s['has_image'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
   </article>
   {% else %}
   <p>No sightings yet. <a href="/posts">Be the first to log one</a>.</p>
