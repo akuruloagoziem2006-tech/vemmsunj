@@ -999,6 +999,12 @@ header.site { position: relative; z-index: 2000; }
 .near .btn { margin-top: .5rem; }
 .near .place { margin-top: .6rem; }
 </style>
+<style>
+/* Home feed: photos only */
+.feed-photo { margin: 1.2rem 0 1.6rem; }
+.feed-photo img { border-radius: 8px; background: #000; display: block; }
+.feed-photo figcaption { margin-top: .5rem; }
+</style>
 </head>
 <body>
 <header class="site">
@@ -3010,20 +3016,16 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
   </ol>
 </section>
 <section class="recent">
-  <h2>Recent sightings</h2>
+  <h2>Feed</h2>
   {% for s in recent %}
-  <article class="entry">
-    <div class="meta">
-      <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
-      · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
-    </div>
-    <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
-  </article>
+  <figure class="feed-photo">
+    <img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%">
+    <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
+  </figure>
   {% else %}
-  <p>No sightings yet. <a href="/posts">Be the first to log one</a>.</p>
+  <p>No feed posts yet. Check back after the bot's next post, or <a href="/posts">log a sighting</a>.</p>
   {% endfor %}
-  <p><a href="/posts">All sightings</a></p>
+  <p><a href="/posts">All sightings</a> · <a href="/listings">Places</a></p>
 </section>
 {% endblock %}
 """}
@@ -3608,8 +3610,11 @@ def aurora_page():
 @app.route("/")
 def index():
     recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
-        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 3"
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
+        "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
+        "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
+        "ORDER BY p.id DESC LIMIT 6"
     ).fetchall()
     return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
 
@@ -3754,6 +3759,7 @@ def posts_page():
         names = list(following) + [me]
         sql += " WHERE p.author IN (%s)" % ",".join("?" * len(names))
         params = names
+    sql += (" AND " if params else " WHERE ") + "NOT (p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http')"
     sql += " ORDER BY p.id DESC LIMIT 50"
     posts = db.execute(sql, params).fetchall()
     listings = db.execute("SELECT id, name FROM listings ORDER BY name").fetchall()
