@@ -1203,7 +1203,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
-<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a></p>
+<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a> · <a href="/places/{{ place['id'] }}/simulate">Pass simulation</a></p>
 {% if eclipse %}
 <h2>Next possible eclipse</h2>
 <div class="place"><strong>{{ eclipse['name'] }}</strong>
@@ -4549,6 +4549,341 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(ADMIN_TEMPLATES)
+
+# ---------- Pass simulation ----------
+from urllib.parse import urlencode as _urlencode
+PASS_TRACK_MAX_SECONDS = 40 * 60
+PASS_TRACK_STEP = 10
+
+@app.route("/api/pass-track/<int:listing_id>")
+def api_pass_track(listing_id):
+    row = get_db().execute("SELECT latitude, longitude FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "Place not found."}), 404
+    name = request.args.get("name", "").strip()
+    try:
+        pass_start = parse_when(request.args.get("start", ""))
+        pass_end = parse_when(request.args.get("end", ""))
+    except ValueError:
+        return jsonify({"error": "Give the pass start and end as ISO times."}), 400
+    if not name or pass_end < pass_start:
+        return jsonify({"error": "Choose a pass to simulate."}), 400
+    win_start = pass_start - timedelta(seconds=60)
+    win_end = pass_end + timedelta(seconds=60)
+    if (win_end - win_start).total_seconds() > PASS_TRACK_MAX_SECONDS:
+        return jsonify({"error": "That pass is too long to simulate."}), 400
+    try:
+        ts, sats = get_satellites()
+    except requests.RequestException as e:
+        print(f"pass track tle error: {e}", flush=True)
+        return jsonify({"error": "Satellite data isn't available right now. Try again in a few minutes."}), 502
+    sat = next((x for x in sats if x.name == name), None)
+    if sat is None:
+        return jsonify({"error": f"{name} isn't in the tracked list right now."}), 404
+    observer = wgs84.latlon(row["latitude"], row["longitude"])
+    count = int((win_end - win_start).total_seconds() // PASS_TRACK_STEP) + 1
+    times = [win_start + timedelta(seconds=i * PASS_TRACK_STEP) for i in range(count)]
+    alt, az, _ = (sat - observer).at(ts.from_datetimes(times)).altaz()
+    samples = [{"t": i * PASS_TRACK_STEP,
+                "alt": round(float(alt.degrees[i]), 2),
+                "az": round(float(az.degrees[i]), 2)} for i in range(count)]
+    return jsonify({
+        "name": sat.name,
+        "window_start": win_start.isoformat(),
+        "pass_start": pass_start.isoformat(),
+        "pass_end": pass_end.isoformat(),
+        "samples": samples,
+    })
+
+@app.route("/places/<int:listing_id>/simulate")
+def simulate_page(listing_id):
+    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    now = datetime.now(timezone.utc)
+    try:
+        passes, _ = cached_passes(listing_id, place)
+    except requests.RequestException:
+        passes = []
+    upcoming = []
+    for p in passes:
+        start = parse_when(p["start"])
+        end = parse_when(p["end"])
+        if end < now - timedelta(minutes=2):
+            continue
+        q = _urlencode({"sat": p["satellite"], "start": p["start"], "end": p["end"]})
+        upcoming.append({"satellite": p["satellite"], "start": start.strftime("%H:%M"),
+                         "end": end.strftime("%H:%M"), "peak": p["max_altitude_deg"],
+                         "href": f"/places/{listing_id}/simulate?{q}"})
+    chosen = None
+    sat = request.args.get("sat", "").strip()
+    start_arg = request.args.get("start", "").strip()
+    end_arg = request.args.get("end", "").strip()
+    if sat and start_arg and end_arg:
+        chosen = {"sat": sat, "start": start_arg, "end": end_arg}
+    return render_template("simulate.html", place=place, upcoming=upcoming[:20], chosen=chosen,
+                           title="Pass simulation", section="places")
+
+SIM_TEMPLATES = {"simulate.html": r"""{% extends "base.html" %}
+{% block head %}
+<style>
+.sim-canvas { width: 100%; aspect-ratio: 1 / 1; display: block; background: #05070B; border: 1px solid var(--rule); border-radius: 8px; }
+.sim-controls { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .8rem 0 .4rem; }
+#scrub { width: 100%; margin: .4rem 0 0; }
+#speed { width: auto; }
+.sim-readout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: .9rem 0; }
+.sim-readout > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .6rem .8rem; min-width: 0; }
+.sim-readout .k { display: block; color: var(--muted); font-size: .78rem; }
+.sim-readout .v { font-weight: 600; overflow-wrap: anywhere; }
+.upcoming a { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid var(--rule); text-decoration: none; color: var(--text); }
+.upcoming a:hover strong { color: var(--accent); }
+.upcoming .meta { white-space: nowrap; }
+@media (max-width: 480px) { .sim-readout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<p><a href="/places/{{ place['id'] }}">Back to {{ place['name'] }}</a></p>
+<h1>Pass simulation</h1>
+{% if chosen %}
+<p class="meta">Watch the pass play out on the sky above {{ place['name'] }}, at the times it happens. Times are UTC, with local time beside them.</p>
+<canvas id="dome" class="sim-canvas" role="img" aria-label="Sky dome with the satellite's path across it"></canvas>
+<div class="sim-controls">
+  <button id="play" class="btn" type="button">Play</button>
+  <button id="live" class="btn quiet" type="button">Follow real time</button>
+  <select id="speed" aria-label="Playback speed">
+    <option value="1">1×</option>
+    <option value="10">10×</option>
+    <option value="60">60×</option>
+  </select>
+</div>
+<input id="scrub" type="range" min="0" max="600" value="0" aria-label="Scrub through the pass">
+<p class="meta" id="sim-status" role="status" aria-live="polite">Loading the pass...</p>
+<div class="sim-readout">
+  <div><span class="k">Satellite</span><span class="v">{{ chosen['sat'] }}</span></div>
+  <div><span class="k">Simulated time</span><span class="v" id="sim-clock">-</span></div>
+  <div><span class="k">Altitude now</span><span class="v" id="sim-alt">-</span></div>
+  <div><span class="k">Direction now</span><span class="v" id="sim-dir">-</span></div>
+  <div><span class="k">Pass starts</span><span class="v" id="sim-start">-</span></div>
+  <div><span class="k">Pass ends</span><span class="v" id="sim-end">-</span></div>
+  <div><span class="k">Peak altitude</span><span class="v" id="sim-peak">-</span></div>
+  <div><span class="k">Peak at</span><span class="v" id="sim-peak-time">-</span></div>
+</div>
+<p class="meta">On the sky view, north is at the top and east is on the left. Positions come from current orbit data, so timing is accurate to a few seconds for recent data. Check a planetarium app for exact times.</p>
+{% else %}
+<p class="meta">Choose a pass to watch it play out on the sky, at the times it happens.</p>
+<div class="upcoming">
+{% for p in upcoming %}
+<a href="{{ p['href'] }}"><span><strong>{{ p['satellite'] }}</strong><br><span class="meta">{{ p['start'] }} to {{ p['end'] }} UTC</span></span><span class="meta">peak {{ p['peak'] }}°</span></a>
+{% else %}
+<p>No passes in the next 24 hours.</p>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if chosen %}
+<script>
+(function () {
+  var CHOSEN = { sat: {{ chosen['sat']|tojson }}, start: {{ chosen['start']|tojson }}, end: {{ chosen['end']|tojson }} };
+  var PLACE_ID = {{ place['id'] }};
+  var canvas = document.getElementById("dome");
+  var ctx = canvas.getContext("2d");
+  var statusEl = document.getElementById("sim-status");
+  var scrub = document.getElementById("scrub");
+  var playBtn = document.getElementById("play");
+  var liveBtn = document.getElementById("live");
+  var speedSel = document.getElementById("speed");
+  var clockEl = document.getElementById("sim-clock");
+  var altEl = document.getElementById("sim-alt");
+  var dirEl = document.getElementById("sim-dir");
+
+  var data = null, winMs = 0, passStartMs = 0, passEndMs = 0, duration = 0, step = 10, peak = null;
+  var mode = "live", simT = 0, playing = false, lastNow = performance.now();
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function utcStr(ms) {
+    var d = new Date(ms);
+    return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds());
+  }
+  function localStr(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  function mmss(sec) {
+    sec = Math.max(0, Math.round(sec));
+    return pad(Math.floor(sec / 60)) + ":" + pad(sec % 60);
+  }
+  function dirName(az) {
+    return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(az / 45) % 8];
+  }
+  function lerpAz(a, b, f) {
+    var d = ((b - a + 540) % 360) - 180;
+    return (a + d * f + 360) % 360;
+  }
+  function at(t) {
+    var s = data.samples;
+    var i = Math.floor(t / step);
+    if (i < 0) i = 0;
+    if (i >= s.length - 1) i = s.length - 2;
+    var f = Math.min(1, Math.max(0, (t - s[i].t) / step));
+    return { alt: s[i].alt + (s[i + 1].alt - s[i].alt) * f, az: lerpAz(s[i].az, s[i + 1].az, f) };
+  }
+  function xy(alt, az, c, R) {
+    var r = R * (90 - alt) / 90, a = az * Math.PI / 180;
+    return { x: c - r * Math.sin(a), y: c - r * Math.cos(a) };
+  }
+  function resize() {
+    var dpr = window.devicePixelRatio || 1, w = canvas.clientWidth;
+    canvas.width = w * dpr;
+    canvas.height = w * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw() {
+    var W = canvas.clientWidth, c = W / 2, R = W / 2 - 28;
+    ctx.clearRect(0, 0, W, W);
+    ctx.font = "11px sans-serif";
+    [0, 30, 60].forEach(function (a) {
+      var r = R * (90 - a) / 90;
+      ctx.strokeStyle = a === 0 ? "#3A4452" : "#1C2330";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(c, c, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#5E6670";
+      ctx.fillText(a + "°", c + 4, c - r + 12);
+    });
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = "#8C929C";
+    [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(function (p) {
+      var q = xy(0, p[1], c, R + 14);
+      ctx.fillText(p[0], q.x - 4, q.y + 4);
+    });
+
+    ctx.strokeStyle = "rgba(201,85,58,0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    var on = false;
+    data.samples.forEach(function (s) {
+      if (s.alt >= 0) {
+        var q = xy(s.alt, s.az, c, R);
+        if (on) ctx.lineTo(q.x, q.y);
+        else { ctx.moveTo(q.x, q.y); on = true; }
+      } else {
+        on = false;
+      }
+    });
+    ctx.stroke();
+
+    if (peak && peak.alt > 0) {
+      var pq = xy(peak.alt, peak.az, c, R);
+      ctx.strokeStyle = "#E9E6DC";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(pq.x, pq.y, 6, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    if (simT >= 0 && simT <= duration) {
+      var now = at(simT);
+      if (now.alt >= 0) {
+        var q2 = xy(now.alt, now.az, c, R);
+        var g = ctx.createRadialGradient(q2.x, q2.y, 0, q2.x, q2.y, 14);
+        g.addColorStop(0, "rgba(201,85,58,0.6)");
+        g.addColorStop(1, "rgba(201,85,58,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(q2.x, q2.y, 14, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#E9E6DC";
+        ctx.beginPath(); ctx.arc(q2.x, q2.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.font = "13px sans-serif";
+        ctx.fillText(CHOSEN.sat, q2.x + 8, q2.y - 8);
+      }
+    }
+  }
+
+  function update() {
+    var simMs = winMs + simT * 1000;
+    clockEl.textContent = utcStr(simMs) + " UTC";
+    if (simT >= 0 && simT <= duration) {
+      var p = at(simT);
+      altEl.textContent = p.alt >= 0 ? p.alt.toFixed(1) + "°" : "Below the horizon";
+      dirEl.textContent = p.alt >= 0 ? dirName(p.az) + " (" + Math.round(p.az) + "°)" : "-";
+    } else {
+      altEl.textContent = "-";
+      dirEl.textContent = "-";
+    }
+    var msg;
+    if (simMs < passStartMs) msg = "Starts in " + mmss((passStartMs - simMs) / 1000);
+    else if (simMs <= passEndMs) msg = "Passing now";
+    else msg = "The pass has finished";
+    statusEl.textContent = msg + ".";
+  }
+
+  function tick(now) {
+    var dt = (now - lastNow) / 1000;
+    lastNow = now;
+    if (mode === "live") {
+      simT = (Date.now() - winMs) / 1000;
+    } else if (playing) {
+      simT += dt * Number(speedSel.value);
+      if (simT >= duration) {
+        simT = duration;
+        playing = false;
+        playBtn.textContent = "Play";
+      }
+    }
+    scrub.value = Math.max(0, Math.min(duration, simT));
+    draw();
+    update();
+    requestAnimationFrame(tick);
+  }
+
+  playBtn.addEventListener("click", function () {
+    if (mode === "live") { mode = "play"; simT = (Date.now() - winMs) / 1000; }
+    if (simT >= duration) simT = 0;
+    playing = !playing;
+    playBtn.textContent = playing ? "Pause" : "Play";
+  });
+  liveBtn.addEventListener("click", function () {
+    mode = "live";
+    playing = false;
+    playBtn.textContent = "Play";
+  });
+  scrub.addEventListener("input", function () {
+    mode = "play";
+    playing = false;
+    playBtn.textContent = "Play";
+    simT = Number(scrub.value);
+  });
+
+  function setup(d) {
+    data = d;
+    winMs = Date.parse(d.window_start);
+    passStartMs = Date.parse(d.pass_start);
+    passEndMs = Date.parse(d.pass_end);
+    duration = d.samples[d.samples.length - 1].t;
+    if (d.samples.length > 1) step = d.samples[1].t - d.samples[0].t;
+    peak = d.samples.reduce(function (a, b) { return b.alt > a.alt ? b : a; });
+    scrub.max = String(duration);
+    document.getElementById("sim-start").textContent = utcStr(passStartMs) + " UTC · " + localStr(passStartMs);
+    document.getElementById("sim-end").textContent = utcStr(passEndMs) + " UTC · " + localStr(passEndMs);
+    document.getElementById("sim-peak").textContent = peak.alt.toFixed(1) + "°";
+    document.getElementById("sim-peak-time").textContent = utcStr(winMs + peak.t * 1000) + " UTC";
+    resize();
+    window.addEventListener("resize", resize);
+    simT = (Date.now() - winMs) / 1000;
+    requestAnimationFrame(tick);
+  }
+
+  var qs = new URLSearchParams({ name: CHOSEN.sat, start: CHOSEN.start, end: CHOSEN.end });
+  fetch("/api/pass-track/" + PLACE_ID + "?" + qs.toString(), { cache: "no-store" })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) { statusEl.textContent = res.d.error || "This simulation can't load right now."; return; }
+      setup(res.d);
+    })
+    .catch(function () { statusEl.textContent = "This simulation can't load right now."; });
+})();
+</script>
+{% endif %}
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(SIM_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
