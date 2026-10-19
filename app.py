@@ -3840,6 +3840,7 @@ def cron_daily():
         abort(401)
     result = run_daily_bot()
     result["satellite_image"] = post_satellite_image()
+    result["more_images"] = post_extra_images()
     return jsonify(result)
 
 # ---------- Daily NASA EPIC image (public domain) ----------
@@ -4884,6 +4885,108 @@ SIM_TEMPLATES = {"simulate.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(SIM_TEMPLATES)
+
+# ---------- More bot images: enhanced Earth and NASA Image Library ----------
+IMAGE_TOPICS = [
+    "International Space Station", "Hubble Space Telescope", "aurora borealis",
+    "Milky Way galaxy", "nebula", "Moon surface", "Jupiter", "Saturn rings",
+    "solar eclipse", "comet", "Earth from orbit", "satellite in orbit",
+]
+
+def _image_already_used(db, source, ref):
+    return db.execute("SELECT 1 FROM image_used WHERE source = ? AND ref = ?", (source, ref)).fetchone() is not None
+
+def _mark_image(db, source, ref, body, url, now):
+    db.execute("INSERT INTO image_used (source, ref) VALUES (?, ?)", (source, ref))
+    db.execute(
+        "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (BOT_NAME, body, None, None, None, now.isoformat(timespec="minutes"), url),
+    )
+
+def _post_enhanced_earth(db, now, day):
+    if db.execute("SELECT 1 FROM bot_days WHERE listing_id = ? AND day = ?", (-2, day)).fetchone():
+        return "already posted today"
+    r = requests.get("https://epic.gsfc.nasa.gov/api/enhanced", timeout=20)
+    r.raise_for_status()
+    frames = r.json()
+    if not frames:
+        return "no images available"
+    latest = max(frames, key=lambda f: f["date"])
+    ref = latest["image"]
+    if _image_already_used(db, "epic-enhanced", ref):
+        return "latest image already posted"
+    y, m, d = latest["date"][:10].split("-")
+    url = f"https://epic.gsfc.nasa.gov/archive/enhanced/{y}/{m}/{d}/png/{ref}.png"
+    body = (f"Enhanced colour view of Earth, captured {latest['date'][:16]} UTC by NASA's EPIC camera. "
+            "Image: NASA, public domain.")
+    _mark_image(db, "epic-enhanced", ref, body, url, now)
+    db.execute("INSERT INTO bot_days (listing_id, day) VALUES (?, ?)", (-2, day))
+    return "posted"
+
+def _nasa_library_pick(topic):
+    r = requests.get("https://images-api.nasa.gov/search",
+                     params={"q": topic, "media_type": "image", "page_size": 30}, timeout=20)
+    r.raise_for_status()
+    for item in r.json().get("collection", {}).get("items", []):
+        data = (item.get("data") or [{}])[0]
+        nid = data.get("nasa_id")
+        if not nid:
+            continue
+        credit = ((data.get("center") or "") + " " + (data.get("photographer") or "")).upper()
+        if "NASA" not in credit:
+            continue
+        return {"nasa_id": nid, "title": data.get("title", ""), "date": (data.get("date_created") or "")[:10]}
+    return None
+
+def _nasa_asset_url(nasa_id):
+    r = requests.get(f"https://images-api.nasa.gov/asset/{nasa_id}", timeout=20)
+    r.raise_for_status()
+    files = [x.get("href", "") for x in r.json().get("collection", {}).get("items", [])]
+    for suffix in ("~medium.jpg", "~large.jpg", "~small.jpg", ".jpg"):
+        for f in files:
+            if f.lower().endswith(suffix):
+                return f
+    return None
+
+def _post_nasa_library(db, now, day):
+    if db.execute("SELECT 1 FROM bot_days WHERE listing_id = ? AND day = ?", (-3, day)).fetchone():
+        return "already posted today"
+    start = datetime.strptime(day, "%Y-%m-%d").timetuple().tm_yday % len(IMAGE_TOPICS)
+    for k in range(4):
+        topic = IMAGE_TOPICS[(start + k) % len(IMAGE_TOPICS)]
+        try:
+            picked = _nasa_library_pick(topic)
+            if picked is None or _image_already_used(db, "nasa-library", picked["nasa_id"]):
+                continue
+            url = _nasa_asset_url(picked["nasa_id"])
+        except requests.RequestException:
+            continue
+        if not url:
+            continue
+        title = picked["title"] or topic
+        when = f" ({picked['date']})" if picked["date"] else ""
+        body = f"{title}{when}. Topic: {topic}. Image: NASA Image and Video Library."
+        _mark_image(db, "nasa-library", picked["nasa_id"], body, url, now)
+        db.execute("INSERT INTO bot_days (listing_id, day) VALUES (?, ?)", (-3, day))
+        return "posted"
+    return "no new image found today"
+
+def post_extra_images(now=None):
+    now = now or datetime.now(timezone.utc)
+    day = now.strftime("%Y-%m-%d")
+    db = connect()
+    results = {}
+    try:
+        db.execute("CREATE TABLE IF NOT EXISTS image_used (source TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY (source, ref))")
+        for label, fn in (("enhanced_earth", _post_enhanced_earth), ("nasa_library", _post_nasa_library)):
+            try:
+                results[label] = fn(db, now, day)
+            except requests.RequestException as e:
+                results[label] = f"unavailable: {e.__class__.__name__}"
+            db.commit()
+    finally:
+        db.close()
+    return results
 
 if __name__ == "__main__":
     from waitress import serve
