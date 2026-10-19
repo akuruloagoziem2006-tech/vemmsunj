@@ -1494,7 +1494,7 @@ fetch("/api/listings")
 <details class="composer-wrap">
 <summary class="btn">Log a sighting</summary>
 <section class="composer">
-<form method="post" action="/posts">
+<form method="post" action="/posts" id="composer">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <p class="meta">Posting as {{ username }}</p>
   <label for="body">What did you see?</label>
@@ -1509,6 +1509,105 @@ fetch("/api/listings")
   <p><button class="btn" type="submit">Post sighting</button></p>
 </form>
 </section>
+<script>
+(function () {
+  var form = document.getElementById("composer");
+  if (!form || !window.indexedDB) return;
+  var statusEl = document.createElement("p");
+  statusEl.className = "meta";
+  statusEl.setAttribute("role", "status");
+  statusEl.setAttribute("aria-live", "polite");
+  form.parentNode.insertBefore(statusEl, form.nextSibling);
+
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open("vemmsunj-outbox", 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore("posts", { autoIncrement: true }); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function withStore(mode, work) {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction("posts", mode);
+        work(tx.objectStore("posts"));
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+  function listAll() {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var out = [];
+        var tx = db.transaction("posts", "readonly");
+        var cur = tx.objectStore("posts").openCursor();
+        cur.onsuccess = function () {
+          var c = cur.result;
+          if (c) { out.push({ key: c.key, value: c.value }); c.continue(); }
+          else { resolve(out); }
+        };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+  function say(text) { statusEl.textContent = text; }
+  function pendingNote() {
+    return listAll().then(function (items) {
+      if (items.length) {
+        say(items.length + " sighting" + (items.length === 1 ? "" : "s") + " saved on this device, waiting to post.");
+      } else {
+        say("");
+      }
+    });
+  }
+  function flush() {
+    if (!navigator.onLine) return Promise.resolve();
+    return listAll().then(function (items) {
+      return items.reduce(function (chain, item) {
+        return chain.then(function () {
+          var fd = new FormData();
+          fd.append("csrf_token", item.value.csrf);
+          fd.append("body", item.value.body);
+          fd.append("listing_id", item.value.listing_id || "");
+          fd.append("seen_at", item.value.seen_at || "");
+          return fetch("/posts", { method: "POST", body: fd, credentials: "same-origin" })
+            .then(function (r) {
+              if (r.ok && r.url.indexOf("/login") === -1) {
+                return withStore("readwrite", function (store) { store.delete(item.key); });
+              }
+            })
+            .catch(function () {});
+        });
+      }, Promise.resolve());
+    }).then(pendingNote).catch(function () {});
+  }
+
+  form.addEventListener("submit", function (e) {
+    if (navigator.onLine) return;
+    var body = form.querySelector('textarea[name="body"]');
+    if (!body.value.trim()) return;
+    e.preventDefault();
+    var item = {
+      csrf: form.querySelector('input[name="csrf_token"]').value,
+      body: body.value,
+      listing_id: form.querySelector('select[name="listing_id"]').value,
+      seen_at: form.querySelector('input[name="seen_at"]').value,
+      saved: new Date().toISOString()
+    };
+    withStore("readwrite", function (store) { store.add(item); }).then(function () {
+      body.value = "";
+      say("You're offline. Your sighting is saved on this device and will post when you reconnect.");
+    }).catch(function () {
+      say("Couldn't save this sighting offline. Try again when you're online.");
+    });
+  });
+
+  window.addEventListener("online", flush);
+  flush();
+})();
+</script>
 </details>
 {% else %}
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
@@ -5061,6 +5160,56 @@ def post_extra_images(now=None):
     finally:
         db.close()
     return results
+
+# ---------- Ingestion and edge caching ----------
+@app.route("/api/cron/ingest", methods=["GET", "POST"])
+def cron_ingest():
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    report = {}
+    for group in TLE_GROUPS:
+        try:
+            get_group_text(group)
+            report["tle " + group] = "ok"
+        except requests.RequestException as e:
+            report["tle " + group] = "failed: " + e.__class__.__name__
+    try:
+        report["space weather"] = "ok" if kp_status() else "unavailable"
+    except Exception as e:
+        report["space weather"] = "failed: " + e.__class__.__name__
+    try:
+        aurora_grid()
+        report["aurora"] = "ok"
+    except Exception as e:
+        report["aurora"] = "failed: " + e.__class__.__name__
+    db = connect()
+    places = db.execute("SELECT * FROM listings").fetchall()
+    db.close()
+    ok = 0
+    for place in places:
+        if weather_for(place) is not None:
+            ok += 1
+    report["weather"] = f"{ok} of {len(places)} places"
+    report["ran_at"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
+    return jsonify(report)
+
+@app.after_request
+def edge_cache_headers(resp):
+    if request.method != "GET" or resp.status_code != 200:
+        return resp
+    path = request.path
+    rules = {
+        "/api/globe": "public, s-maxage=60, stale-while-revalidate=120",
+        "/api/sky": "public, s-maxage=60, stale-while-revalidate=120",
+        "/api/aurora": "public, s-maxage=900, stale-while-revalidate=1800",
+        "/api/listings": "public, s-maxage=3600, stale-while-revalidate=86400",
+    }
+    if path in rules:
+        resp.headers["Cache-Control"] = rules[path]
+    elif path.startswith("/api/passes/"):
+        resp.headers["Cache-Control"] = "public, s-maxage=900, stale-while-revalidate=1800"
+    return resp
 
 if __name__ == "__main__":
     from waitress import serve
