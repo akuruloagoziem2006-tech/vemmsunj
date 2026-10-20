@@ -5260,6 +5260,16 @@ def planet_rows(place, now):
                 r["mag"] = round(float(planetary_magnitude(astro)), 1)
             except Exception:
                 pass
+            try:
+                from skyfield.constellationlib import load_constellation_map, load_constellation_names
+                ra, dec, _ = astro.radec()
+                cmap = load_constellation_map()
+                names = load_constellation_names()
+                code = cmap(ra) if callable(cmap) else None
+                if code is not None:
+                    r["constellation"] = dict(names).get(code, str(code)) if isinstance(names, (list, tuple)) and names and isinstance(names[0], tuple) else str(code)
+            except Exception as e:
+                print(f"constellation error {name}: {e}", flush=True)
         try:
             times, events = almanac.find_discrete(t0, t1, almanac.risings_and_settings(eph, body, topos))
             for tt, ev in zip(times, events):
