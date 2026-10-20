@@ -5231,6 +5231,16 @@ def _planet_status(r):
         return f"Rises {r['rise']} UTC"
     return "Below the horizon"
 
+_CONST_MAP = None
+
+def _constellation_code(astro):
+    """Constellation code for an astrometric position, using this Skyfield version's position-based map."""
+    global _CONST_MAP
+    from skyfield.constellationlib import load_constellation_map
+    if _CONST_MAP is None:
+        _CONST_MAP = load_constellation_map()
+    return _CONST_MAP(astro)
+
 def planet_rows(place, now):
     from skyfield import almanac
     from skyfield.magnitudelib import planetary_magnitude
@@ -5261,13 +5271,10 @@ def planet_rows(place, now):
             except Exception:
                 pass
             try:
-                from skyfield.constellationlib import load_constellation_map, load_constellation_names
-                ra, dec, _ = astro.radec()
-                cmap = load_constellation_map()
-                names = load_constellation_names()
-                code = cmap(ra) if callable(cmap) else None
-                if code is not None:
-                    r["constellation"] = dict(names).get(code, str(code)) if isinstance(names, (list, tuple)) and names and isinstance(names[0], tuple) else str(code)
+                from skyfield.constellationlib import load_constellation_names
+                codes = dict(load_constellation_names())
+                code = _constellation_code(astro)
+                r["constellation"] = codes.get(code, code or "-")
             except Exception as e:
                 print(f"constellation error {name}: {e}", flush=True)
         try:
