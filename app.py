@@ -1019,6 +1019,7 @@ header.site { position: relative; z-index: 2000; }
         <a href="/calendar">Calendar</a>
         <a href="/globe">Globe</a>
         <a href="/aurora">Aurora</a>
+        <a href="/planets">Planets</a>
         {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
         <button id="redlight" class="btn quiet" type="button">Red light: off</button>
       </div>
@@ -5216,6 +5217,154 @@ def edge_cache_headers(resp):
     elif path.startswith("/api/passes/"):
         resp.headers["Cache-Control"] = "public, s-maxage=900, stale-while-revalidate=1800"
     return resp
+
+# ---------- Planetary dashboard ----------
+PLANET_ORDER = ["Venus", "Earth", "Mercury", "Mars", "Saturn", "Uranus", "Neptune", "Jupiter"]
+VIEW_LIMITS = {"naked": 6.0, "binoculars": 9.5}
+
+def _planet_status(r):
+    if r["alt"] is None:
+        return "Unavailable"
+    if r["alt"] >= 0:
+        return "Visible now"
+    if r["rise"]:
+        return f"Rises {r['rise']} UTC"
+    return "Below the horizon"
+
+def planet_rows(place, now):
+    from skyfield import almanac
+    from skyfield.magnitudelib import planetary_magnitude
+    from skyfield.constellationlib import constellation_at
+    eph = get_planet_kernel()
+    ts = load.timescale()
+    t = ts.from_datetime(now)
+    t0 = ts.from_datetime(now)
+    t1 = ts.from_datetime(now + timedelta(hours=24))
+    topos = wgs84.latlon(place["latitude"], place["longitude"])
+    observer = eph["earth"] + topos
+    fmt = lambda tt: tt.utc_datetime().strftime("%H:%M")
+    by_name = {}
+    for name, key in PLANET_KERNEL_NAMES:
+        body = eph[key]
+        r = {"name": name, "alt": None, "dir": "-", "mag": None, "constellation": "-",
+             "rise": None, "set": None, "transit": None, "earth": False}
+        astro = None
+        try:
+            astro = observer.at(t).observe(body).apparent()
+            alt, az, _ = astro.altaz()
+            r["alt"] = round(alt.degrees, 1)
+            r["dir"] = _compass(az.degrees)
+        except Exception as e:
+            print(f"planet position error {name}: {e}", flush=True)
+        if astro is not None:
+            try:
+                r["mag"] = round(float(planetary_magnitude(astro)), 1)
+            except Exception:
+                pass
+            try:
+                r["constellation"] = str(constellation_at(astro))
+            except Exception:
+                pass
+        try:
+            times, events = almanac.find_discrete(t0, t1, almanac.risings_and_settings(eph, body, topos))
+            for tt, ev in zip(times, events):
+                if ev and r["rise"] is None:
+                    r["rise"] = fmt(tt)
+                if not ev and r["set"] is None:
+                    r["set"] = fmt(tt)
+        except Exception:
+            pass
+        try:
+            times, events = almanac.find_discrete(t0, t1, almanac.meridian_transits(eph, body, topos))
+            for tt, ev in zip(times, events):
+                if ev and r["transit"] is None:
+                    r["transit"] = fmt(tt)
+        except Exception:
+            pass
+        r["status"] = _planet_status(r)
+        by_name[name] = r
+    ordered = []
+    for name in PLANET_ORDER:
+        if name == "Earth":
+            ordered.append({"name": "Earth", "earth": True, "status": "You are here"})
+        elif name in by_name:
+            ordered.append(by_name[name])
+    return ordered
+
+@app.route("/planets")
+def planets_page():
+    pid = request.args.get("place", "1")
+    place = None
+    if pid.isdigit():
+        place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?", (int(pid),)).fetchone()
+    if place is None:
+        place = get_db().execute("SELECT id, name, latitude, longitude FROM listings ORDER BY id LIMIT 1").fetchone()
+    view = request.args.get("view", "all")
+    if view not in ("all", "naked", "binoculars", "telescope"):
+        view = "all"
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    rows, error = [], None
+    try:
+        rows = planet_rows(place, now)
+    except Exception as e:
+        print(f"planets error: {e}", flush=True)
+        error = "Planet data isn't available right now. Try again in a few minutes."
+    limit = VIEW_LIMITS.get(view)
+    visible = []
+    for r in rows:
+        if r.get("earth"):
+            visible.append(r)
+            continue
+        if limit is not None and (r["mag"] is None or r["mag"] > limit):
+            continue
+        visible.append(r)
+    candidates = [r for r in rows if not r.get("earth") and r["alt"] is not None and r["alt"] >= 0 and r["mag"] is not None]
+    best = min(candidates, key=lambda r: r["mag"]) if candidates else None
+    return render_template("planets.html", place=place, rows=visible, best=best, view=view,
+                           error=error, now=now.strftime("%H:%M"), title="Planets", section="planets")
+
+PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
+{% block content %}
+<h1>Planets</h1>
+<p class="meta">Seen from {{ place['name'] }} at {{ now }} UTC. Times are UTC. Change place with <a href="/places/{{ place['id'] }}">the place page</a>.</p>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% else %}
+{% if best %}
+<div class="kp-block">
+  <div class="kp-value">{{ best['name'] }} tonight</div>
+  <div class="kp-level">{{ best['alt'] }}° up, to the {{ best['dir'] }}</div>
+  <div class="meta">Magnitude {{ best['mag'] }}{% if best['transit'] %} · highest at {{ best['transit'] }} UTC{% endif %}</div>
+</div>
+{% else %}
+<p class="meta">No planet is above the horizon right now.</p>
+{% endif %}
+<nav class="seg" aria-label="Viewing equipment">
+  <a href="/planets?place={{ place['id'] }}&view=all" {% if view == 'all' %}aria-current="page"{% endif %}>All</a>
+  <a href="/planets?place={{ place['id'] }}&view=naked" {% if view == 'naked' %}aria-current="page"{% endif %}>Naked eye</a>
+  <a href="/planets?place={{ place['id'] }}&view=binoculars" {% if view == 'binoculars' %}aria-current="page"{% endif %}>Binoculars</a>
+  <a href="/planets?place={{ place['id'] }}&view=telescope" {% if view == 'telescope' %}aria-current="page"{% endif %}>Telescope</a>
+</nav>
+<div class="place-grid">
+{% for r in rows %}
+<article class="place-card">
+  <h2>{{ r['name'] }}</h2>
+  <div class="meta"><strong>{{ r['status'] }}</strong></div>
+  {% if not r['earth'] %}
+  <div class="meta">Altitude {{ r['alt'] if r['alt'] is not none else '-' }}° · {{ r['dir'] }}</div>
+  <div class="meta">Magnitude {{ r['mag'] if r['mag'] is not none else '-' }} · {{ r['constellation'] }}</div>
+  <div class="meta">Rise {{ r['rise'] or '-' }} · Transit {{ r['transit'] or '-' }} · Set {{ r['set'] or '-' }}</div>
+  {% endif %}
+</article>
+{% else %}
+<p>Nothing matches this view tonight. Try All.</p>
+{% endfor %}
+</div>
+<p class="meta">Calculated from NASA's DE421 planetary data. Rise, transit, and set cover the next 24 hours from now, and magnitude is the planet's brightness. Lower numbers are brighter.</p>
+{% endif %}
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(PLANET_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
