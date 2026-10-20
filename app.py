@@ -1012,6 +1012,7 @@ header.site { position: relative; z-index: 2000; }
     <details class="brandmenu">
       <summary class="brand">VEMMSUNJ <span class="caret" aria-hidden="true">▾</span></summary>
       <div class="menu-panel brand-panel">
+        {% if username %}
         <a href="/">Home</a>
         <a href="/listings">Places</a>
         <a href="/map">Map</a>
@@ -1020,7 +1021,12 @@ header.site { position: relative; z-index: 2000; }
         <a href="/globe">Globe</a>
         <a href="/aurora">Aurora</a>
         <a href="/planets">Planets</a>
-        {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
+        <a href="/log">My log</a>
+        <a href="/logout">Log out</a>
+        {% else %}
+        <a href="/login">Log in</a>
+        <a href="/signup">Sign up</a>
+        {% endif %}
         <button id="redlight" class="btn quiet" type="button">Red light: off</button>
       </div>
     </details>
@@ -1028,10 +1034,15 @@ header.site { position: relative; z-index: 2000; }
     <span class="steps">Pick a place → check tonight's passes → log what you saw</span>
   </div>
   <nav class="primary">
+    {% if username %}
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
-    {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
+    <a href="/logout">Log out</a>
+    {% else %}
+    <a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>
+    <a href="/signup">Sign up</a>
+    {% endif %}
   </nav>
 </header>
 <div class="planets" aria-hidden="true">
@@ -1321,6 +1332,21 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% for p in items[:10] %}<tr><td>{{ p['satellite'] }}</td><td>{{ p['start'] }}</td><td>{{ p['peak'] }}°</td></tr>{% else %}<tr><td colspan="3">No passes in the next 24 hours.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
+<h2>Sightings here</h2>
+<p><a class="btn quiet" href="/posts">Log a sighting</a></p>
+{% for s in here %}
+<article class="entry">
+  <div class="meta">
+    <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
+    · {{ s['created_at']|nice_time }}
+  </div>
+  <p>{{ s['body'] }}</p>
+  {% if s['ai_explanation'] %}<p class="note">{{ s['ai_explanation'] }}</p>{% endif %}
+  {% if s['has_image'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="Schematic of satellite passes at {{ place['name'] }}" width="100%">{% endif %}
+</article>
+{% else %}
+<p class="meta">No sightings here yet. Be the first to log one.</p>
+{% endfor %}
 {% endblock %}
 """,
 
@@ -1660,6 +1686,7 @@ fetch("/api/listings")
 "auth.html": """{% extends "base.html" %}
 {% block content %}
 <h1>{{ title }}</h1>
+<p class="meta">Sign up or log in to explore places, passes, the feed, and the planets.</p>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="{{ action }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -3707,6 +3734,14 @@ def create_listing():
     db.commit()
     return redirect("/listings")
 
+def place_posts(place):
+    return get_db().execute(
+        "SELECT p.id, p.author, p.body, p.created_at, p.seen_at, p.ai_explanation, "
+        "(p.image_svg IS NOT NULL) AS has_image "
+        "FROM posts p WHERE p.listing_id = ? ORDER BY p.id DESC LIMIT 20",
+        (place["id"],),
+    ).fetchall()
+
 @app.route("/places/<int:listing_id>")
 def place_page(listing_id):
     place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
@@ -3738,7 +3773,7 @@ def place_page(listing_id):
         tonight = tonight_summary(place, passes)
     when_now = origin or datetime.now(timezone.utc)
     planets_dark, planets = planets_at(place, when_now)
-    return render_template("place.html", place=place, items=items, ticks=ticks, error=error,
+    return render_template("place.html", here=place_posts(place), place=place, items=items, ticks=ticks, error=error,
                            planets=planets, planets_dark=planets_dark, eclipse=eclipse_for_place(place), weather=weather_for(place), alarm_passes=alarm_list(passes),
                            tonight=tonight, custom=origin is not None,
                            at_value=at_value if origin is not None else "",
@@ -3919,7 +3954,7 @@ def login():
                     _db.execute("UPDATE users SET last_login = ? WHERE username = ?", (_now_iso(), row["username"]))
                     _db.commit()
                 session["username"] = row["username"]
-                return redirect("/posts")
+                return redirect(after_login_url())
             record_failure(key)
             record_failure("ip:" + ip)
             error = "Wrong username or password."
@@ -4288,7 +4323,7 @@ ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>"""
 
 SERVICE_WORKER = r"""
-const VERSION = "vemmsunj-v2";
+const VERSION = "vemmsunj-v3";
 const CACHEABLE = [
   /^\/$/,
   /^\/listings$/,
@@ -4332,7 +4367,7 @@ self.addEventListener("fetch", function (event) {
   event.respondWith(
     fetch(req)
       .then(function (res) {
-        if (res.ok) {
+        if (res.ok && !res.redirected) {
           var copy = res.clone();
           caches.open(VERSION).then(function (c) { c.put(req, copy); });
         }
@@ -5251,15 +5286,15 @@ def edge_cache_headers(resp):
         return resp
     path = request.path
     rules = {
-        "/api/globe": "public, s-maxage=60, stale-while-revalidate=120",
-        "/api/sky": "public, s-maxage=60, stale-while-revalidate=120",
-        "/api/aurora": "public, s-maxage=900, stale-while-revalidate=1800",
-        "/api/listings": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "/api/globe": "private, max-age=60, stale-while-revalidate=120",
+        "/api/sky": "private, max-age=60, stale-while-revalidate=120",
+        "/api/aurora": "private, max-age=900, stale-while-revalidate=1800",
+        "/api/listings": "private, max-age=3600, stale-while-revalidate=86400",
     }
     if path in rules:
         resp.headers["Cache-Control"] = rules[path]
     elif path.startswith("/api/passes/"):
-        resp.headers["Cache-Control"] = "public, s-maxage=900, stale-while-revalidate=1800"
+        resp.headers["Cache-Control"] = "private, max-age=900, stale-while-revalidate=1800"
     return resp
 
 # ---------- Planetary dashboard ----------
@@ -5421,6 +5456,27 @@ PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(PLANET_TEMPLATES)
+
+# ---------- Sign-in required (everything except sign-in and the app's own files) ----------
+PUBLIC_PREFIXES = ("/login", "/signup", "/forgot", "/logout", "/api/cron/", "/static/",
+                   "/manifest.webmanifest", "/sw.js", "/icon.svg", "/favicon.ico")
+
+def after_login_url():
+    nxt = session.pop("next", "") or ""
+    if nxt.startswith("/") and not nxt.startswith("//") and not nxt.startswith(PUBLIC_PREFIXES):
+        return nxt
+    return "/posts"
+
+def require_login():
+    if request.path.startswith(PUBLIC_PREFIXES) or session.get("username"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Log in to use VEMMSUNJ."}), 401
+    if request.method == "GET":
+        session["next"] = request.full_path.rstrip("?")
+    return redirect("/login")
+
+app.before_request_funcs.setdefault(None, []).insert(0, require_login)
 
 if __name__ == "__main__":
     from waitress import serve
