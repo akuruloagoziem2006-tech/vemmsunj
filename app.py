@@ -1208,6 +1208,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">The next 24 hours from that time. Predictions use current orbit data, so they're less reliable further ahead.</p>
 {% else %}
 <h2 class="tonight-title">Tonight's best</h2>
+{% if tonight['next'] %}<p><strong>Next pass: {{ tonight['next']['satellite'] }} at {{ tonight['next']['start'] }} UTC, peak {{ tonight['next']['peak'] }}°.</strong></p>{% else %}<p class="meta">No passes in the next 24 hours.</p>{% endif %}
 <p>{{ tonight['phase'] }}, {{ tonight['illum'] }}% lit.</p>
 {% if tonight['dark'] is none %}
   <p class="meta">Dark hours are unavailable right now.</p>
@@ -2945,7 +2946,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
 {% block content %}
 <section class="hero">
   <h1 class="hero-title">VEMMSUNJ</h1>
-  <p class="hero-lede">Sky-watching map for observatories, satellite passes, and sightings.</p>
+  <p class="hero-lede">VEMMSUNJ is named for the eight planets, in order: Venus, Earth, Mercury, Mars, Saturn, Uranus, Neptune, Jupiter. Check where they are tonight, find a dark sky, and log what you see.</p>
   <div class="actions">
     <a class="btn" href="/listings">Explore places</a>
     <a class="btn quiet" href="/map">Open map</a>
@@ -2953,9 +2954,9 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
   </div>
 </section>
 <section class="near" id="near-card">
-  <h2>Near you</h2>
-  <p class="meta">Find the closest observatory or dark-sky spot, then check its passes tonight.</p>
-  <button id="near-go" class="btn quiet" type="button">Find my nearest place</button>
+  <h2>Near you tonight</h2>
+  <p class="meta">Tap once to find the closest place and its next pass.</p>
+  <button id="near-go" class="btn" type="button">Find my nearest place</button>
   <p class="meta" id="near-status" role="status" aria-live="polite"></p>
   <div id="near-result"></div>
 </section>
@@ -2970,6 +2971,52 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     return 2 * R * Math.asin(Math.sqrt(a));
   }
+  function nextPassLine(passes) {
+    var now = Date.now();
+    var next = null;
+    (passes || []).forEach(function (p) {
+      var t = Date.parse(p.start);
+      if (!isNaN(t) && t > now && (next === null || t < next.t)) next = { p: p, t: t };
+    });
+    if (!next) return "No passes in the next 24 hours.";
+    return "Next pass: " + next.p.satellite + " at " + next.p.start.slice(11, 16) + " UTC, peak " + next.p.max_altitude_deg + " degrees.";
+  }
+  function show(best, distKm) {
+    res.textContent = "";
+    var box = document.createElement("div");
+    box.className = "place";
+    var name = document.createElement("strong");
+    name.textContent = best.name;
+    var dist = document.createElement("div");
+    dist.className = "meta";
+    dist.textContent = Math.round(distKm).toLocaleString() + " km away";
+    var next = document.createElement("div");
+    next.className = "meta";
+    next.textContent = "Checking the next pass...";
+    var actions = document.createElement("div");
+    actions.className = "actions";
+    var a1 = document.createElement("a");
+    a1.className = "btn";
+    a1.href = "/places/" + best.id;
+    a1.textContent = "Tonight's passes";
+    var a2 = document.createElement("a");
+    a2.className = "btn quiet";
+    a2.href = "/planets?place=" + best.id;
+    a2.textContent = "Planets tonight";
+    actions.appendChild(a1);
+    actions.appendChild(a2);
+    box.appendChild(name);
+    box.appendChild(dist);
+    box.appendChild(next);
+    box.appendChild(actions);
+    res.appendChild(box);
+    fetch("/api/passes/" + best.id, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        next.textContent = d.error ? "Pass times aren't available right now." : nextPassLine(d.passes);
+      })
+      .catch(function () { next.textContent = "Pass times aren't available right now."; });
+  }
   btn.addEventListener("click", function () {
     if (!navigator.geolocation) { out.textContent = "Location isn't available in this browser."; return; }
     out.textContent = "Finding your location...";
@@ -2983,23 +3030,8 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
             if (d < bestD) { bestD = d; best = row; }
           });
           if (!best) { out.textContent = "No places yet."; return; }
-          res.textContent = "";
-          var box = document.createElement("div");
-          box.className = "place";
-          var name = document.createElement("strong");
-          name.textContent = best.name;
-          var dist = document.createElement("div");
-          dist.className = "meta";
-          dist.textContent = Math.round(bestD).toLocaleString() + " km away";
-          var go = document.createElement("a");
-          go.className = "btn";
-          go.href = "/places/" + best.id;
-          go.textContent = "See tonight's passes";
-          box.appendChild(name);
-          box.appendChild(dist);
-          box.appendChild(go);
-          res.appendChild(box);
           out.textContent = "Nearest place to you.";
+          show(best, bestD);
         })
         .catch(function () { out.textContent = "Places can't be loaded right now."; });
     }, function () {
@@ -3096,7 +3128,19 @@ def tonight_summary(place, passes):
             upcoming.append({"satellite": p["satellite"], "start": start.strftime("%H:%M"),
                              "peak": p["max_altitude_deg"]})
     upcoming.sort(key=lambda p: p["peak"], reverse=True)
-    return {"phase": phase, "illum": illum, "dark": dark, "top": upcoming[:3]}
+    future = []
+    for p in passes:
+        st = datetime.fromisoformat(p["start"])
+        if st.tzinfo is None:
+            st = st.replace(tzinfo=timezone.utc)
+        if now <= st <= end:
+            future.append((st, p))
+    future.sort(key=lambda x: x[0])
+    nxt = None
+    if future:
+        st, p = future[0]
+        nxt = {"satellite": p["satellite"], "start": st.strftime("%H:%M"), "peak": p["max_altitude_deg"]}
+    return {"phase": phase, "illum": illum, "dark": dark, "top": upcoming[:3], "next": nxt}
 
 # ---------- Planets (simplified orbital elements) ----------
 # Each entry: N, i, w, a, e, M, each as a base value plus a rate per day since J2000.
