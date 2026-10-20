@@ -1185,7 +1185,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% endfor %}
 </div>
 <section class="recent">
-  <h2>Recent sightings</h2>
+  <h2>Latest sightings</h2>
   {% for s in recent %}
   <article class="entry">
     <div class="meta">
@@ -3699,7 +3699,7 @@ def listings():
     rows = get_db().execute("SELECT * FROM listings WHERE category = ? ORDER BY name", (category,)).fetchall()
     recent = get_db().execute(
         "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
-        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id WHERE p.author <> 'VEMMSUNJ_BOT' ORDER BY p.id DESC LIMIT 5"
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 6"
     ).fetchall()
     return render_template("places.html", rows=rows, title=title, category=category, section="places", recent=recent)
 
