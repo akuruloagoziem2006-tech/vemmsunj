@@ -3701,6 +3701,12 @@ def listings():
         "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id ORDER BY p.id DESC LIMIT 6"
     ).fetchall()
+    recent = get_db().execute(
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
+        "WHERE NOT (substr(COALESCE(p.image_svg, ''), 1, 4) = 'http') "
+        "ORDER BY p.id DESC LIMIT 6"
+    ).fetchall()
     return render_template("places.html", rows=rows, title=title, category=category, section="places", recent=recent)
 
 @app.route("/api/listings")
