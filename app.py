@@ -5234,7 +5234,6 @@ def _planet_status(r):
 def planet_rows(place, now):
     from skyfield import almanac
     from skyfield.magnitudelib import planetary_magnitude
-    from skyfield.constellationlib import constellation_at
     eph = get_planet_kernel()
     ts = load.timescale()
     t = ts.from_datetime(now)
@@ -5259,10 +5258,6 @@ def planet_rows(place, now):
         if astro is not None:
             try:
                 r["mag"] = round(float(planetary_magnitude(astro)), 1)
-            except Exception:
-                pass
-            try:
-                r["constellation"] = str(constellation_at(astro))
             except Exception:
                 pass
         try:
