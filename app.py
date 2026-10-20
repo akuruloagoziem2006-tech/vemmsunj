@@ -1193,7 +1193,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
-    {% if s['has_image'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
+    {% if s['has_image'] and not s['is_photo'] %}<img loading="lazy" src="/posts/{{ s['id'] }}/image.svg" alt="{% if s['is_photo'] %}{{ s['body'][:200] }}{% else %}Schematic of satellite passes{% endif %}" width="100%">{% endif %}
   </article>
   {% else %}
   <p>No sightings yet.</p>
@@ -3682,7 +3682,7 @@ def aurora_page():
 @app.route("/")
 def index():
     recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 4) = 'http') AS is_photo, "
         "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
         "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
