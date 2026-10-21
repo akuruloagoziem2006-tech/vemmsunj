@@ -4676,6 +4676,8 @@ def record_usage(resp):
             return resp
         if request.path.startswith(SKIP_PREFIXES):
             return resp
+        if (session.get("username") or "").lower() in ADMIN_USERNAMES:
+            return resp
         page = re.sub(r"/\d+", "/:id", request.path)[:80]
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         db = get_db()
@@ -4722,14 +4724,14 @@ def admin_page():
     since14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
     since7 = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     cutoff24 = (now - timedelta(hours=24)).isoformat(timespec="minutes")
-    total_users = db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
-    active24 = db.execute("SELECT COUNT(*) AS n FROM users WHERE last_seen >= ?", (cutoff24,)).fetchone()["n"]
+    total_users = db.execute("SELECT COUNT(*) AS n FROM users WHERE username NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT')").fetchone()["n"]
+    active24 = db.execute("SELECT COUNT(*) AS n FROM users WHERE last_seen >= ? AND username NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT')", (cutoff24,)).fetchone()["n"]
     posts_total = db.execute(
         "SELECT COUNT(*) AS n FROM posts WHERE author NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT')"
     ).fetchone()["n"]
     signups = db.execute(
         "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM users "
-        "WHERE substr(created_at, 1, 10) >= ? GROUP BY substr(created_at, 1, 10) ORDER BY day DESC",
+        "WHERE username NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT') AND substr(created_at, 1, 10) >= ? GROUP BY substr(created_at, 1, 10) ORDER BY day DESC",
         (since14,),
     ).fetchall()
     daily = db.execute(
@@ -4741,7 +4743,7 @@ def admin_page():
         (since7,),
     ).fetchall()
     accounts = db.execute(
-        "SELECT username, created_at, last_login, last_seen FROM users "
+        "SELECT username, created_at, last_login, last_seen FROM users WHERE username NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT') "
         "ORDER BY COALESCE(last_seen, created_at) DESC LIMIT 200"
     ).fetchall()
     posted = {r["author"]: r["n"] for r in db.execute(
@@ -4777,7 +4779,7 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
   <div class="stat"><span class="stat-n">{{ posts_total }}</span><span class="meta">sightings from users</span></div>
 </div>
 
-<h2>Accounts</h2>
+<h2>Real accounts</h2>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>User</th><th>Joined (UTC)</th><th>Last login</th><th>Last seen</th><th>Sightings</th><th></th></tr></thead>
 <tbody>
