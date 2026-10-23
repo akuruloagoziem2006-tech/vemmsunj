@@ -2980,6 +2980,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
     <a class="btn quiet" href="/posts">Log a sighting</a>
   </div>
 </section>
+{% if username %}
 <section class="near" id="near-card">
   <h2>Near you tonight</h2>
   <p class="meta">Tap once to find the closest place and its next pass.</p>
@@ -3067,6 +3068,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
   });
 })();
 </script>
+{% endif %}
 <section>
   <h2>How it works</h2>
   <ol class="how">
@@ -3970,7 +3972,7 @@ def login():
 @app.route("/logout")
 def logout():
     session.pop("username", None)
-    return redirect("/posts")
+    return redirect("/")
 
 @app.route("/follow/<username>", methods=["POST"])
 def follow(username):
@@ -5473,10 +5475,10 @@ def after_login_url():
     nxt = session.pop("next", "") or ""
     if nxt.startswith("/") and not nxt.startswith("//") and not nxt.startswith(PUBLIC_PREFIXES):
         return nxt
-    return "/posts"
+    return "/"
 
 def require_login():
-    if request.path.startswith(PUBLIC_PREFIXES) or session.get("username"):
+    if request.path == "/" or request.path.startswith(PUBLIC_PREFIXES) or session.get("username"):
         return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "Log in to use VEMMSUNJ."}), 401
