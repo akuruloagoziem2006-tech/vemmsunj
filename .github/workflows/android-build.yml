@@ -59,10 +59,9 @@ jobs:
         run: |
           keytool -list -v -keystore android.keystore -alias vemmsunj -storepass "$KEYSTORE_PASS" | grep "SHA256:" | head -1
 
-      - name: Set up the Android project from the manifest
+      - name: Generate the Android project from the manifest
         run: |
-          npx --yes @bubblewrap/cli@1.27.0 init --manifest="https://vemmsunj.vercel.app/manifest.webmanifest" --skipPwaValidation < /dev/null || true
-          cp twa-manifest.json ./twa-manifest.json
+          npx --yes @bubblewrap/cli@1.27.0 update --manifest=twa-manifest.json --skipVersionUpgrade < /dev/null
           ls -la
 
       - name: Build the app
