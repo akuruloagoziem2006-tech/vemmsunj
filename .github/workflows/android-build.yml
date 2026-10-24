@@ -36,6 +36,15 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install the SDK packages Bubblewrap needs
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK/cmdline-tools" -path '*/bin/sdkmanager' | head -1)"
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK" "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+          echo "build-tools:"; ls "$SDK/build-tools"
+          echo "platforms:"; ls "$SDK/platforms"
+
       - name: Point Bubblewrap at the preinstalled Android SDK
         run: |
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
