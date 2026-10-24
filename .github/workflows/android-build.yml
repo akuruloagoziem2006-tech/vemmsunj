@@ -64,6 +64,17 @@ jobs:
           npx --yes @bubblewrap/cli@1.27.0 update --manifest=twa-manifest.json --skipVersionUpgrade < /dev/null
           ls -la
 
+      - name: Show the generated Android settings
+        run: |
+          echo "== local.properties =="; cat local.properties 2>/dev/null || echo "(none)"
+          echo "== gradle.properties =="; cat gradle.properties 2>/dev/null || echo "(none)"
+          echo "== twa-manifest.json (sdk fields) =="; grep -iE "sdk|jdk|path" twa-manifest.json || true
+          echo "== ~/.bubblewrap/config.json =="; cat ~/.bubblewrap/config.json 2>/dev/null || echo "(none)"
+          echo "== android_sdk folder =="; ls ~/.bubblewrap/android_sdk 2>/dev/null || echo "(missing)"
+          echo "== build-tools installed =="; ls ~/.bubblewrap/android_sdk/build-tools 2>/dev/null || echo "(missing)"
+          echo "== platforms installed =="; ls ~/.bubblewrap/android_sdk/platforms 2>/dev/null || echo "(missing)"
+          exit 1
+
       - name: Build the app
         env:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
