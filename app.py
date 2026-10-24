@@ -5476,6 +5476,48 @@ def require_login():
 
 # Sign-in gate removed: pages are public; sign-in is needed for posting and personal features.
 
+# ---------- App icons as PNG (for the Android app) ----------
+_PNG_CACHE = {}
+
+def _icon_png(size):
+    if size in _PNG_CACHE:
+        return _PNG_CACHE[size]
+    import zlib, struct
+    bg = (10, 13, 18)
+    ring = (42, 49, 60)
+    core = (201, 85, 58)
+    ring_r = size * 0.293
+    ring_half = size * 0.0156
+    core_r = size * 0.1406
+    c = (size - 1) / 2
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)
+        dy = y - c
+        for x in range(size):
+            dx = x - c
+            d = (dx * dx + dy * dy) ** 0.5
+            if d <= core_r:
+                rows += bytes(core)
+            elif abs(d - ring_r) <= ring_half:
+                rows += bytes(ring)
+            else:
+                rows += bytes(bg)
+    def chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+           + chunk(b"IEND", b""))
+    _PNG_CACHE[size] = png
+    return png
+
+@app.route("/icon-<int:size>.png")
+def icon_png(size):
+    if size not in (192, 512):
+        abort(404)
+    return Response(_icon_png(size), mimetype="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
