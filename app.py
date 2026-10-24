@@ -1012,7 +1012,6 @@ header.site { position: relative; z-index: 2000; }
     <details class="brandmenu">
       <summary class="brand">VEMMSUNJ <span class="caret" aria-hidden="true">▾</span></summary>
       <div class="menu-panel brand-panel">
-        {% if username %}
         <a href="/">Home</a>
         <a href="/listings">Places</a>
         <a href="/map">Map</a>
@@ -1021,12 +1020,7 @@ header.site { position: relative; z-index: 2000; }
         <a href="/globe">Globe</a>
         <a href="/aurora">Aurora</a>
         <a href="/planets">Planets</a>
-        <a href="/log">My log</a>
-        <a href="/logout">Log out</a>
-        {% else %}
-        <a href="/login">Log in</a>
-        <a href="/signup">Sign up</a>
-        {% endif %}
+        {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
         <button id="redlight" class="btn quiet" type="button">Red light: off</button>
       </div>
     </details>
@@ -1034,15 +1028,10 @@ header.site { position: relative; z-index: 2000; }
     <span class="steps">Pick a place → check tonight's passes → log what you saw</span>
   </div>
   <nav class="primary">
-    {% if username %}
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
-    <a href="/logout">Log out</a>
-    {% else %}
-    <a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>
-    <a href="/signup">Sign up</a>
-    {% endif %}
+    {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
   </nav>
 </header>
 <div class="planets" aria-hidden="true">
@@ -1686,7 +1675,6 @@ fetch("/api/listings")
 "auth.html": """{% extends "base.html" %}
 {% block content %}
 <h1>{{ title }}</h1>
-<p class="meta">Sign up or log in to explore places, passes, the feed, and the planets.</p>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="{{ action }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -2980,7 +2968,6 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
     <a class="btn quiet" href="/posts">Log a sighting</a>
   </div>
 </section>
-{% if username %}
 <section class="near" id="near-card">
   <h2>Near you tonight</h2>
   <p class="meta">Tap once to find the closest place and its next pass.</p>
@@ -3068,7 +3055,6 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
   });
 })();
 </script>
-{% endif %}
 <section>
   <h2>How it works</h2>
   <ol class="how">
@@ -3683,14 +3669,7 @@ def aurora_page():
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
-    recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, (substr(p.image_svg, 1, 4) = 'http') AS is_photo, "
-        "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
-        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
-        "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
-        "ORDER BY p.id DESC LIMIT 6"
-    ).fetchall()
-    return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
+    return redirect("/listings")
 
 @app.route("/listings")
 def listings():
@@ -3972,7 +3951,7 @@ def login():
 @app.route("/logout")
 def logout():
     session.pop("username", None)
-    return redirect("/")
+    return redirect("/posts")
 
 @app.route("/follow/<username>", methods=["POST"])
 def follow(username):
@@ -5296,15 +5275,15 @@ def edge_cache_headers(resp):
         return resp
     path = request.path
     rules = {
-        "/api/globe": "private, max-age=60, stale-while-revalidate=120",
-        "/api/sky": "private, max-age=60, stale-while-revalidate=120",
-        "/api/aurora": "private, max-age=900, stale-while-revalidate=1800",
-        "/api/listings": "private, max-age=3600, stale-while-revalidate=86400",
+        "/api/globe": "public, s-maxage=60, stale-while-revalidate=120",
+        "/api/sky": "public, s-maxage=60, stale-while-revalidate=120",
+        "/api/aurora": "public, s-maxage=900, stale-while-revalidate=1800",
+        "/api/listings": "public, s-maxage=3600, stale-while-revalidate=86400",
     }
     if path in rules:
         resp.headers["Cache-Control"] = rules[path]
     elif path.startswith("/api/passes/"):
-        resp.headers["Cache-Control"] = "private, max-age=900, stale-while-revalidate=1800"
+        resp.headers["Cache-Control"] = "public, s-maxage=900, stale-while-revalidate=1800"
     return resp
 
 # ---------- Planetary dashboard ----------
@@ -5475,7 +5454,7 @@ def after_login_url():
     nxt = session.pop("next", "") or ""
     if nxt.startswith("/") and not nxt.startswith("//") and not nxt.startswith(PUBLIC_PREFIXES):
         return nxt
-    return "/"
+    return "/posts"
 
 def require_login():
     if request.path == "/" or request.path.startswith(PUBLIC_PREFIXES) or session.get("username"):
@@ -5488,7 +5467,7 @@ def require_login():
         session["next"] = request.full_path.rstrip("?")
     return redirect("/login")
 
-app.before_request_funcs.setdefault(None, []).insert(0, require_login)
+# Sign-in gate removed: pages are public; sign-in is needed for posting and personal features.
 
 if __name__ == "__main__":
     from waitress import serve
