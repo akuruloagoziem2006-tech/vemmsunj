@@ -5480,6 +5480,8 @@ def after_login_url():
 def require_login():
     if request.path == "/" or request.path.startswith(PUBLIC_PREFIXES) or session.get("username"):
         return None
+    if request.path.endswith("/image.svg") and request.path.startswith("/posts/"):
+        return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "Log in to use VEMMSUNJ."}), 401
     if request.method == "GET":
