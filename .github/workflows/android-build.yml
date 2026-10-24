@@ -54,7 +54,7 @@ jobs:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          npx --yes @bubblewrap/cli@1.21.1 build --skipPwaValidation
+          npx --yes @bubblewrap/cli@1.27.0 build --skipPwaValidation
 
       - name: Upload the app files
         uses: actions/upload-artifact@v4
