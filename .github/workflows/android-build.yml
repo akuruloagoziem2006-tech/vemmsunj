@@ -41,7 +41,9 @@ jobs:
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           SDKMANAGER="$(find "$SDK/cmdline-tools" -path '*/bin/sdkmanager' | head -1)"
           echo "sdkmanager: $SDKMANAGER"
-          yes | "$SDKMANAGER" --sdk_root="$SDK" "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
+          yes | "$SDKMANAGER" --sdk_root="$SDK" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          echo "installed packages:"
+          "$SDKMANAGER" --sdk_root="$SDK" --list_installed
           echo "build-tools:"; ls "$SDK/build-tools"
           echo "platforms:"; ls "$SDK/platforms"
 
