@@ -38,9 +38,11 @@ jobs:
 
       - name: Point Bubblewrap at the preinstalled Android SDK
         run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Using Android SDK at: $SDK"
+          ls "$SDK" || true
           mkdir -p ~/.bubblewrap
-          printf '{"jdkPath": "%s", "androidSdkPath": "%s"}\n' \
-            "$JAVA_HOME" "/usr/local/lib/android/sdk" > ~/.bubblewrap/config.json
+          printf '{"jdkPath": "%s", "androidSdkPath": "%s"}\n' "$JAVA_HOME" "$SDK" > ~/.bubblewrap/config.json
           cat ~/.bubblewrap/config.json
 
       - name: Print the signing fingerprint
