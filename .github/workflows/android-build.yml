@@ -31,16 +31,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up the Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Accept Android licences
-        run: yes | sdkmanager --licenses > /dev/null || true
+      - name: Point Bubblewrap at the preinstalled Android SDK
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath": "%s", "androidSdkPath": "%s"}\n' \
+            "$JAVA_HOME" "/usr/local/lib/android/sdk" > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
 
       - name: Print the signing fingerprint
         env:
