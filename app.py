@@ -3669,7 +3669,14 @@ def aurora_page():
 # ---------- Routes: places ----------
 @app.route("/")
 def index():
-    return redirect("/listings")
+    recent = get_db().execute(
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
+        "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
+        "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
+        "ORDER BY p.id DESC LIMIT 6"
+    ).fetchall()
+    return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
 
 @app.route("/listings")
 def listings():
