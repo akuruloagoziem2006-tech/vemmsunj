@@ -8,3 +8,4 @@ secret_key.txt
 *.bsp
 __pycache__/
 *.pyc
+android.keystore

@@ -1,0 +1,65 @@
+name: Build Android app
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Check that the signing secrets exist
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASS" ]; then
+            echo "Missing ANDROID_KEYSTORE_B64 or ANDROID_KEYSTORE_PASSWORD secret."
+            exit 1
+          fi
+
+      - name: Restore the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > android.keystore
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Accept Android licences
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Print the signing fingerprint
+        env:
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          keytool -list -v -keystore android.keystore -alias vemmsunj -storepass "$KEYSTORE_PASS" | grep "SHA256:" | head -1
+
+      - name: Build the app
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          npx --yes @bubblewrap/cli@1.21.1 build --skipPwaValidation
+
+      - name: Upload the app files
+        uses: actions/upload-artifact@v4
+        with:
+          name: vemmsunj-android
+          path: |
+            app-release-bundle.aab
+            app-release-signed.apk
+          if-no-files-found: error
