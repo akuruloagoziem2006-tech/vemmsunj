@@ -1302,6 +1302,16 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 })();
 </script>
 {% endif %}
+{% set seeing = seeing_for(place) %}
+{% if seeing %}
+<h2>Seeing forecast</h2>
+<p class="meta">Seeing and transparency run from 1 (poor) to 8 (excellent). Cloud runs from 1 (clear) to 9 (overcast). Forecast by 7Timer! (non-commercial use).</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Time (UTC)</th><th>Seeing</th><th>Transparency</th><th>Cloud</th><th>Humidity</th><th>Wind</th></tr></thead>
+<tbody>
+{% for r in seeing %}<tr><td>{{ r['time'] }}</td><td>{{ r['seeing'] }}</td><td>{{ r['transparency'] }}</td><td>{{ r['cloud'] }}</td><td>{{ r['humidity'] }}</td><td>{{ r['wind'] }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
 <h2>Next 24 hours</h2>
 <p class="meta">Times are UTC. Each bar is a satellite above 10 degrees. The left edge is the start of the window.</p>
 {% if error %}
@@ -5898,6 +5908,47 @@ TONIGHT_TEMPLATES = {"tonight.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(TONIGHT_TEMPLATES)
+
+# ---------- Seeing forecast (7Timer!, non-commercial use) ----------
+SEEING_URL = "https://www.7timer.info/bin/api.pl?lon={lon}&lat={lat}&product=astro&output=json"
+
+def seeing_for(place):
+    """Next 24 hours of seeing, transparency, cloud, humidity and wind. None if unavailable."""
+    key = f"seeing:{place['id']}"
+    try:
+        body = cache_get(key, 3600)
+        if body is None:
+            url = SEEING_URL.format(lon=place["longitude"], lat=place["latitude"])
+            r = requests.get(url, timeout=15, headers={"User-Agent": "VEMMSUNJ"})
+            r.raise_for_status()
+            body = r.text
+            cache_put(key, body)
+        data = json.loads(body)
+        init = datetime.strptime(str(data["init"]), "%Y%m%d%H").replace(tzinfo=timezone.utc)
+        series = data.get("dataseries", [])
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        print(f"seeing error: {e}", flush=True)
+        return None
+    now = datetime.now(timezone.utc)
+    rows = []
+    for item in series:
+        when = init + timedelta(hours=int(item.get("timepoint", 0)))
+        if when < now - timedelta(hours=1):
+            continue
+        wind = item.get("wind10m") or {}
+        rows.append({
+            "time": when.strftime("%a %H:%M"),
+            "seeing": item.get("seeing", "-"),
+            "transparency": item.get("transparency", "-"),
+            "cloud": item.get("cloudcover", "-"),
+            "humidity": item.get("rh2m", "-"),
+            "wind": f"{wind.get('direction', '-')} {wind.get('speed', '-')}",
+        })
+        if len(rows) >= 8:
+            break
+    return rows or None
+
+app.jinja_env.globals["seeing_for"] = seeing_for
 
 if __name__ == "__main__":
     from waitress import serve
