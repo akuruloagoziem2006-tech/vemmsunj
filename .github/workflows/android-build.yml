@@ -68,18 +68,26 @@ jobs:
           printf 'sdk.dir=/usr/local/lib/android/sdk\n' > local.properties
           ls -la
 
-      - name: Build the app
+      - name: Build the app with Gradle
         env:
-          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          npx --yes @bubblewrap/cli@1.27.0 build --skipPwaValidation
+          cd "$GITHUB_WORKSPACE"
+          ls -la
+          cd android-project 2>/dev/null || cd .
+          chmod +x ./gradlew 2>/dev/null || true
+          ./gradlew --no-daemon bundleRelease assembleRelease \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/android.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASS" \
+            -Pandroid.injected.signing.key.alias=vemmsunj \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_PASS"
+          find . -name "*.aab" -o -name "*.apk" | grep release
 
       - name: Upload the app files
         uses: actions/upload-artifact@v4
         with:
           name: vemmsunj-android
           path: |
-            app-release-bundle.aab
-            app-release-signed.apk
+            **/app/build/outputs/bundle/release/*.aab
+            **/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
