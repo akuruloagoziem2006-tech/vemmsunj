@@ -5994,6 +5994,34 @@ def close_approaches():
         })
     return out
 
+COMET_MAX_M1 = 10.0
+
+def bright_comets():
+    body = cache_get("jpl-comets", 6 * 3600)
+    if body is None:
+        r = requests.get("https://ssd-api.jpl.nasa.gov/sbdb_query.api", params={
+            "fields": "full_name,M1,K1",
+            "sb-kind": "c",
+            "limit": "300",
+        }, timeout=20)
+        r.raise_for_status()
+        body = r.text
+        cache_put("jpl-comets", body)
+    data = json.loads(body)
+    out = []
+    for row in data.get("data", []):
+        try:
+            name = (row[0] or "").strip()
+            m1 = float(row[1])
+            k1 = float(row[2]) if row[2] not in (None, "") else None
+        except (TypeError, ValueError, IndexError):
+            continue
+        if m1 > COMET_MAX_M1:
+            continue
+        out.append({"name": name, "m1": round(m1, 1), "k1": round(k1, 1) if k1 is not None else "-"})
+    out.sort(key=lambda c: c["m1"])
+    return out[:40]
+
 @app.route("/tracker")
 def tracker_page():
     error, items = None, []
@@ -6002,7 +6030,13 @@ def tracker_page():
     except (requests.RequestException, ValueError) as e:
         print(f"tracker error: {e}", flush=True)
         error = "The close-approach data isn't available right now. Try again in a few minutes."
-    return render_template("tracker.html", items=items[:40], error=error,
+    comets, comet_error = [], None
+    try:
+        comets = bright_comets()
+    except (requests.RequestException, ValueError) as e:
+        print(f"comet error: {e}", flush=True)
+        comet_error = "Comet data isn't available right now. Try again in a few minutes."
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error,
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
@@ -6018,6 +6052,17 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% for r in items %}<tr><td>{{ r['name'] }}</td><td>{{ r['when'] }}</td><td>{{ r['au'] }} AU ({{ r['lunar'] }} Moon distances)</td><td>{{ r['speed'] }} km/s</td><td>{{ r['h'] }}</td></tr>{% else %}<tr><td colspan="5">No bright close approaches in the next 60 days.</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="meta">H is the object's intrinsic brightness: lower is brighter. Its apparent brightness depends on how close it is, so check current magnitudes before observing. Comets are not included yet.</p>
+<h2>Comets brighter than magnitude 10</h2>
+<p class="meta">Total visual magnitude (M1) and its slope (K1), from the JPL query. Lower M1 is brighter. Comets brighten and fade unpredictably, so check a current ephemeris before observing.</p>
+{% if comet_error %}
+<p class="error">{{ comet_error }}</p>
+{% else %}
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Comet</th><th>M1</th><th>K1</th></tr></thead>
+<tbody>
+{% for c in comets %}<tr><td>{{ c['name'] }}</td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
 <p class="meta">Data: NASA JPL Small-Body Database (public domain).</p>
 {% endif %}
 {% endblock %}
