@@ -4,5 +4,6 @@ skyfield
 sgp4
 jplephem
 numpy
-pg8000
+pg8000==1.31.5
 waitress
+scramp==1.4.17
