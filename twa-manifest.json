@@ -24,7 +24,7 @@
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "enableSiteSettingsShortcut": false,
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "targetSdkVersion": 34,
   "signingKey": {
     "path": "./android.keystore",
