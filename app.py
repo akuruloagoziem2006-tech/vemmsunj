@@ -1020,6 +1020,7 @@ header.site { position: relative; z-index: 2000; }
         <a href="/globe">Globe</a>
         <a href="/aurora">Aurora</a>
         <a href="/planets">Planets</a>
+        <a href="/tracker">Tracker</a>
         {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
         <button id="redlight" class="btn quiet" type="button">Red light: off</button>
       </div>
@@ -5949,6 +5950,80 @@ def seeing_for(place):
     return rows or None
 
 app.jinja_env.globals["seeing_for"] = seeing_for
+
+# ---------- Close-approach tracker (NASA JPL Small-Body Database, public domain) ----------
+JPL_CAD_URL = "https://ssd-api.jpl.nasa.gov/cad.api"
+TRACKER_MAX_AU = 0.1
+TRACKER_MAX_H = 16.0
+
+def close_approaches():
+    body = cache_get("jpl-cad", 6 * 3600)
+    if body is None:
+        r = requests.get(JPL_CAD_URL, params={
+            "date-min": "now",
+            "date-max": "+60",
+            "dist-max": str(TRACKER_MAX_AU),
+            "sort": "date",
+            "fields": "des,cd,dist,v_rel,h",
+        }, timeout=20)
+        r.raise_for_status()
+        body = r.text
+        cache_put("jpl-cad", body)
+    data = json.loads(body)
+    fields = data.get("fields", [])
+    idx = {name: i for i, name in enumerate(fields)}
+    out = []
+    for row in data.get("data", []):
+        def get(name):
+            i = idx.get(name)
+            return row[i] if i is not None and i < len(row) else None
+        try:
+            h = float(get("h"))
+            dist = float(get("dist"))
+            v_rel = float(get("v_rel"))
+        except (TypeError, ValueError):
+            continue
+        if h > TRACKER_MAX_H:
+            continue
+        out.append({
+            "name": get("des") or "unnamed",
+            "when": get("cd") or "-",
+            "au": round(dist, 4),
+            "lunar": round(dist * 389.17, 1),
+            "speed": round(v_rel, 2),
+            "h": round(h, 2),
+        })
+    return out
+
+@app.route("/tracker")
+def tracker_page():
+    error, items = None, []
+    try:
+        items = close_approaches()
+    except (requests.RequestException, ValueError) as e:
+        print(f"tracker error: {e}", flush=True)
+        error = "The close-approach data isn't available right now. Try again in a few minutes."
+    return render_template("tracker.html", items=items[:40], error=error,
+                           title="Close-approach tracker", section="tracker")
+
+TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
+{% block content %}
+<h1>Close-approach tracker</h1>
+<p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% else %}
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Object</th><th>Closest approach (UTC)</th><th>Distance</th><th>Speed</th><th>H</th></tr></thead>
+<tbody>
+{% for r in items %}<tr><td>{{ r['name'] }}</td><td>{{ r['when'] }}</td><td>{{ r['au'] }} AU ({{ r['lunar'] }} Moon distances)</td><td>{{ r['speed'] }} km/s</td><td>{{ r['h'] }}</td></tr>{% else %}<tr><td colspan="5">No bright close approaches in the next 60 days.</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">H is the object's intrinsic brightness: lower is brighter. Its apparent brightness depends on how close it is, so check current magnitudes before observing. Comets are not included yet.</p>
+<p class="meta">Data: NASA JPL Small-Body Database (public domain).</p>
+{% endif %}
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(TRACKER_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
