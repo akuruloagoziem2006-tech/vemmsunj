@@ -1386,20 +1386,25 @@ window.addEventListener("resize", function () { map.invalidateSize(); });
 
 const satMarkers = {};
 function satSvg(iss) {
-  const panels = iss
-    ? '<rect x="2" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="8" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="27" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="33" y="12" width="5" height="14" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="2" y="18.6" width="36" height="1.4" fill="#D9DEE6"/>' +
-      '<rect x="15" y="16" width="10" height="6" fill="#C9A24A" stroke="#8C7A52" stroke-width=".5"/>' +
-      '<rect x="18" y="4" width="4" height="32" fill="#D9DEE6" stroke="#8C929C" stroke-width=".4"/>'
-    : '<rect x="2" y="15" width="14" height="10" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="24" y="15" width="14" height="10" fill="#23487E" stroke="#8FB7D6" stroke-width=".6"/>' +
-      '<rect x="16" y="12" width="8" height="16" rx="1" fill="#D9DEE6" stroke="#8C929C" stroke-width=".5"/>' +
-      '<rect x="18" y="6" width="4" height="6" fill="#C9A24A"/>';
-  return '<svg viewBox="0 0 40 40" width="100%" height="100%" style="transform-origin:50% 50%">' +
-    panels + '</svg>';
+  var defs = '<defs><radialGradient id="satglow"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="0.45" stop-color="#FFE4C4" stop-opacity="0.3"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient></defs>';
+  var glow = '<circle cx="20" cy="20" r="19" fill="url(#satglow)"/>';
+  var cell = 'fill="#23487E" stroke="#8FB7D6" stroke-width="0.6"';
+  var body;
+  if (iss) {
+    body = '<rect x="0.5" y="12" width="6" height="16" ' + cell + '/>' +
+      '<rect x="7" y="12" width="6" height="16" ' + cell + '/>' +
+      '<rect x="26.5" y="12" width="6" height="16" ' + cell + '/>' +
+      '<rect x="33" y="12" width="6" height="16" ' + cell + '/>' +
+      '<rect x="0" y="19.4" width="40" height="1.2" fill="#D9DEE6"/>' +
+      '<rect x="15" y="16" width="10" height="8" fill="#C9A24A" stroke="#8C7A52" stroke-width="0.5"/>' +
+      '<rect x="18" y="3" width="4" height="34" fill="#D9DEE6" stroke="#8C929C" stroke-width="0.4"/>';
+  } else {
+    body = '<rect x="2" y="14" width="13" height="12" ' + cell + '/>' +
+      '<rect x="25" y="14" width="13" height="12" ' + cell + '/>' +
+      '<rect x="15" y="11" width="10" height="18" rx="1.5" fill="#D9DEE6" stroke="#8C929C" stroke-width="0.5"/>' +
+      '<rect x="18" y="5" width="4" height="6" fill="#C9A24A"/>';
+  }
+  return '<svg viewBox="0 0 40 40" width="100%" height="100%" style="transform-origin:50% 50%;overflow:visible">' + defs + glow + body + '</svg>';
 }
 let satSnap = [];
 function groundAt(s, e) {
@@ -5426,6 +5431,7 @@ PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 {% else %}
 <p class="meta">No planet is above the horizon right now.</p>
 {% endif %}
+<p><a href="/planets/orbits">Watch the planets orbit the Sun</a></p>
 <nav class="seg" aria-label="Viewing equipment">
   <a href="/planets?place={{ place['id'] }}&view=all" {% if view == 'all' %}aria-current="page"{% endif %}>All</a>
   <a href="/planets?place={{ place['id'] }}&view=naked" {% if view == 'naked' %}aria-current="page"{% endif %}>Naked eye</a>
@@ -5517,6 +5523,223 @@ def icon_png(size):
     if size not in (192, 512):
         abort(404)
     return Response(_icon_png(size), mimetype="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+# ---------- Planet orbit simulation (real orbital and spin periods) ----------
+ORBIT_PLANETS = [
+    ("Mercury", "mercury barycenter", 87.969, 1407.6),
+    ("Venus", "venus barycenter", 224.701, -5832.5),
+    ("Earth", "earth", 365.256, 23.934),
+    ("Mars", "mars barycenter", 686.980, 24.623),
+    ("Jupiter", "jupiter barycenter", 4332.59, 9.925),
+    ("Saturn", "saturn barycenter", 10759.22, 10.656),
+    ("Uranus", "uranus barycenter", 30688.5, -17.24),
+    ("Neptune", "neptune barycenter", 60182.0, 16.11),
+]
+OBLIQUITY_DEG = 23.4392911
+
+def orbit_state(now=None):
+    now = now or datetime.now(timezone.utc)
+    eph = get_planet_kernel()
+    ts = load.timescale()
+    t = ts.from_datetime(now)
+    eps = math.radians(OBLIQUITY_DEG)
+    out = []
+    for name, key, period_d, spin_h in ORBIT_PLANETS:
+        p = (eph[key] - eph["sun"]).at(t).position.au
+        x = float(p[0])
+        y = float(p[1]) * math.cos(eps) + float(p[2]) * math.sin(eps)
+        out.append({
+            "name": name,
+            "x": round(x, 6),
+            "y": round(y, 6),
+            "r": round(math.hypot(x, y), 5),
+            "period_days": period_d,
+            "spin_hours": spin_h,
+        })
+    return {"time": now.isoformat(timespec="seconds"), "planets": out}
+
+@app.route("/api/orbits")
+def api_orbits():
+    try:
+        return jsonify(orbit_state())
+    except Exception as e:
+        print(f"orbit error: {e}", flush=True)
+        return jsonify({"error": "Planet positions aren't available right now. Try again in a few minutes."}), 502
+
+@app.route("/planets/orbits")
+def orbits_page():
+    return render_template("orbits.html", title="Planet orbits", section="planets")
+
+ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
+{% block head %}
+<style>
+.orb-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.orb-controls .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Planet orbits</h1>
+<p class="meta">The planets start from their real positions, from NASA's DE421 data, and move at their real orbital speeds. Each planet's spin uses its real rotation period. Orbit distances use a log scale so the inner planets are visible.</p>
+<div class="orb-controls" role="group" aria-label="Simulation speed">
+  <button class="btn quiet" type="button" data-scale="real" aria-pressed="true">Real time</button>
+  <button class="btn quiet" type="button" data-scale="day" aria-pressed="false">1 day per second</button>
+  <button class="btn quiet" type="button" data-scale="month" aria-pressed="false">1 month per second</button>
+  <button class="btn quiet" type="button" data-scale="year" aria-pressed="false">1 year per second</button>
+</div>
+<p><label><input id="spin" type="checkbox" checked> Show each planet's spin</label></p>
+<canvas id="orrery" style="width:100%;aspect-ratio:1/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:8px"></canvas>
+<p class="meta" id="orrery-status" role="status" aria-live="polite"></p>
+<h2>Real speeds</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Planet</th><th>Orbit (Earth days)</th><th>Spin (hours)</th></tr></thead>
+<tbody id="speed-rows"></tbody>
+</table></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var canvas = document.getElementById("orrery");
+  var ctx = canvas.getContext("2d");
+  var statusEl = document.getElementById("orrery-status");
+  var rowsEl = document.getElementById("speed-rows");
+  var spinEl = document.getElementById("spin");
+  var YEAR = 365.25 * 86400;
+  var SCALES = { real: 1, day: 86400, month: 86400 * 30.44, year: YEAR };
+  var LABELS = { real: "real time", day: "1 day per second", month: "1 month per second", year: "1 year per second" };
+  var COLORS = { Mercury: "#B5B2AC", Venus: "#E8C27A", Earth: "#4A7FB0", Mars: "#C9553A", Jupiter: "#D9A77A", Saturn: "#E3CC93", Uranus: "#9FD8DF", Neptune: "#3E66C9" };
+  var KM = { Mercury: 2440, Venus: 6052, Earth: 6371, Mars: 3390, Jupiter: 69911, Saturn: 58232, Uranus: 25362, Neptune: 24622 };
+  var mode = "real", factor = 1, simSec = 0, t0 = 0, planets = [], loaded = false;
+  var lastReal = performance.now();
+  var dpr = window.devicePixelRatio || 1;
+
+  function radialPos(r) { return 0.92 * Math.log(1 + r) / Math.log(32); }
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function utc(sec) {
+    var d = new Date(sec * 1000);
+    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) + " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + " UTC";
+  }
+  function resize() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight || w;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw() {
+    var W = canvas.clientWidth;
+    var H = canvas.clientHeight || W;
+    var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 18;
+    ctx.fillStyle = "#05070B";
+    ctx.fillRect(0, 0, W, H);
+    planets.forEach(function (p) {
+      ctx.strokeStyle = "#1C2330";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, half * radialPos(p.r), 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    var glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
+    glow.addColorStop(0, "#FFF4C2");
+    glow.addColorStop(0.4, "rgba(255,200,80,0.6)");
+    glow.addColorStop(1, "rgba(255,200,80,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#FFE08A";
+    ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+
+    var elapsed = simSec - t0;
+    planets.forEach(function (p) {
+      var a = p.a0 + 2 * Math.PI * elapsed / p.period;
+      var rad = half * radialPos(p.r);
+      var x = cx + rad * Math.cos(a);
+      var y = cy - rad * Math.sin(a);
+      var size = 2.5 + 7 * Math.sqrt(p.km / 69911);
+      ctx.fillStyle = COLORS[p.name] || "#E9E6DC";
+      ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+      if (spinEl.checked) {
+        var sa = p.dir * 2 * Math.PI * elapsed / p.spinSec;
+        ctx.strokeStyle = "rgba(233,230,220,0.85)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(sa) * size, y - Math.sin(sa) * size);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#E9E6DC";
+      ctx.font = "11px sans-serif";
+      ctx.fillText(p.name, x + size + 4, y + 4);
+    });
+  }
+
+  function rows(list) {
+    rowsEl.textContent = "";
+    list.forEach(function (p) {
+      var tr = document.createElement("tr");
+      var spin = Math.abs(p.spin_hours).toFixed(2) + (p.spin_hours < 0 ? " (retrograde)" : "");
+      [p.name, p.period_days.toFixed(1), spin].forEach(function (c) {
+        var td = document.createElement("td");
+        td.textContent = c;
+        tr.appendChild(td);
+      });
+      rowsEl.appendChild(tr);
+    });
+  }
+
+  function load() {
+    fetch("/api/orbits", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { statusEl.textContent = d.error; return; }
+        t0 = Date.parse(d.time) / 1000;
+        if (!loaded) simSec = t0;
+        loaded = true;
+        planets = d.planets.map(function (p) {
+          return {
+            name: p.name,
+            a0: Math.atan2(p.y, p.x),
+            r: p.r,
+            km: KM[p.name] || 6000,
+            period: p.period_days * 86400,
+            spinSec: Math.abs(p.spin_hours) * 3600,
+            dir: p.spin_hours < 0 ? -1 : 1
+          };
+        });
+        rows(d.planets);
+      })
+      .catch(function () { statusEl.textContent = "Planet positions can't be loaded right now."; });
+  }
+
+  function tick(now) {
+    var dt = (now - lastReal) / 1000;
+    lastReal = now;
+    if (loaded) {
+      simSec += dt * factor;
+      draw();
+      statusEl.textContent = "Simulated time: " + utc(simSec) + ". Speed: " + LABELS[mode] + ".";
+    }
+    requestAnimationFrame(tick);
+  }
+
+  document.querySelectorAll("[data-scale]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      mode = b.getAttribute("data-scale");
+      factor = SCALES[mode];
+      document.querySelectorAll("[data-scale]").forEach(function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+    });
+  });
+  window.addEventListener("resize", resize);
+  resize();
+  load();
+  setInterval(load, 600000);
+  requestAnimationFrame(tick);
+})();
+</script>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(ORBIT_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
