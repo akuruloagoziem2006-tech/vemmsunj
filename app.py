@@ -1226,7 +1226,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
-<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a> · <a href="/places/{{ place['id'] }}/simulate">Pass simulation</a></p>
+<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a> · <a href="/places/{{ place['id'] }}/simulate">Pass simulation</a> · <a href="/places/{{ place['id'] }}/tonight">What's up tonight</a></p>
 {% if eclipse %}
 <h2>Next possible eclipse</h2>
 <div class="place"><strong>{{ eclipse['name'] }}</strong>
@@ -1699,6 +1699,7 @@ LOG_TEMPLATES = {"log.html": """{% extends "base.html" %}
 {% block content %}
 <h1>My log</h1>
 <p class="meta">Only you can see this log. Entries don't appear in Sightings.</p>
+<p><a class="btn quiet" href="/log/export.csv">Download CSV</a> <a class="btn quiet" href="/log/export.json">Download JSON</a></p>
 <form method="post" action="/log">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label for="note">What did you see?</label>
@@ -2860,7 +2861,7 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
 <p class="lede">NOAA's forecast of where aurora is likely to be seen.</p>
 <p class="meta">Brighter green means a higher chance. Hover over a country to see its name.</p>
 {% if kp %}
-<div class="kp-block">
+<div class="kp-block" data-kp="{{ kp['kp'] }}">
   <div class="kp-value">Kp {{ kp['kp'] }}</div>
   <div class="kp-level">{{ kp['level'] }}</div>
   <div class="meta">Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div>
@@ -2871,6 +2872,29 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   <span class="meta">chance of aurora</span>
 </div>
 {% if place %}<p>Place: <strong>{{ place['name'] }}</strong>. <a href="/places/{{ place['id'] }}">Back to place</a></p>{% endif %}
+<button id="aurora-alert" class="btn quiet" type="button" hidden>Alert me to strong aurora</button>
+<p class="meta" id="aurora-alert-status" role="status" aria-live="polite"></p>
+<script>
+(function () {
+  var block = document.querySelector('.kp-block');
+  var btn = document.getElementById('aurora-alert');
+  var out = document.getElementById('aurora-alert-status');
+  if (!block || !btn || !('Notification' in window)) return;
+  var kp = parseFloat(block.getAttribute('data-kp'));
+  if (!(kp >= 5)) return;
+  btn.hidden = false;
+  btn.addEventListener('click', function () {
+    Notification.requestPermission().then(function (perm) {
+      if (perm === 'granted') {
+        new Notification('Strong aurora possible', { body: 'Kp is ' + kp + '. Look north from a dark sky.' });
+        out.textContent = 'Alert sent. Keep this page open to see updates.';
+      } else {
+        out.textContent = 'Notifications are blocked. Allow them in your browser settings.';
+      }
+    });
+  });
+})();
+</script>
 <p class="meta note" id="aurora-place"></p>
 <div class="aurora-full"><div id="map" style="height:60vh"></div></div>
 <p class="meta" id="aurora-status" role="status" aria-live="polite"></p>
@@ -5740,6 +5764,140 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(ORBIT_TEMPLATES)
+
+# ---------- Log export, What's up tonight, and the moon ----------
+@app.route("/log/export.<fmt>")
+def export_log(fmt):
+    me = session.get("username")
+    if not me:
+        return redirect("/login")
+    if fmt not in ("csv", "json"):
+        abort(404)
+    rows = get_db().execute(
+        "SELECT e.created_at, e.seen_at, e.note, l.name AS place FROM observations e "
+        "LEFT JOIN listings l ON l.id = e.listing_id WHERE e.username = ? ORDER BY e.id",
+        (me,),
+    ).fetchall()
+    if fmt == "json":
+        body = json.dumps([{"created_utc": r["created_at"], "seen_utc": r["seen_at"],
+                            "place": r["place"], "note": r["note"]} for r in rows], indent=2)
+        return Response(body, mimetype="application/json",
+                        headers={"Content-Disposition": "attachment; filename=vemmsunj-log.json"})
+    import csv, io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["created_utc", "seen_utc", "place", "note"])
+    for r in rows:
+        writer.writerow([r["created_at"], r["seen_at"] or "", r["place"] or "", r["note"]])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=vemmsunj-log.csv"})
+
+def twilight_times(lat, lon, now):
+    """Dusk (sun drops below the level) and dawn (sun rises above it) for the next 24 hours."""
+    levels = [("Civil", -6.0), ("Nautical", -12.0), ("Astronomical", -18.0)]
+    steps = [now + timedelta(minutes=15 * k) for k in range(24 * 4 + 1)]
+    alts = [sun_altitude_deg(lat, lon, t) for t in steps]
+    out = {}
+    for label, level in levels:
+        dusk = dawn = None
+        for i in range(1, len(steps)):
+            a0, a1 = alts[i - 1], alts[i]
+            if dusk is None and a0 > level >= a1:
+                dusk = steps[i]
+            if dawn is None and a0 <= level < a1:
+                dawn = steps[i]
+        out[label] = {
+            "dusk": dusk.strftime("%H:%M") if dusk else None,
+            "dawn": dawn.strftime("%H:%M") if dawn else None,
+        }
+    return out
+
+def moon_events(place, now):
+    from skyfield import almanac
+    eph = get_planet_kernel()
+    ts = load.timescale()
+    t0 = ts.from_datetime(now)
+    t1 = ts.from_datetime(now + timedelta(hours=24))
+    topos = wgs84.latlon(place["latitude"], place["longitude"])
+    res = {"rise": None, "set": None}
+    try:
+        times, events = almanac.find_discrete(t0, t1, almanac.risings_and_settings(eph, eph["moon"], topos))
+        for tt, ev in zip(times, events):
+            key = "rise" if ev else "set"
+            if res[key] is None:
+                res[key] = tt.utc_datetime().strftime("%H:%M")
+    except Exception as e:
+        print(f"moon events error: {e}", flush=True)
+    return res
+
+@app.route("/places/<int:listing_id>/tonight")
+def tonight_page(listing_id):
+    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    twilight = twilight_times(place["latitude"], place["longitude"], now)
+    moon = moon_events(place, now)
+    phase, illum = moon_phase(now)
+    try:
+        planets = [r for r in planet_rows(place, now)
+                   if not r.get("earth") and r.get("alt") is not None and r["alt"] >= 0 and r.get("mag") is not None]
+    except Exception as e:
+        print(f"tonight planets error: {e}", flush=True)
+        planets = []
+    planets.sort(key=lambda r: r["mag"])
+    try:
+        passes, _ = cached_passes(listing_id, place)
+    except requests.RequestException:
+        passes = []
+    soon = []
+    for p in passes:
+        st = datetime.fromisoformat(p["start"])
+        if st.tzinfo is None:
+            st = st.replace(tzinfo=timezone.utc)
+        if now <= st <= now + timedelta(hours=24):
+            soon.append({"satellite": p["satellite"], "start": st.strftime("%H:%M"),
+                         "peak": p["max_altitude_deg"]})
+    soon.sort(key=lambda p: p["peak"], reverse=True)
+    return render_template("tonight.html", place=place, now=now.strftime("%Y-%m-%d %H:%M"),
+                           twilight=twilight, moon=moon, phase=phase, illum=illum,
+                           planets=planets[:4], passes=soon[:5], title="What's up tonight",
+                           section="places")
+
+TONIGHT_TEMPLATES = {"tonight.html": r"""{% extends "base.html" %}
+{% block content %}
+<p><a href="/places/{{ place['id'] }}">Back to {{ place['name'] }}</a></p>
+<h1>What's up tonight</h1>
+<p class="meta">{{ place['name'] }} · {{ now }} UTC. All times are UTC.</p>
+<h2>Twilight</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Stage</th><th>Dusk (dark starts)</th><th>Dawn (light returns)</th></tr></thead>
+<tbody>
+{% for label, t in twilight.items() %}<tr><td>{{ label }}</td><td>{{ t['dusk'] or '-' }}</td><td>{{ t['dawn'] or '-' }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">Civil is -6 degrees, nautical -12, astronomical -18. Dusk and dawn are when the sun crosses each level in the next 24 hours.</p>
+<h2>Moon</h2>
+<div class="place"><strong>{{ phase }}, {{ illum }}% lit</strong>
+<div class="meta">Rises {{ moon['rise'] or '-' }} · Sets {{ moon['set'] or '-' }} (next 24 hours)</div></div>
+<p class="meta">A bright Moon suits lunar viewing. Plan deep-sky observing for the dark hours, especially near new moon.</p>
+<h2>Brightest planets now</h2>
+{% for r in planets %}
+<div class="place"><strong>{{ r['name'] }}</strong>
+<div class="meta">Magnitude {{ r['mag'] }} · {{ r['alt'] }}° up, to the {{ r['dir'] }}</div></div>
+{% else %}
+<p>No planets are above the horizon right now.</p>
+{% endfor %}
+<h2>Passes in the next 24 hours</h2>
+{% for p in passes %}
+<div class="place"><strong>{{ p['satellite'] }}</strong>
+<div class="meta">{{ p['start'] }} UTC · peak {{ p['peak'] }}°</div></div>
+{% else %}
+<p>No passes in the next 24 hours.</p>
+{% endfor %}
+<p><a class="btn" href="/places/{{ place['id'] }}/simulate">Simulate the passes</a></p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(TONIGHT_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
