@@ -47,11 +47,14 @@ jobs:
           echo "build-tools:"; ls "$SDK/build-tools"
           echo "platforms:"; ls "$SDK/platforms"
 
-      - name: Let Bubblewrap use its own Android SDK
+      - name: Point Bubblewrap and Gradle at the runner's Android SDK
         run: |
+          SDK=/usr/local/lib/android/sdk
           mkdir -p ~/.bubblewrap
-          printf '{"jdkPath": "%s", "androidSdkPath": "%s"}\n' "$JAVA_HOME" "$HOME/.bubblewrap/android_sdk" > ~/.bubblewrap/config.json
+          printf '{"jdkPath": "%s", "androidSdkPath": "%s"}\n' "$JAVA_HOME" "$SDK" > ~/.bubblewrap/config.json
           cat ~/.bubblewrap/config.json
+          printf 'sdk.dir=%s\n' "$SDK" > local.properties
+          cat local.properties
 
       - name: Print the signing fingerprint
         env:
@@ -62,18 +65,8 @@ jobs:
       - name: Generate the Android project from the manifest
         run: |
           npx --yes @bubblewrap/cli@1.27.0 update --manifest=twa-manifest.json --skipVersionUpgrade < /dev/null
+          printf 'sdk.dir=/usr/local/lib/android/sdk\n' > local.properties
           ls -la
-
-      - name: Show the generated Android settings
-        run: |
-          echo "== local.properties =="; cat local.properties 2>/dev/null || echo "(none)"
-          echo "== gradle.properties =="; cat gradle.properties 2>/dev/null || echo "(none)"
-          echo "== twa-manifest.json (sdk fields) =="; grep -iE "sdk|jdk|path" twa-manifest.json || true
-          echo "== ~/.bubblewrap/config.json =="; cat ~/.bubblewrap/config.json 2>/dev/null || echo "(none)"
-          echo "== android_sdk folder =="; ls ~/.bubblewrap/android_sdk 2>/dev/null || echo "(missing)"
-          echo "== build-tools installed =="; ls ~/.bubblewrap/android_sdk/build-tools 2>/dev/null || echo "(missing)"
-          echo "== platforms installed =="; ls ~/.bubblewrap/android_sdk/platforms 2>/dev/null || echo "(missing)"
-          exit 1
 
       - name: Build the app
         env:
