@@ -5964,7 +5964,6 @@ def close_approaches():
             "date-max": "+60",
             "dist-max": str(TRACKER_MAX_AU),
             "sort": "date",
-            "fields": "des,cd,dist,v_rel,h",
         }, timeout=20)
         r.raise_for_status()
         body = r.text
