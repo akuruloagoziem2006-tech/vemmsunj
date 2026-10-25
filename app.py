@@ -2409,6 +2409,7 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
 {% endblock %}
 {% block content %}
 <h1>Star compass</h1>
+<p><a class="btn quiet" href="/skyview?place={{ place['id'] }}">Open the full-screen sky view</a></p>
 <p class="meta">Point the back camera at the sky. Time is UTC. Place: {{ place['name'] }}. <a href="/places/{{ place['id'] }}">Back to place</a></p>
 <div class="compass-actions">
   <button id="start" class="btn" type="button">Start compass</button>
@@ -6068,6 +6069,264 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(TRACKER_TEMPLATES)
+
+# ---------- Full-screen sky view (device orientation) ----------
+@app.route("/skyview")
+def skyview_page():
+    pid = request.args.get("place", "1")
+    if not pid.isdigit():
+        abort(404)
+    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?", (int(pid),)).fetchone()
+    if place is None:
+        abort(404)
+    return render_template("skyview.html", place=place, title="Sky view", section="compass")
+
+SKYVIEW_TEMPLATES = {"skyview.html": r"""{% extends "base.html" %}
+{% block head %}
+<style>
+.sv-wrap { position: relative; height: 70vh; min-height: 420px; border-radius: 8px; overflow: hidden; background: #05070B; border: 1px solid var(--rule); }
+.sv-wrap canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; touch-action: none; }
+.sv-bar { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+</style>
+{% endblock %}
+{% block content %}
+<p><a href="/compass?place={{ place['id'] }}">Back to the compass list</a></p>
+<h1>Sky view</h1>
+<p class="meta">Place: {{ place['name'] }}. Turn the phone to look around. Tap a star or planet on screen to line it up with your view.</p>
+<div class="sv-bar">
+  <button id="sv-start" class="btn" type="button">Start sky view</button>
+  <button id="sv-reset" class="btn quiet" type="button">Reset alignment</button>
+</div>
+<p class="meta" id="sv-status" role="status" aria-live="polite"></p>
+<div class="sv-wrap"><canvas id="sv-canvas"></canvas></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var LAT = {{ place['latitude'] }};
+  var LON = {{ place['longitude'] }};
+  var D = Math.PI / 180;
+  var HFOV = 70;
+  var canvas = document.getElementById("sv-canvas");
+  var ctx = canvas.getContext("2d");
+  var statusEl = document.getElementById("sv-status");
+  var objects = [], orient = null, correction = 0, rawAz = 0;
+  var cam = { az: 0, alt: 0 };
+  var absolute = false, gotAbsolute = false, tiltOnly = false, gotOrientation = false, attached = false;
+  var sensorTimer = null;
+
+  function wrap180(x) { return ((x + 180) % 360 + 360) % 360 - 180; }
+  function dirName(az) { return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(az / 45) % 8]; }
+  function vfov() {
+    var W = canvas.clientWidth, H = canvas.clientHeight || W;
+    return HFOV * H / W;
+  }
+  function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function screenPos(o) {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    var d = wrap180(o.az - cam.az) * Math.cos(cam.alt * D);
+    var da = o.alt - cam.alt;
+    return { x: W / 2 + d / HFOV * W / 2, y: H / 2 - da / vfov() * H / 2, d: d, da: da };
+  }
+  function colorFor(o) {
+    if (o.kind === "moon") return "#E9E6DC";
+    if (o.kind === "planet") return "#E8C27A";
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? "#C9553A" : "#C9D6E8";
+    return "#E9E6DC";
+  }
+  function radiusFor(o) {
+    if (o.kind === "moon") return 7;
+    if (o.kind === "planet") return 5;
+    if (o.kind === "satellite") return /ISS/i.test(o.name) ? 6 : 4;
+    return Math.max(1.2, Math.min(6, 4 - 0.5 * (o.mag || 0)));
+  }
+
+  function updateCamera() {
+    if (!orient) return;
+    var a = (orient.alpha || 0) * D, b = (orient.beta || 0) * D, g = (orient.gamma || 0) * D;
+    var sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), sg = Math.sin(g), cg = Math.cos(g);
+    cam.alt = Math.asin(Math.max(-1, Math.min(1, -cg * cb))) / D;
+    if (tiltOnly) {
+      rawAz = 0;
+      cam.az = (correction + 360) % 360;
+      return;
+    }
+    var east = -sg * ca - cg * sb * sa;
+    var north = -sg * sa + cg * sb * ca;
+    rawAz = (Math.atan2(east, north) / D + 360) % 360;
+    cam.az = (rawAz + correction + 360) % 360;
+  }
+
+  function draw() {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    var bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#04060A");
+    bg.addColorStop(1, "#0B1018");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    if (!orient) {
+      ctx.fillStyle = "#8C929C";
+      ctx.font = "15px sans-serif";
+      ctx.fillText("Press Start sky view to begin.", 16, H / 2);
+      return;
+    }
+    var hy = H / 2 + cam.alt / vfov() * H / 2;
+    if (hy < H) {
+      var gy = Math.max(0, hy);
+      ctx.fillStyle = "rgba(18,22,28,0.92)";
+      ctx.fillRect(0, gy, W, H - gy);
+      ctx.strokeStyle = "#3A4452";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
+      ctx.fillStyle = "#8C929C";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("Horizon", 8, hy - 6);
+    }
+    objects.forEach(function (o) {
+      if (o.alt <= 0) return;
+      var s = screenPos(o);
+      if (Math.abs(s.d) > HFOV || Math.abs(s.da) > vfov()) return;
+      var r = radiusFor(o);
+      if (o.kind === "star" && o.mag < 1.5) {
+        var glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 3.5);
+        glow.addColorStop(0, "rgba(233,230,220,0.35)");
+        glow.addColorStop(1, "rgba(233,230,220,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(s.x, s.y, r * 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colorFor(o);
+      ctx.fill();
+      if (o.name && (o.kind !== "star" || o.mag < 2.5)) {
+        ctx.fillStyle = "#E9E6DC";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(o.name, s.x + r + 4, s.y + 4);
+      }
+    });
+    ctx.strokeStyle = "#C9553A";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 12, H / 2); ctx.lineTo(W / 2 + 12, H / 2);
+    ctx.moveTo(W / 2, H / 2 - 12); ctx.lineTo(W / 2, H / 2 + 12);
+    ctx.stroke();
+    ctx.fillStyle = "#8C929C";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("Facing " + dirName(cam.az) + ", " + Math.round(cam.alt) + " degrees up", 8, H - 10);
+  }
+
+  function loadSky() {
+    fetch("/api/sky?lat=" + LAT + "&lon=" + LON, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { statusEl.textContent = d.error; return; }
+        objects = d.objects;
+      })
+      .catch(function () { statusEl.textContent = "Sky data can't be loaded right now."; });
+  }
+
+  function onOrient(e) {
+    if (e.beta === null && e.gamma === null) return;
+    if (e.absolute) gotAbsolute = true;
+    else if (gotAbsolute) return;
+    absolute = !!e.absolute;
+    gotOrientation = true;
+    tiltOnly = false;
+    var first = !orient;
+    orient = e;
+    if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
+    if (first) statusEl.textContent = absolute
+      ? "Turn slowly to look around the sky."
+      : "Tilt the phone to look up and down. Turn, then tap an object on screen to line up left and right.";
+  }
+
+  function onMotion(e) {
+    if (gotOrientation) return;
+    var g = e.accelerationIncludingGravity;
+    if (!g || g.x === null || g.y === null || g.z === null) return;
+    var first = !tiltOnly;
+    tiltOnly = true;
+    orient = {
+      alpha: 0,
+      beta: Math.atan2(g.y, g.z) / D,
+      gamma: Math.atan2(-g.x, Math.hypot(g.y, g.z)) / D
+    };
+    if (sensorTimer) { clearTimeout(sensorTimer); sensorTimer = null; }
+    if (first) statusEl.textContent = "This phone can't sense turning, so tilting works but turning doesn't. Turn to face an object, then tap it on screen.";
+  }
+
+  function attach() {
+    if (attached) return;
+    attached = true;
+    if ("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute", onOrient, true);
+    window.addEventListener("deviceorientation", onOrient, true);
+    window.addEventListener("devicemotion", onMotion, true);
+    statusEl.textContent = "Waiting for motion readings...";
+    sensorTimer = setTimeout(function () {
+      if (!orient) statusEl.textContent = "No motion readings yet. Check that motion sensors are allowed for this site in Chrome settings.";
+    }, 4000);
+  }
+
+  document.getElementById("sv-start").addEventListener("click", function () {
+    var DOE = window.DeviceOrientationEvent;
+    if (!DOE) { statusEl.textContent = "This device has no motion sensors."; return; }
+    if (typeof DOE.requestPermission === "function") {
+      DOE.requestPermission()
+        .then(function (state) {
+          if (state === "granted") attach();
+          else statusEl.textContent = "Motion access was refused. Allow it in browser settings.";
+        })
+        .catch(function () { statusEl.textContent = "Couldn't ask for motion access."; });
+    } else {
+      attach();
+    }
+  });
+
+  document.getElementById("sv-reset").addEventListener("click", function () {
+    correction = 0;
+    statusEl.textContent = "Alignment reset. Tap an object on screen to line up again.";
+  });
+
+  canvas.addEventListener("click", function (e) {
+    if (!orient) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var best = null, bestDist = 36;
+    objects.forEach(function (o) {
+      if (o.alt <= 0) return;
+      var s = screenPos(o);
+      if (Math.abs(s.d) > HFOV || Math.abs(s.da) > vfov()) return;
+      var dist = Math.hypot(s.x - mx, s.y - my);
+      if (dist < bestDist) { bestDist = dist; best = o; }
+    });
+    if (best) {
+      correction = wrap180(best.az - rawAz);
+      statusEl.textContent = "Aligned to " + (best.name || "that star") + ". Other objects should now sit where they are in the sky.";
+    } else {
+      statusEl.textContent = "No object near that spot. Tap a star or planet on screen.";
+    }
+  });
+
+  window.addEventListener("resize", resize);
+  resize();
+  setTimeout(resize, 250);
+  loadSky();
+  setInterval(loadSky, 60000);
+  (function frame() {
+    updateCamera();
+    draw();
+    requestAnimationFrame(frame);
+  })();
+})();
+</script>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(SKYVIEW_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
