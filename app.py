@@ -467,7 +467,7 @@ TEMPLATES = {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }}: VEMMSUNJ</title>
+<title>{% if title and title != "VEMMSUNJ" %}{{ title }} · {% endif %}VEMMSUNJ — Sky-watching map</title>
 <meta name="description" content="VEMMSUNJ is a sky-watching map for observatories and dark-sky spots, with satellite passes, planets, aurora forecasts, and sightings from people who log what they see.">
 <meta property="og:title" content="VEMMSUNJ: sky-watching map">
 <meta property="og:description" content="Find dark-sky places, check tonight's satellite passes and planets, and log what you saw.">
@@ -1005,6 +1005,13 @@ header.site { position: relative; z-index: 2000; }
 .feed-photo img { border-radius: 8px; background: #000; display: block; }
 .feed-photo figcaption { margin-top: .5rem; }
 </style>
+<style>
+/* Bigger tap targets: buttons and links are at least 44px tall on phones */
+@media (max-width: 560px) {
+  .btn, button, .chip, .sat-btn { min-height: 44px; }
+  header.site nav a, .menu-panel a { display: inline-flex; align-items: center; min-height: 44px; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -1048,11 +1055,21 @@ header.site { position: relative; z-index: 2000; }
 <main>{% block content %}{% endblock %}</main>
 <footer class="site-footer">
   <div class="inner">
-    <p><strong>VEMMSUNJ</strong> · Released under the MIT licence.</p>
+    <p><strong>VEMMSUNJ</strong> · Released under the MIT licence. <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a></p>
     <p>Data from CelesTrak, NASA JPL, NASA EPIC, NOAA Space Weather Prediction Center, Open-Meteo, OpenStreetMap, and Natural Earth. Full credits are in the README.</p>
   </div>
 </footer>
 {% block scripts %}{% endblock %}
+<script>
+(function () {
+  document.querySelectorAll('time[data-utc]').forEach(function (el) {
+    var d = new Date(el.getAttribute('data-utc'));
+    if (isNaN(d)) return;
+    el.textContent = d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    el.title = el.getAttribute('data-utc-label') or '';
+  });
+})();
+</script>
 <script>
 (function () {
   document.addEventListener("submit", function (e) {
@@ -3011,7 +3028,7 @@ HOME_TEMPLATES = {"home.html": """{% extends "base.html" %}
 </section>
 <section class="near" id="near-card">
   <h2>Near you tonight</h2>
-  <p class="meta">Tap once to find the closest place and its next pass.</p>
+  <p class="meta">Tap once to find the closest place and its next pass. Your location stays in your browser. We don't store it.</p>
   <button id="near-go" class="btn" type="button">Find my nearest place</button>
   <p class="meta" id="near-status" role="status" aria-live="polite"></p>
   <div id="near-result"></div>
@@ -6327,6 +6344,30 @@ SKYVIEW_TEMPLATES = {"skyview.html": r"""{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(SKYVIEW_TEMPLATES)
+
+ABOUT_TEMPLATES = {"about.html": """{% extends "base.html" %}
+{% block content %}
+<h1>About VEMMSUNJ</h1>
+<p class="lede">VEMMSUNJ is a sky-watching map for observatories, dark-sky spots, and people who log what they see.</p>
+<h2>The name</h2>
+<p>VEMMSUNJ is named for the eight planets, in order from the Sun: Venus, Earth, Mercury, Mars, Saturn, Uranus, Neptune, Jupiter.</p>
+<h2>What you can do</h2>
+<p>Find observatories and dark-sky spots, check tonight's satellite passes and planets, look at the sky in front of your phone, follow the aurora forecast, and log what you see.</p>
+<h2>How the data works</h2>
+<p>Satellite positions come from CelesTrak's orbit data. Planet positions come from NASA's DE421 ephemeris. Space weather and the aurora forecast come from NOAA. Seeing comes from 7Timer!. Weather comes from Open-Meteo. Times are approximate, and they're shown in your time zone with UTC beside them.</p>
+<h2>What it can't do yet</h2>
+<p>Star charts use 85 bright stars, not a full catalogue. Eclipse dates are approximate. Pass and aurora alerts only run while a page is open.</p>
+<h2>Privacy</h2>
+<p>Your location stays in your browser when you use Near me or the sky view. We store your account, your sightings, your likes and follows, and your log entries. See the <a href="/privacy">privacy page</a>.</p>
+<h2>Open source</h2>
+<p>VEMMSUNJ is released under the MIT licence. The code and the credits are on <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a>.</p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(ABOUT_TEMPLATES)
+
+@app.route("/about")
+def about_page():
+    return render_template("about.html", title="About", section="")
 
 if __name__ == "__main__":
     from waitress import serve
