@@ -398,6 +398,7 @@ def pass_strip(passes, origin=None):
             "width": round(max((e - s) / 1440 * 100, 0.4), 2),
             "satellite": p["satellite"],
             "start": start.strftime("%H:%M"),
+            "iso": start.isoformat(timespec="minutes"),
             "peak": p["max_altitude_deg"],
         })
     ticks = []
@@ -1065,8 +1066,9 @@ header.site { position: relative; z-index: 2000; }
   document.querySelectorAll('time[data-utc]').forEach(function (el) {
     var d = new Date(el.getAttribute('data-utc'));
     if (isNaN(d)) return;
-    el.textContent = d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-    el.title = el.getAttribute('data-utc-label') or '';
+    var label = el.getAttribute('data-utc-label') || '';
+    el.textContent = d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) + (label ? ' (' + label + ')' : '');
+    el.title = 'Your local time, with UTC in brackets';
   });
 })();
 </script>
@@ -1226,7 +1228,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">The next 24 hours from that time. Predictions use current orbit data, so they're less reliable further ahead.</p>
 {% else %}
 <h2 class="tonight-title">Tonight's best</h2>
-{% if tonight['next'] %}<p><strong>Next pass: {{ tonight['next']['satellite'] }} at {{ tonight['next']['start'] }} UTC, peak {{ tonight['next']['peak'] }}°.</strong></p>{% else %}<p class="meta">No passes in the next 24 hours.</p>{% endif %}
+{% if tonight['next'] %}<p><strong>Next pass: {{ tonight['next']['satellite'] }} at <time data-utc="{{ tonight['next']['iso'] }}" data-utc-label="{{ tonight['next']['start'] }} UTC">{{ tonight['next']['start'] }} UTC</time>, peak {{ tonight['next']['peak'] }}°.</strong></p>{% else %}<p class="meta">No passes in the next 24 hours.</p>{% endif %}
 <p>{{ tonight['phase'] }}, {{ tonight['illum'] }}% lit.</p>
 {% if tonight['dark'] is none %}
   <p class="meta">Dark hours are unavailable right now.</p>
@@ -1346,7 +1348,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <div class="table-wrap"><table class="data">
 <thead><tr><th>Satellite</th><th>Starts (UTC)</th><th>Peak</th></tr></thead>
 <tbody>
-{% for p in items[:10] %}<tr><td>{{ p['satellite'] }}</td><td>{{ p['start'] }}</td><td>{{ p['peak'] }}°</td></tr>{% else %}<tr><td colspan="3">No passes in the next 24 hours.</td></tr>{% endfor %}
+{% for p in items[:10] %}<tr><td>{{ p['satellite'] }}</td><td><time data-utc="{{ p['iso'] }}" data-utc-label="{{ p['start'] }} UTC">{{ p['start'] }} UTC</time></td><td>{{ p['peak'] }}°</td></tr>{% else %}<tr><td colspan="3">No passes in the next 24 hours.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
 <h2>Sightings here</h2>
@@ -3212,7 +3214,7 @@ def tonight_summary(place, passes):
     nxt = None
     if future:
         st, p = future[0]
-        nxt = {"satellite": p["satellite"], "start": st.strftime("%H:%M"), "peak": p["max_altitude_deg"]}
+        nxt = {"satellite": p["satellite"], "start": st.strftime("%H:%M"), "iso": st.isoformat(timespec="minutes"), "peak": p["max_altitude_deg"]}
     return {"phase": phase, "illum": illum, "dark": dark, "top": upcoming[:3], "next": nxt}
 
 # ---------- Planets (simplified orbital elements) ----------
