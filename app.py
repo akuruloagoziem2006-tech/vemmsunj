@@ -1114,6 +1114,98 @@ header.site { width: 100%; }
   main { max-width: 1440px !important; }
 }
 </style>
+<style>
+/* Desktop polish: a cooler, more cinematic look on wide screens. Phones are unchanged. */
+@media (min-width: 900px) {
+  body {
+    background:
+      radial-gradient(1200px 600px at 75% -10%, rgba(201, 85, 58, 0.10), transparent 60%),
+      radial-gradient(900px 500px at 0% 0%, rgba(43, 90, 150, 0.12), transparent 55%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+  header.site {
+    background: rgba(10, 13, 18, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    border-bottom: 1px solid var(--rule);
+  }
+  header.site .brand {
+    font-size: 1.45rem;
+    letter-spacing: .01em;
+  }
+  header.site .tagline { font-size: .82rem; opacity: .8; }
+  header.site nav.topnav a {
+    position: relative;
+    padding: .35rem 0;
+    transition: color .2s ease;
+  }
+  header.site nav.topnav a::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -2px;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .25s ease;
+  }
+  header.site nav.topnav a:hover::after,
+  header.site nav.topnav a[aria-current="page"]::after { transform: scaleX(1); }
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    padding: 3.5rem 3rem 3rem;
+    margin: 1.5rem 0 1rem;
+    border: 1px solid var(--rule);
+    background:
+      radial-gradient(circle at 80% 30%, rgba(201, 85, 58, 0.18), transparent 45%),
+      linear-gradient(160deg, #0d1420 0%, #080b11 100%);
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 12% 22%, #E9E6DC, transparent),
+      radial-gradient(1px 1px at 38% 64%, #E9E6DC, transparent),
+      radial-gradient(1.5px 1.5px at 64% 18%, #E9E6DC, transparent),
+      radial-gradient(1px 1px at 86% 72%, #E9E6DC, transparent),
+      radial-gradient(1px 1px at 52% 40%, #E9E6DC, transparent),
+      radial-gradient(1.5px 1.5px at 24% 84%, #E9E6DC, transparent),
+      radial-gradient(1px 1px at 94% 14%, #E9E6DC, transparent);
+    opacity: .55;
+    pointer-events: none;
+  }
+  .hero > * { position: relative; }
+  .hero-title { font-size: 4.2rem; letter-spacing: -.02em; }
+  .hero-lede { font-size: 1.5rem; max-width: 46rem; }
+  .sky-tonight, .near-card, .step-card, .place-card, .composer, .stat {
+    background: linear-gradient(180deg, rgba(23, 28, 36, 0.92), rgba(16, 20, 27, 0.92));
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    transition: transform .2s ease, border-color .2s ease;
+  }
+  .step-card:hover, .place-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .feed-photo img {
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    transition: transform .3s ease;
+  }
+  .feed-photo img:hover { transform: scale(1.015); }
+  main h2 { letter-spacing: .01em; }
+  .btn { transition: transform .15s ease, filter .15s ease, background .2s ease; }
+  .btn:hover { transform: translateY(-1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-photo img, .btn, .step-card, .place-card, header.site nav.topnav a::after { transition: none; }
+}
+</style>
 </head>
 <body>
 <header class="site">
