@@ -506,7 +506,6 @@ TEMPLATES = {
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.55 var(--sans); }
-main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
 h1, h2 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 .6rem; }
 h1 { font-size: 2rem; }
 h2 { font-size: 1.3rem; }
@@ -625,7 +624,6 @@ main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
 <style>
 </style>
 <style>
-main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25rem; padding-right: 1.25rem; }
 @media (max-width: 480px) {
   main { padding-left: 1rem; padding-right: 1rem; }
 }
@@ -686,7 +684,6 @@ main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25r
 <style>
 /* Professional pass: shared type, spacing, controls, cards, and footer. Layout and behaviour are unchanged. */
 body { line-height: 1.6; -webkit-font-smoothing: antialiased; }
-main { max-width: 44rem; padding-top: 2rem; padding-bottom: 3rem; }
 h1 { font-size: 2.1rem; letter-spacing: -0.02em; margin: 0 0 .4rem; }
 h2 { font-size: 1.3rem; margin: 2.4rem 0 .9rem; padding-bottom: .45rem; border-bottom: 1px solid var(--rule); }
 p { margin: .6rem 0; max-width: 68ch; }
@@ -899,7 +896,6 @@ main:has(#sky) #sky { display: block; width: 100%; max-width: 100%; box-sizing: 
 html, body { max-width: 100%; }
 img, svg, canvas, video, iframe { max-width: 100%; height: auto; }
 canvas { display: block; }
-main { width: 100%; max-width: 44rem; margin-left: 0; margin-right: auto; padding: 1.25rem; }
 @media (min-width: 768px) { main { padding: 2rem 2.25rem; } }
 main p, main li, main h1, main h2, main h3, main td, main th { overflow-wrap: anywhere; }
 input, select, textarea, button { max-width: 100%; }
@@ -956,7 +952,6 @@ main .btn { min-height: 2.6rem; }
 <style>
 /* Big screens: wider text column, three place cards, and visuals capped so they stay in proportion */
 @media (min-width: 900px) {
-  main { max-width: 56rem; padding: 2.5rem 3rem; }
   main h1 { font-size: 2.4rem; }
 }
 @media (min-width: 1100px) {
@@ -1272,6 +1267,24 @@ header.site { width: 100%; }
   }
   html body main .home-grid > .home-wide { grid-column: 1 / -1 !important; }
   html body main .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+</style>
+<style>
+/* Desktop layout: the content fills the window, capped at 1280px and centred. Phones are unchanged. */
+main {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  box-sizing: border-box;
+}
+@media (min-width: 900px) {
+  main { padding: 2rem 2.5rem 3rem; }
+}
+@media (min-width: 1100px) {
+  .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+  .home-grid > .home-wide { grid-column: 1 / -1; }
+  .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 </style>
 </head>
