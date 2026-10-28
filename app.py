@@ -1271,7 +1271,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Time (UTC)</th><th>Cloud</th><th>Visibility</th><th>Humidity</th><th>Rain</th></tr></thead>
 <tbody>
-{% for r in weather['rows'] %}<tr><td>{{ r['time'] }}</td><td>{{ r['cloud'] }}</td><td>{{ r['vis'] }}</td><td>{{ r['humidity'] }}</td><td>{{ r['rain'] }}</td></tr>{% endfor %}
+{% for r in weather['rows'] %}<tr><td><time data-utc="{{ r['iso'] }}" data-utc-label="{{ r['time'] }} UTC">{{ r['time'] }} UTC</time></td><td>{{ r['cloud'] }}</td><td>{{ r['vis'] }}</td><td>{{ r['humidity'] }}</td><td>{{ r['rain'] }}</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
 {% if alarm_passes %}
@@ -3570,6 +3570,7 @@ def weather_for(place):
             clouds.append(cloud)
         rows.append({
             "time": when.strftime("%a %H:%M"),
+            "iso": when.isoformat(timespec="minutes"),
             "cloud": _fmt(cloud, "%"),
             "vis": "n/a" if vis is None else f"{vis / 1000:.1f} km",
             "humidity": _fmt(h["relative_humidity_2m"][i], "%"),
@@ -5840,6 +5841,8 @@ def twilight_times(lat, lon, now):
         out[label] = {
             "dusk": dusk.strftime("%H:%M") if dusk else None,
             "dawn": dawn.strftime("%H:%M") if dawn else None,
+            "dusk_iso": dusk.isoformat(timespec="minutes") if dusk else None,
+            "dawn_iso": dawn.isoformat(timespec="minutes") if dawn else None,
         }
     return out
 
@@ -5857,6 +5860,7 @@ def moon_events(place, now):
             key = "rise" if ev else "set"
             if res[key] is None:
                 res[key] = tt.utc_datetime().strftime("%H:%M")
+                res[key + "_iso"] = tt.utc_datetime().isoformat(timespec="minutes")
     except Exception as e:
         print(f"moon events error: {e}", flush=True)
     return res
@@ -5904,12 +5908,12 @@ TONIGHT_TEMPLATES = {"tonight.html": r"""{% extends "base.html" %}
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Stage</th><th>Dusk (dark starts)</th><th>Dawn (light returns)</th></tr></thead>
 <tbody>
-{% for label, t in twilight.items() %}<tr><td>{{ label }}</td><td>{{ t['dusk'] or '-' }}</td><td>{{ t['dawn'] or '-' }}</td></tr>{% endfor %}
+{% for label, t in twilight.items() %}<tr><td>{{ label }}</td><td>{% if t['dusk'] %}<time data-utc="{{ t['dusk_iso'] }}" data-utc-label="{{ t['dusk'] }} UTC">{{ t['dusk'] }} UTC</time>{% else %}-{% endif %}</td><td>{% if t['dawn'] %}<time data-utc="{{ t['dawn_iso'] }}" data-utc-label="{{ t['dawn'] }} UTC">{{ t['dawn'] }} UTC</time>{% else %}-{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="meta">Civil is -6 degrees, nautical -12, astronomical -18. Dusk and dawn are when the sun crosses each level in the next 24 hours.</p>
 <h2>Moon</h2>
 <div class="place"><strong>{{ phase }}, {{ illum }}% lit</strong>
-<div class="meta">Rises {{ moon['rise'] or '-' }} · Sets {{ moon['set'] or '-' }} (next 24 hours)</div></div>
+<div class="meta">Rises {% if moon['rise'] %}<time data-utc="{{ moon['rise_iso'] }}" data-utc-label="{{ moon['rise'] }} UTC">{{ moon['rise'] }} UTC</time>{% else %}-{% endif %} · Sets {% if moon['set'] %}<time data-utc="{{ moon['set_iso'] }}" data-utc-label="{{ moon['set'] }} UTC">{{ moon['set'] }} UTC</time>{% else %}-{% endif %} (next 24 hours)</div></div>
 <p class="meta">A bright Moon suits lunar viewing. Plan deep-sky observing for the dark hours, especially near new moon.</p>
 <h2>Brightest planets now</h2>
 {% for r in planets %}
@@ -5921,7 +5925,7 @@ TONIGHT_TEMPLATES = {"tonight.html": r"""{% extends "base.html" %}
 <h2>Passes in the next 24 hours</h2>
 {% for p in passes %}
 <div class="place"><strong>{{ p['satellite'] }}</strong>
-<div class="meta">{{ p['start'] }} UTC · peak {{ p['peak'] }}°</div></div>
+<div class="meta"><time data-utc="{{ p['iso'] }}" data-utc-label="{{ p['start'] }} UTC">{{ p['start'] }} UTC</time> · peak {{ p['peak'] }}°</div></div>
 {% else %}
 <p>No passes in the next 24 hours.</p>
 {% endfor %}
