@@ -161,6 +161,7 @@ SEED = [
     ("Siding Spring Observatory", "observatory", "Coonabarabran, New South Wales, Australia", -31.273, 149.061, "https://www.anu.edu.au"),
     ("Lake Tekapo, Aoraki Mackenzie Dark Sky Reserve", "dark-sky", "Lake Tekapo, New Zealand", -43.985, 170.465, "https://darksky.org.nz"),
     ("Oukaimeden Observatory", "observatory", "Atlas Mountains, Morocco", 31.206, -7.866, "https://www.oukaimeden.ma"),
+    ("Aoraki Mackenzie International Dark Sky Reserve", "dark-sky", "Lake Tekapo, Mackenzie District, New Zealand", -43.9856, 170.465, "https://www.darksky.org/our-work/conservation/idsp/reserves/aoraki-mackenzie/"),
 ]
 
 EXAMPLE_POSTS = [
