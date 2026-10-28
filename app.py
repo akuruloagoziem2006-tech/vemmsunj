@@ -4770,6 +4770,29 @@ def admin_delete_user(username):
     db.commit()
     return redirect("/admin")
 
+@app.route("/admin/places/<int:listing_id>/delete", methods=["POST"])
+def admin_delete_place(listing_id):
+    me = (session.get("username") or "").lower()
+    if not me or me not in ADMIN_USERNAMES:
+        abort(404)
+    db = get_db()
+    row = db.execute("SELECT name FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if row is None:
+        abort(404)
+    try:
+        db.execute("UPDATE posts SET listing_id = NULL WHERE listing_id = ?", (listing_id,))
+        db.execute("UPDATE observations SET listing_id = NULL WHERE listing_id = ?", (listing_id,))
+        db.execute("DELETE FROM pass_cache WHERE listing_id = ?", (listing_id,))
+        db.execute("DELETE FROM bot_days WHERE listing_id = ?", (listing_id,))
+        db.execute("DELETE FROM listings WHERE id = ?", (listing_id,))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"place delete error: {e}", flush=True)
+        abort(500)
+    print(f"admin {me} removed place {listing_id}: {row['name']}", flush=True)
+    return redirect("/admin")
+
 @app.route("/admin")
 def admin_page():
     me = (session.get("username") or "").lower()
@@ -4814,7 +4837,12 @@ def admin_page():
                       and a["username"] not in ("VEMMSUNJ", "VEMMSUNJ_BOT")
                       and a["username"].lower() != me),
     } for a in accounts]
-    return render_template("admin.html", total_users=total_users, active24=active24,
+    places = db.execute(
+        "SELECT l.id, l.name, l.category, "
+        "(SELECT COUNT(*) FROM posts p WHERE p.listing_id = l.id) AS sightings "
+        "FROM listings l ORDER BY l.name"
+    ).fetchall()
+    return render_template("admin.html", places=places, total_users=total_users, active24=active24,
                            posts_total=posts_total, signups=signups, daily=daily, top=top,
                            rows=rows, title="Usage", section="admin")
 
@@ -4828,12 +4856,20 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
 {% endblock %}
 {% block content %}
 <h1>Usage</h1>
-<p class="meta">Visible only to site administrators. Visitors are counted per page and per day. IP addresses are not stored.</p>
+<p class="meta">Visible only to site administrators. Your own visits are not counted. Visitors are counted per page and per day, not per person. IP addresses are not stored.</p>
 <div class="stat-row">
   <div class="stat"><span class="stat-n">{{ total_users }}</span><span class="meta">accounts</span></div>
   <div class="stat"><span class="stat-n">{{ active24 }}</span><span class="meta">active in the last 24 hours</span></div>
   <div class="stat"><span class="stat-n">{{ posts_total }}</span><span class="meta">sightings from users</span></div>
 </div>
+
+<h2>Places</h2>
+<p class="meta">Removing a place unlinks its sightings and log entries, which stay on the site. This cannot be undone.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Place</th><th>Type</th><th>Sightings</th><th></th></tr></thead>
+<tbody>
+{% for pl in places %}<tr><td>{{ pl['name'] }}</td><td>{{ pl['category'] }}</td><td>{{ pl['sightings'] }}</td><td><form method="post" action="/admin/places/{{ pl['id'] }}/delete" class="inline" onsubmit="return confirm('Remove this place? Its sightings stay but are unlinked. This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Remove</button></form></td></tr>{% else %}<tr><td colspan="4">No places.</td></tr>{% endfor %}
+</tbody></table></div>
 
 <h2>Real accounts</h2>
 <div class="table-wrap"><table class="data">
