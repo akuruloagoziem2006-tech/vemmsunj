@@ -1287,6 +1287,54 @@ main {
   .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 </style>
+<style>
+/* Hero: a full-width banner on desktop, with the slideshow behind the title */
+.hero { position: relative; overflow: hidden; }
+.hero > *:not(.hero-slides):not(.hero-shade) { position: relative; z-index: 2; }
+.hero-slides { position: absolute; inset: 0; z-index: 0; }
+.hero-slide {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0; transition: opacity 1.6s ease;
+  filter: saturate(1.1) contrast(1.05);
+}
+.hero-slide.is-on { opacity: .55; }
+.hero-shade {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(90deg, rgba(8,11,17,.94) 0%, rgba(8,11,17,.72) 45%, rgba(8,11,17,.35) 100%);
+}
+@media (min-width: 900px) {
+  .hero {
+    border-radius: 16px;
+    padding: 4rem 3.5rem 3.5rem;
+    margin: 1.5rem 0;
+    border: 1px solid var(--rule);
+    min-height: 340px;
+    display: flex; flex-direction: column; justify-content: center;
+    background: #0a0d12;
+  }
+  .hero-title { font-size: 4.2rem; letter-spacing: -.02em; }
+  .hero-lede { font-size: 1.5rem; max-width: 46rem; }
+}
+@media (max-width: 899px) {
+  .hero-slides, .hero-shade { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide { transition: none; }
+}
+</style>
+<script>
+(function () {
+  var slides = document.querySelectorAll('.hero-slide');
+  if (slides.length < 2) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var i = 0;
+  setInterval(function () {
+    slides[i].classList.remove('is-on');
+    i = (i + 1) % slides.length;
+    slides[i].classList.add('is-on');
+  }, 6000);
+})();
+</script>
 </head>
 <body>
 <header class="site">
@@ -7108,6 +7156,12 @@ def sky_tonight(place):
 HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 {% block content %}
 <section class="hero">
+  {% if slides %}
+  <div class="hero-slides" aria-hidden="true">
+    {% for sl in slides %}<img class="hero-slide{% if loop.first %} is-on{% endif %}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
+  </div>
+  <div class="hero-shade" aria-hidden="true"></div>
+  {% endif %}
   {% if slides %}
   <div class="hero-slides" aria-hidden="true">
     {% for sl in slides %}<img class="hero-slide{% if loop.first %} is-on{% endif %}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
