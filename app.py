@@ -1075,6 +1075,61 @@ header.site { position: relative; z-index: 2000; }
 {% block scripts %}{% endblock %}
 <script>
 (function () {
+  if (window.__vemmsunjLive) return;
+  window.__vemmsunjLive = true;
+  var path = location.pathname;
+  var parts = path.split('/');
+  var fixed = ['/', '/listings', '/planets', '/calendar', '/tracker', '/posts', '/log', '/admin'];
+  var placePage = parts.length >= 3 && parts[1] === 'places' && /^[0-9]+$/.test(parts[2]) && (parts.length === 3 || (parts.length === 4 && parts[3] === 'tonight'));
+  if (fixed.indexOf(path) === -1 && !placePage) return;
+
+  function busy() {
+    var a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return true;
+    var near = document.getElementById('near-result');
+    if (near && near.children.length) return true;
+    return false;
+  }
+  function localTime(root) {
+    root.querySelectorAll('time[data-utc]').forEach(function (el) {
+      var d = new Date(el.getAttribute('data-utc'));
+      if (isNaN(d)) return;
+      var label = el.getAttribute('data-utc-label') || '';
+      el.textContent = d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) + (label ? ' (' + label + ')' : '');
+      el.title = 'Your local time, with UTC in brackets';
+    });
+  }
+  function rerunScripts(root) {
+    root.querySelectorAll('script').forEach(function (old) {
+      var s = document.createElement('script');
+      s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    });
+  }
+  function refresh() {
+    if (document.hidden || busy()) return;
+    var cur = document.querySelector('main');
+    if (!cur) return;
+    fetch(path + location.search, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('status'); return r.text(); })
+      .then(function (html) {
+        var next = new DOMParser().parseFromString(html, 'text/html').querySelector('main');
+        if (!next || busy()) return;
+        var y = window.scrollY;
+        var open = Array.prototype.map.call(cur.querySelectorAll('details'), function (d) { return d.open; });
+        cur.innerHTML = next.innerHTML;
+        Array.prototype.forEach.call(cur.querySelectorAll('details'), function (d, i) { d.open = !!open[i]; });
+        rerunScripts(cur);
+        localTime(cur);
+        window.scrollTo(0, y);
+      })
+      .catch(function () {});
+  }
+  setInterval(refresh, 60000);
+})();
+</script>
+<script>
+(function () {
   document.querySelectorAll('time[data-utc]').forEach(function (el) {
     var d = new Date(el.getAttribute('data-utc'));
     if (isNaN(d)) return;
@@ -1297,7 +1352,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   var btn = document.getElementById("alarm-go");
   var out = document.getElementById("alarm-status");
   var LEAD_MS = 2 * 60 * 1000;
-  var timers = [];
+  var timers = window.__vemmsunjTimers || (window.__vemmsunjTimers = []);
   function notify(title, body) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.ready.then(function (reg) {
@@ -1674,7 +1729,7 @@ fetch("/api/listings")
     });
   });
 
-  window.addEventListener("online", flush);
+  if (!window.__vemmsunjOutboxOnline) { window.__vemmsunjOutboxOnline = true; window.addEventListener("online", flush); }
   flush();
 })();
 </script>
@@ -6136,34 +6191,12 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 </style>
 <script>
 (function () {
-  var rows = document.querySelectorAll('.live-row');
-  function pick(row) {
-    rows.forEach(function (r) { r.classList.remove('picked'); });
-    row.classList.add('picked');
-  }
-  rows.forEach(function (row) {
-    row.addEventListener('click', function () { pick(row); });
-    row.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(row); }
-    });
-  });
-  var PERIOD = {};
-  var TRACK = {};
-  var EPOCH = Date.now();
-  function fmt(x, d) { return x.toFixed(d); }
-  function apply(snapshot) {
-    EPOCH = Date.now();
-    snapshot.satellites.forEach(function (s) {
-      PERIOD[s.name] = s.period_s;
-      TRACK[s.name] = s.ground;
-    });
-    tick();
-  }
-  function groundAt(name, elapsedSec) {
-    var g = TRACK[name], period = PERIOD[name];
-    if (!g || !period) return null;
+  var S = window.__vemmsunjTrackerState || (window.__vemmsunjTrackerState = { period: {}, track: {}, epoch: Date.now(), picked: null });
+  function groundAt(name, elapsed) {
+    var g = S.track[name], period = S.period[name];
+    if (!g || !period || g.length < 2) return null;
     var n = g.length - 1;
-    var idx = ((elapsedSec % period) + period) % period / period * n;
+    var idx = (((elapsed % period) + period) % period) / period * n;
     var i0 = Math.floor(idx), i1 = Math.min(i0 + 1, n), f = idx - i0;
     var a = g[i0], b = g[i1];
     var dlon = b[1] - a[1];
@@ -6175,29 +6208,44 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     return [a[0] + (b[0] - a[0]) * f, lon];
   }
   function tick() {
-    var elapsed = (Date.now() - EPOCH) / 1000;
-    rows.forEach(function (row) {
+    var elapsed = (Date.now() - S.epoch) / 1000;
+    document.querySelectorAll('.live-row').forEach(function (row) {
       var name = row.getAttribute('data-name');
+      row.classList.toggle('picked', name === S.picked);
       var pos = groundAt(name, elapsed);
       if (!pos) return;
-      var cell = row.querySelector('.c-lat');
-      if (cell) cell.textContent = fmt(pos[0], 2) + '°';
-      cell = row.querySelector('.c-lon');
-      if (cell) cell.textContent = fmt(pos[1], 2) + '°';
+      var c = row.querySelector('.c-lat');
+      if (c) c.textContent = pos[0].toFixed(2) + '°';
+      c = row.querySelector('.c-lon');
+      if (c) c.textContent = pos[1].toFixed(2) + '°';
     });
   }
   function resync() {
     fetch('/api/globe', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
-      .then(function (d) { if (!d.error) apply(d); })
+      .then(function (d) {
+        if (d.error) return;
+        S.epoch = Date.now();
+        d.satellites.forEach(function (x) { S.period[x.name] = x.period_s; S.track[x.name] = x.ground; });
+        tick();
+      })
       .catch(function () {});
   }
-  apply({ satellites: Array.prototype.map.call(rows, function (row) {
-    return { name: row.getAttribute('data-name'), period_s: 0, ground: [] };
-  }) });
+  if (!window.__vemmsunjTrackerStarted) {
+    window.__vemmsunjTrackerStarted = true;
+    document.addEventListener('click', function (e) {
+      var row = e.target && e.target.closest ? e.target.closest('.live-row') : null;
+      if (row) { S.picked = row.getAttribute('data-name'); tick(); }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var row = e.target && e.target.closest ? e.target.closest('.live-row') : null;
+      if (row) { e.preventDefault(); S.picked = row.getAttribute('data-name'); tick(); }
+    });
+    setInterval(tick, 1000);
+    setInterval(resync, 60000);
+  }
   resync();
-  setInterval(tick, 1000);
-  setInterval(resync, 60000);
 })();
 </script>
 {% endif %}
