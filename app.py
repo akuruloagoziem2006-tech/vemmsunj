@@ -1241,6 +1241,39 @@ header.site { width: 100%; }
   }, 6000);
 })();
 </script>
+<style>
+/* Desktop: the page content uses the full window, whatever earlier rules say */
+@media (min-width: 900px) {
+  html body main,
+  body > main,
+  main.home-page {
+    max-width: 1280px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding: 2rem 2.5rem 3rem !important;
+  }
+  html body main .hero,
+  html body main .sky-tonight,
+  html body main .near,
+  html body main .home-grid,
+  html body main .recent {
+    max-width: none !important;
+    width: 100% !important;
+  }
+}
+@media (min-width: 1100px) {
+  html body main .home-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 2rem !important;
+    align-items: start !important;
+  }
+  html body main .home-grid > .home-wide { grid-column: 1 / -1 !important; }
+  html body main .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+</style>
 </head>
 <body>
 <header class="site">
