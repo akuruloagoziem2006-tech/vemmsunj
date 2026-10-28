@@ -229,7 +229,7 @@ def inject_globals():
 
 @app.before_request
 def check_csrf():
-    if request.method == "POST" and not request.path.startswith("/api/cron/"):
+    if request.method == "POST" and not request.path.startswith(("/api/cron/", "/api/event")):
         sent = request.form.get("csrf_token", "")
         expected = session.get("csrf", "")
         if not expected or not secrets.compare_digest(sent, expected):
@@ -1075,6 +1075,33 @@ header.site { position: relative; z-index: 2000; }
 {% block scripts %}{% endblock %}
 <script>
 (function () {
+  if (window.vmTrack) return;
+  window.vmTrack = function (name, item) {
+    try {
+      fetch('/api/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, item: item || '' }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) {}
+  };
+  var IDS = {
+    'near-go': 'near_me', 'nearme': 'near_me', 'sv-start': 'sky_view_start',
+    'start': 'compass_start', 'alarm-go': 'reminder_on', 'aurora-alert': 'aurora_alert', 'play': 'simulate_play'
+  };
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('button, a') : null;
+    if (!el) return;
+    if (IDS[el.id]) window.vmTrack(IDS[el.id], '');
+    if (el.hasAttribute('data-scale')) window.vmTrack('orbit_scale', el.getAttribute('data-scale'));
+    var href = el.getAttribute('href') || '';
+    if (href.indexOf('/log/export') === 0) window.vmTrack('log_export', href.split('.').pop());
+  });
+})();
+</script>
+<script>
+(function () {
   if (window.__vemmsunjLive) return;
   window.__vemmsunjLive = true;
   var path = location.pathname;
@@ -1541,7 +1568,7 @@ function drawSats() {
               iconAnchor: [size / 2, size / 2]
             }),
             keyboard: false
-          }).bindTooltip(esc(s.name)).addTo(map);
+          }).bindTooltip(esc(s.name)).on('click', function () { if (window.vmTrack) window.vmTrack('satellite_pick', s.name); }).addTo(map);
         }
       });
     })
@@ -2265,6 +2292,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       b.setAttribute("aria-pressed", selectedName === s.data.name ? "true" : "false");
       b.addEventListener("click", function () {
         selectedName = s.data.name;
+        if (window.vmTrack) window.vmTrack('satellite_pick', selectedName);
         renderList();
         updateInfo();
         updateHighlights();
@@ -4902,7 +4930,7 @@ def admin_page():
         "(SELECT COUNT(*) FROM posts p WHERE p.listing_id = l.id) AS sightings "
         "FROM listings l ORDER BY l.name"
     ).fetchall()
-    return render_template("admin.html", places=places, total_users=total_users, active24=active24,
+    return render_template("admin.html", dc=datacenter(db), places=places, total_users=total_users, active24=active24,
                            posts_total=posts_total, signups=signups, daily=daily, top=top,
                            rows=rows, title="Usage", section="admin")
 
@@ -4922,6 +4950,73 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
   <div class="stat"><span class="stat-n">{{ active24 }}</span><span class="meta">active in the last 24 hours</span></div>
   <div class="stat"><span class="stat-n">{{ posts_total }}</span><span class="meta">sightings from users</span></div>
 </div>
+
+<h2>Data center</h2>
+<p class="meta">Aggregated only. Nothing here is recorded for a particular person, and your own visits are excluded. Counts cover the last 7 days unless marked.</p>
+<div class="stat-row">
+  <div class="stat"><span class="stat-n">{{ dc['today_views'] }}</span><span class="meta">page views today</span></div>
+  <div class="stat"><span class="stat-n">{{ dc['today_actions'] }}</span><span class="meta">actions today</span></div>
+  <div class="stat"><span class="stat-n">{{ dc['today_sightings'] }}</span><span class="meta">sightings today</span></div>
+</div>
+
+<h3>Places people look at</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Place</th><th>Type</th><th>Views</th></tr></thead>
+<tbody>
+{% for r in dc['places'] %}<tr><td>{{ r['name'] }}</td><td>{{ r['category'] }}</td><td>{{ r['views'] }}</td></tr>
+{% else %}<tr><td colspan="3">No place views yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h3>Features people use</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Feature</th><th>Views</th></tr></thead>
+<tbody>
+{% for label, n in dc['features'] %}<tr><td>{{ label }}</td><td>{{ n }}</td></tr>
+{% else %}<tr><td colspan="2">No feature views yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h3>Satellites people follow</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Satellite</th><th>Times followed</th></tr></thead>
+<tbody>
+{% for r in dc['satellites'] %}<tr><td>{{ r['name'] }}</td><td>{{ r['count'] }}</td></tr>
+{% else %}<tr><td colspan="2">No satellites followed yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h3>Viewing equipment and planet speed</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Viewing equipment chosen</th><th>Times</th></tr></thead>
+<tbody>
+{% for r in dc['equipment'] %}<tr><td>{{ r['name'] }}</td><td>{{ r['count'] }}</td></tr>
+{% else %}<tr><td colspan="2">No choices yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Planet orbit speed chosen</th><th>Times</th></tr></thead>
+<tbody>
+{% for r in dc['speeds'] %}<tr><td>{{ r['name'] }}</td><td>{{ r['count'] }}</td></tr>
+{% else %}<tr><td colspan="2">No choices yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h3>Actions</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Action</th><th>Count</th></tr></thead>
+<tbody>
+{% for r in dc['actions'] %}<tr><td>{{ r['name'] }}</td><td>{{ r['count'] }}</td></tr>
+{% else %}<tr><td colspan="2">No actions yet.</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h3>Daily activity, last 14 days</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Day (UTC)</th><th>Page views</th><th>Actions</th><th>Sightings</th></tr></thead>
+<tbody>
+{% for r in dc['trend'] %}<tr><td>{{ r['day'] }}</td><td>{{ r['views'] }}</td><td>{{ r['actions'] }}</td><td>{{ r['sightings'] }}</td></tr>{% endfor %}
+</tbody></table></div>
 
 <h2>Places</h2>
 <p class="meta">Removing a place unlinks its sightings and log entries, which stay on the site. This cannot be undone.</p>
@@ -5553,6 +5648,8 @@ def planets_page():
     view = request.args.get("view", "all")
     if view not in ("all", "naked", "binoculars", "telescope"):
         view = "all"
+    if request.args.get("view"):
+        record_event("planets_filter", view)
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     rows, error = [], None
     try:
@@ -6235,12 +6332,12 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     window.__vemmsunjTrackerStarted = true;
     document.addEventListener('click', function (e) {
       var row = e.target && e.target.closest ? e.target.closest('.live-row') : null;
-      if (row) { S.picked = row.getAttribute('data-name'); tick(); }
+      if (row) { S.picked = row.getAttribute('data-name'); if (window.vmTrack) window.vmTrack('satellite_pick', S.picked); tick(); }
     });
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       var row = e.target && e.target.closest ? e.target.closest('.live-row') : null;
-      if (row) { e.preventDefault(); S.picked = row.getAttribute('data-name'); tick(); }
+      if (row) { e.preventDefault(); S.picked = row.getAttribute('data-name'); if (window.vmTrack) window.vmTrack('satellite_pick', S.picked); tick(); }
     });
     setInterval(tick, 1000);
     setInterval(resync, 60000);
@@ -6569,7 +6666,7 @@ PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
 <h2>What we store</h2>
 <p>An account needs a username and a password. The password is stored only as a salted hash. We store the sightings, likes, follows, and log entries you create, and the times you joined, logged in, and were last active.</p>
 <h2>What we count</h2>
-<p>We count page views per page and per day, without IP addresses or device details. These counts can't identify a visitor.</p>
+<p>We count page views and feature uses per page and per day, plus which places, satellites, and settings are chosen across all visitors. We don't record IP addresses, device details, or what any one person did.</p>
 <h2>Your location</h2>
 <p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. They aren't sent to us or stored.</p>
 <h2>Services we use</h2>
@@ -6587,6 +6684,140 @@ app.jinja_env.loader.mapping.update(PRIVACY_TEMPLATES)
 @app.route("/privacy")
 def privacy_page():
     return render_template("privacy.html", title="Privacy", section="")
+
+# ---------- Data center: aggregated activity, no per-person records ----------
+_dc = connect()
+_dc.execute("""CREATE TABLE IF NOT EXISTS place_views (
+    day TEXT NOT NULL,
+    listing_id INTEGER NOT NULL,
+    views INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, listing_id))""")
+_dc.execute("""CREATE TABLE IF NOT EXISTS events (
+    day TEXT NOT NULL,
+    name TEXT NOT NULL,
+    item TEXT NOT NULL DEFAULT '',
+    hits INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, name, item))""")
+_dc.commit()
+_dc.close()
+
+EVENT_LABELS = {
+    "satellite_pick": "Satellite followed",
+    "orbit_scale": "Planet orbit speed chosen",
+    "planets_filter": "Viewing equipment chosen",
+    "near_me": "Near me used",
+    "sky_view_start": "Sky view started",
+    "compass_start": "Star compass started",
+    "reminder_on": "Pass reminders turned on",
+    "aurora_alert": "Aurora alert turned on",
+    "simulate_play": "Pass simulation played",
+    "log_export": "Log exported",
+}
+
+FEATURE_PATHS = {
+    "/": "Home", "/listings": "Places", "/map": "Map", "/posts": "Sightings",
+    "/calendar": "Calendar", "/globe": "Globe", "/aurora": "Aurora",
+    "/planets": "Planets", "/planets/orbits": "Planet orbits", "/tracker": "Tracker",
+    "/compass": "Star compass", "/skyview": "Sky view", "/log": "My log",
+    "/about": "About", "/privacy": "Privacy", "/login": "Sign-in", "/signup": "Sign-up",
+    "/places/:id": "Place pages", "/places/:id/tonight": "What's up tonight",
+    "/places/:id/simulate": "Pass simulation", "/places/:id/sky": "Sky chart",
+}
+
+def record_event(name, item=""):
+    if not os.environ.get("VERCEL") or name not in EVENT_LABELS:
+        return
+    if (session.get("username") or "").lower() in ADMIN_USERNAMES:
+        return
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    db = get_db()
+    db.execute(
+        "INSERT INTO events (day, name, item, hits) VALUES (?, ?, ?, 1) "
+        "ON CONFLICT (day, name, item) DO UPDATE SET hits = events.hits + 1",
+        (day, name, (item or "")[:80]),
+    )
+    db.commit()
+
+@app.route("/api/event", methods=["POST"])
+def api_event():
+    data = request.get_json(silent=True) or {}
+    try:
+        record_event(str(data.get("name", "")), str(data.get("item", "")))
+    except Exception as e:
+        print(f"event error: {e}", flush=True)
+    return jsonify({"ok": True})
+
+@app.after_request
+def record_place_view(resp):
+    try:
+        if not os.environ.get("VERCEL"):
+            return resp
+        if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
+            return resp
+        m = re.match(r"^/places/(\d+)", request.path)
+        if not m:
+            return resp
+        if (session.get("username") or "").lower() in ADMIN_USERNAMES:
+            return resp
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        db = get_db()
+        db.execute(
+            "INSERT INTO place_views (day, listing_id, views) VALUES (?, ?, 1) "
+            "ON CONFLICT (day, listing_id) DO UPDATE SET views = place_views.views + 1",
+            (day, int(m.group(1))),
+        )
+        db.commit()
+    except Exception as e:
+        print(f"place view error: {e}", flush=True)
+    return resp
+
+def datacenter(db):
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    d7 = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    d14 = (now - timedelta(days=13)).strftime("%Y-%m-%d")
+    places = {r["id"]: (r["name"], r["category"]) for r in db.execute("SELECT id, name, category FROM listings").fetchall()}
+    place_rows = []
+    for r in db.execute("SELECT listing_id, SUM(views) AS v FROM place_views WHERE day >= ? GROUP BY listing_id ORDER BY v DESC LIMIT 10", (d7,)).fetchall():
+        name, cat = places.get(r["listing_id"], ("Removed place", "-"))
+        place_rows.append({"name": name, "category": cat, "views": int(r["v"] or 0)})
+    features = {}
+    for r in db.execute("SELECT path, SUM(hits) AS h FROM visits WHERE day >= ? GROUP BY path", (d7,)).fetchall():
+        label = FEATURE_PATHS.get(r["path"])
+        if label:
+            features[label] = features.get(label, 0) + int(r["h"] or 0)
+    feature_rows = sorted(features.items(), key=lambda kv: -kv[1])
+    action_rows = [{"name": EVENT_LABELS.get(r["name"], r["name"]), "count": int(r["h"] or 0)}
+                   for r in db.execute("SELECT name, SUM(hits) AS h FROM events WHERE day >= ? GROUP BY name ORDER BY h DESC", (d7,)).fetchall()]
+    sat_rows = [{"name": r["item"], "count": int(r["h"] or 0)}
+                for r in db.execute("SELECT item, SUM(hits) AS h FROM events WHERE day >= ? AND name = 'satellite_pick' AND item <> '' GROUP BY item ORDER BY h DESC LIMIT 10", (d7,)).fetchall()]
+    equip_rows = [{"name": r["item"], "count": int(r["h"] or 0)}
+                  for r in db.execute("SELECT item, SUM(hits) AS h FROM events WHERE day >= ? AND name = 'planets_filter' GROUP BY item ORDER BY h DESC", (d7,)).fetchall()]
+    speed_rows = [{"name": r["item"], "count": int(r["h"] or 0)}
+                  for r in db.execute("SELECT item, SUM(hits) AS h FROM events WHERE day >= ? AND name = 'orbit_scale' GROUP BY item ORDER BY h DESC", (d7,)).fetchall()]
+    views_by_day = {r["day"]: int(r["h"] or 0) for r in db.execute("SELECT day, SUM(hits) AS h FROM visits WHERE day >= ? GROUP BY day", (d14,)).fetchall()}
+    actions_by_day = {r["day"]: int(r["h"] or 0) for r in db.execute("SELECT day, SUM(hits) AS h FROM events WHERE day >= ? GROUP BY day", (d14,)).fetchall()}
+    sightings_by_day = {r["day"]: int(r["n"] or 0) for r in db.execute(
+        "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM posts "
+        "WHERE substr(created_at, 1, 10) >= ? AND author NOT IN ('VEMMSUNJ', 'VEMMSUNJ_BOT') "
+        "GROUP BY substr(created_at, 1, 10)", (d14,)).fetchall()}
+    trend = []
+    for i in range(14):
+        day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        trend.append({"day": day, "views": views_by_day.get(day, 0),
+                      "actions": actions_by_day.get(day, 0), "sightings": sightings_by_day.get(day, 0)})
+    return {
+        "today_views": views_by_day.get(today, 0),
+        "today_actions": actions_by_day.get(today, 0),
+        "today_sightings": sightings_by_day.get(today, 0),
+        "places": place_rows,
+        "features": feature_rows,
+        "actions": action_rows,
+        "satellites": sat_rows,
+        "equipment": equip_rows,
+        "speeds": speed_rows,
+        "trend": trend,
+    }
 
 if __name__ == "__main__":
     from waitress import serve
