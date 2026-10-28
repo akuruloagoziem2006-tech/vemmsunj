@@ -6413,6 +6413,8 @@ ABOUT_TEMPLATES = {"about.html": """{% extends "base.html" %}
 <p>Star charts use 85 bright stars, not a full catalogue. Eclipse dates are approximate. Pass and aurora alerts only run while a page is open.</p>
 <h2>Privacy</h2>
 <p>Your location stays in your browser when you use Near me or the sky view. We store your account, your sightings, your likes and follows, and your log entries. See the <a href="/privacy">privacy page</a>.</p>
+<h2>Contact</h2>
+<p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a>.</p>
 <h2>Open source</h2>
 <p>VEMMSUNJ is released under the MIT licence. The code and the credits are on <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a>.</p>
 {% endblock %}
@@ -6422,6 +6424,32 @@ app.jinja_env.loader.mapping.update(ABOUT_TEMPLATES)
 @app.route("/about")
 def about_page():
     return render_template("about.html", title="About", section="")
+
+PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Privacy</h1>
+<p class="meta">Last updated 25 October 2026.</p>
+<h2>What we store</h2>
+<p>An account needs a username and a password. The password is stored only as a salted hash. We store the sightings, likes, follows, and log entries you create, and the times you joined, logged in, and were last active.</p>
+<h2>What we count</h2>
+<p>We count page views per page and per day, without IP addresses or device details. These counts can't identify a visitor.</p>
+<h2>Your location</h2>
+<p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. They aren't sent to us or stored.</p>
+<h2>Services we use</h2>
+<p>Hosting on Vercel, the database on Neon, orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are NASA's.</p>
+<h2>Removing your account</h2>
+<p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a> to ask for your account to be removed. Removing an account deletes its sightings, likes, follows, and log entries.</p>
+<h2>Advertising and data sales</h2>
+<p>VEMMSUNJ has no advertising, and it does not sell personal data.</p>
+<h2>Contact</h2>
+<p>Questions about this page or the site: <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a>.</p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(PRIVACY_TEMPLATES)
+
+@app.route("/privacy")
+def privacy_page():
+    return render_template("privacy.html", title="Privacy", section="")
 
 if __name__ == "__main__":
     from waitress import serve
