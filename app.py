@@ -1206,6 +1206,41 @@ header.site { width: 100%; }
   .feed-photo img, .btn, .step-card, .place-card, header.site nav.topnav a::after { transition: none; }
 }
 </style>
+<style>
+/* Hero slideshow: NASA feed photos behind the title, fading every six seconds */
+.hero-slides { position: absolute; inset: 0; z-index: 0; }
+.hero-slide {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0; transition: opacity 1.6s ease;
+  filter: saturate(1.1) contrast(1.05);
+}
+.hero-slide.is-on { opacity: .55; }
+.hero-shade {
+  position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(90deg, rgba(8,11,17,.94) 0%, rgba(8,11,17,.72) 45%, rgba(8,11,17,.35) 100%);
+  pointer-events: none;
+}
+.hero > *:not(.hero-slides):not(.hero-shade) { position: relative; z-index: 2; }
+@media (max-width: 899px) {
+  .hero-slides, .hero-shade { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide { transition: none; }
+}
+</style>
+<script>
+(function () {
+  var slides = document.querySelectorAll('.hero-slide');
+  if (slides.length < 2) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var i = 0;
+  setInterval(function () {
+    slides[i].classList.remove('is-on');
+    i = (i + 1) % slides.length;
+    slides[i].classList.add('is-on');
+  }, 6000);
+})();
+</script>
 </head>
 <body>
 <header class="site">
@@ -7027,6 +7062,12 @@ def sky_tonight(place):
 HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 {% block content %}
 <section class="hero">
+  {% if slides %}
+  <div class="hero-slides" aria-hidden="true">
+    {% for sl in slides %}<img class="hero-slide{% if loop.first %} is-on{% endif %}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
+  </div>
+  <div class="hero-shade" aria-hidden="true"></div>
+  {% endif %}
   <h1 class="hero-title">VEMMSUNJ</h1>
   <p class="hero-lede">Explore the night sky. Track satellites. Discover the universe.</p>
   <p class="meta">Find observing places, see tonight's passes and planets, and record what you see.</p>
@@ -7214,7 +7255,8 @@ def index():
             print(f"sky tonight error: {e}", flush=True)
     places = [dict(r) for r in db.execute(
         "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
-    return render_template("home.html", recent=recent, sky=sky, places=places,
+    slides = db.execute("SELECT id, body FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' ORDER BY id DESC LIMIT 8").fetchall()
+    return render_template("home.html", recent=recent, slides=slides, sky=sky, places=places,
                            title="VEMMSUNJ", section="home")
 
 if __name__ == "__main__":
