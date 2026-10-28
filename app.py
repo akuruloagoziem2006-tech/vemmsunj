@@ -154,6 +154,13 @@ SEED = [
     ("Natural Bridges National Monument", "dark-sky", "Lake Powell Blvd, Lake Powell, UT", 37.6021, -110.0229, "https://www.nps.gov/nabr"),
     ("SALT, Sutherland Observatory", "observatory", "Sutherland, Northern Cape, South Africa", -32.3758, 20.8107, "https://salt.ac.za"),
     ("Paranal Observatory (ESO)", "observatory", "Cerro Paranal, Atacama Desert, Chile", -24.6272, -70.4042, "https://www.eso.org/sci/facilities/paranal.html"),
+    ("SAAO, Sutherland (SALT)", "observatory", "Sutherland, Northern Cape, South Africa", -32.376, 20.811, "https://www.saao.ac.za"),
+    ("NamibRand Nature Reserve", "dark-sky", "NamibRand, Namibia", -25.0, 16.0, "https://www.namibrand.com"),
+    ("La Silla Observatory (ESO)", "observatory", "La Silla, Atacama Desert, Chile", -29.261, -70.731, "https://www.eso.org/sci/facilities/lasilla.html"),
+    ("Roque de los Muchachos Observatory", "observatory", "La Palma, Canary Islands, Spain", 28.758, -17.882, "https://www.iac.es"),
+    ("Siding Spring Observatory", "observatory", "Coonabarabran, New South Wales, Australia", -31.273, 149.061, "https://www.anu.edu.au"),
+    ("Lake Tekapo, Aoraki Mackenzie Dark Sky Reserve", "dark-sky", "Lake Tekapo, New Zealand", -43.985, 170.465, "https://darksky.org.nz"),
+    ("Oukaimeden Observatory", "observatory", "Atlas Mountains, Morocco", 31.206, -7.866, "https://www.oukaimeden.ma"),
 ]
 
 EXAMPLE_POSTS = [
