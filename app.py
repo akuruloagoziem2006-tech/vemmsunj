@@ -1137,7 +1137,7 @@ header.site { position: relative; z-index: 2000; }
     if (document.hidden || busy()) return;
     var cur = document.querySelector('main');
     if (!cur) return;
-    fetch(path + location.search, { cache: 'no-store', credentials: 'same-origin' })
+    fetch(path + location.search, { cache: 'no-store', credentials: 'same-origin', headers: { 'X-VM-Refresh': '1' } })
       .then(function (r) { if (!r.ok) throw new Error('status'); return r.text(); })
       .then(function (html) {
         var next = new DOMParser().parseFromString(html, 'text/html').querySelector('main');
@@ -4813,6 +4813,8 @@ def _now_iso():
 
 @app.after_request
 def record_usage(resp):
+    if request.headers.get('X-VM-Refresh'):
+        return resp
     try:
         if not os.environ.get("VERCEL"):
             return resp
@@ -5648,7 +5650,7 @@ def planets_page():
     view = request.args.get("view", "all")
     if view not in ("all", "naked", "binoculars", "telescope"):
         view = "all"
-    if request.args.get("view"):
+    if request.args.get("view") and not request.headers.get("X-VM-Refresh"):
         record_event("planets_filter", view)
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     rows, error = [], None
@@ -6749,6 +6751,8 @@ def api_event():
 
 @app.after_request
 def record_place_view(resp):
+    if request.headers.get('X-VM-Refresh'):
+        return resp
     try:
         if not os.environ.get("VERCEL"):
             return resp
