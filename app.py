@@ -1069,6 +1069,29 @@ body { padding-bottom: 0 !important; }
   header.site nav.topnav a, header.site nav.topnav button { flex: 0 0 auto; }
 }
 </style>
+<style>
+/* Responsive layout for big screens, in the spirit of a wide news site. Phones keep the single-column layout. */
+header.site { width: 100%; }
+@media (min-width: 900px) {
+  header.site { padding: 1rem 2.5rem .6rem; display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 2rem; }
+  header.site .brandbox { margin-bottom: 0; }
+  header.site nav.topnav { justify-content: flex-end; border-top: 0; padding-top: 0; flex-wrap: nowrap; }
+  main { max-width: 1280px; padding: 2rem 2.5rem 3rem; }
+  .hero { padding: 2.5rem 0 2rem; }
+  .hero-title { font-size: 3.4rem; }
+  .hero-lede { font-size: 1.35rem; max-width: 44rem; }
+}
+@media (min-width: 1100px) {
+  .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+  .home-grid .home-wide { grid-column: 1 / -1; }
+  .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 1rem; }
+  .feed-photo figcaption { font-size: .82rem; }
+  main h2 { font-size: 1.5rem; }
+}
+@media (min-width: 1600px) {
+  main { max-width: 1440px; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -6901,7 +6924,8 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 </section>
 
 {% if sky %}
-<section class="sky-tonight" aria-labelledby="sky-title">
+<div class="home-grid">
+<section class="sky-tonight home-wide" aria-labelledby="sky-title">
   <h2 id="sky-title">Your sky tonight</h2>
   <p class="meta">Starting from {{ sky['place'] }}. Choose another place below for your own sky.</p>
   <div class="sky-grid">
@@ -6920,6 +6944,7 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   </div>
   <p><a class="btn" href="/places/{{ sky['place_id'] }}/tonight">Full sky tonight</a></p>
 </section>
+<section class="near" id="near-card-col">
 {% endif %}
 
 <section class="near" id="near-card">
@@ -6947,7 +6972,7 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   </ol>
 </section>
 
-<section class="recent" aria-labelledby="feed-title">
+<section class="recent home-wide" aria-labelledby="feed-title">
   <h2 id="feed-title">Astronomy feed</h2>
   <p class="meta">Images from NASA. Dates in captions are from NASA's records.</p>
   <div class="feed-grid">
