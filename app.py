@@ -1058,34 +1058,51 @@ header.site { position: relative; z-index: 2000; }
   .bottom-nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 3px 0 var(--accent); }
 }
 </style>
+<style>
+/* Visible navigation bar: no dropdown, no bottom bar */
+header.site { display: block; padding: .8rem 1rem .6rem; }
+header.site .brandbox { display: block; margin-bottom: .5rem; }
+header.site nav.topnav {
+  display: flex !important; flex-wrap: wrap; gap: .15rem .9rem; align-items: center;
+  width: 100%; border-top: 1px solid var(--rule); padding-top: .5rem;
+}
+header.site nav.topnav a, header.site nav.topnav button {
+  display: inline-flex; align-items: center; min-height: 40px; color: var(--muted);
+  text-decoration: none; font-size: .95rem; white-space: nowrap;
+}
+header.site nav.topnav a:hover { color: var(--text); }
+header.site nav.topnav a[aria-current="page"] { color: var(--text); text-decoration: underline; text-underline-offset: .3em; }
+header.site nav.topnav button { min-height: 40px; padding: .3rem .7rem; }
+body { padding-bottom: 0 !important; }
+@media (max-width: 560px) {
+  header.site nav.topnav {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    gap: .2rem .8rem; padding-bottom: .4rem;
+  }
+  header.site nav.topnav a, header.site nav.topnav button { flex: 0 0 auto; }
+}
+</style>
 </head>
 <body>
 <header class="site">
   <div class="brandbox">
-    <details class="brandmenu">
-      <summary class="brand">VEMMSUNJ <span class="caret" aria-hidden="true">▾</span></summary>
-      <div class="menu-panel brand-panel">
-        <a href="/">Home</a>
-        <a href="/listings">Places</a>
-        <a href="/map">Map</a>
-        <a href="/posts">Sightings</a>
-        <a href="/calendar">Calendar</a>
-        <a href="/globe">Globe</a>
-        <a href="/aurora">Aurora</a>
-        <a href="/planets">Planets</a>
-        <a href="/tracker">Tracker</a>
-        {% if username %}<a href="/log">My log</a><a href="/logout">Log out</a>{% else %}<a href="/login">Log in</a>{% endif %}
-        <button id="redlight" class="btn quiet" type="button">Red light: off</button>
-      </div>
-    </details>
+    <a class="brand" href="/">VEMMSUNJ</a>
     <span class="tagline">Sky-watching map for observatories, satellite passes, and sightings</span>
     <span class="steps">Pick a place → check tonight's passes → log what you saw</span>
   </div>
-  <nav class="primary">
+  <nav class="topnav" aria-label="Main navigation">
+    <a href="/" {% if section == 'home' %}aria-current="page"{% endif %}>Home</a>
     <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
     <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
+    <a href="/skyview?place=1" {% if section == 'compass' %}aria-current="page"{% endif %}>Sky</a>
+    <a href="/tracker" {% if section == 'tracker' %}aria-current="page"{% endif %}>Tracker</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Sightings</a>
-    {% if username %}<a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
+    <a href="/calendar" {% if section == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
+    <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
+    <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
+    <a href="/planets" {% if section == 'planets' %}aria-current="page"{% endif %}>Planets</a>
+    {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a><a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
+    <button id="redlight" class="btn quiet" type="button">Red light: off</button>
   </nav>
 </header>
 <div class="planets" aria-hidden="true">
@@ -1105,13 +1122,6 @@ header.site { position: relative; z-index: 2000; }
     <p>Data from CelesTrak, NASA JPL, NASA EPIC, NOAA Space Weather Prediction Center, Open-Meteo, OpenStreetMap, and Natural Earth. Full credits are in the README.</p>
   </div>
 </footer>
-<nav class="bottom-nav" aria-label="Main navigation">
-  <a href="/" {% if section == 'home' %}aria-current="page"{% endif %}>Home</a>
-  <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
-  <a href="/skyview?place=1" {% if section == 'compass' %}aria-current="page"{% endif %}>Sky</a>
-  <a href="/tracker" {% if section == 'tracker' %}aria-current="page"{% endif %}>Tracker</a>
-  <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
-</nav>
 {% block scripts %}{% endblock %}
 <script>
 (function () {
