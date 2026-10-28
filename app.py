@@ -1092,6 +1092,28 @@ header.site { width: 100%; }
   main { max-width: 1440px; }
 }
 </style>
+<style>
+/* Wide screens: the main column uses the window, up to a readable maximum. */
+@media (min-width: 900px) {
+  main {
+    max-width: 1280px !important;
+    width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding: 2rem 2.5rem 3rem !important;
+    box-sizing: border-box;
+  }
+  .site-footer .inner { max-width: 1280px; padding: 0 2.5rem; }
+}
+@media (min-width: 1100px) {
+  main .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+  main .home-grid .home-wide { grid-column: 1 / -1; }
+  main .feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+@media (min-width: 1600px) {
+  main { max-width: 1440px !important; }
+}
+</style>
 </head>
 <body>
 <header class="site">
