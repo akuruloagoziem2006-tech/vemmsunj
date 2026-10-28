@@ -623,13 +623,6 @@ main h2 { font-size: 1.45rem; margin-top: 2.2rem; }
 }
 </style>
 <style>
-.brandmenu { position: relative; }
-.brandmenu summary { list-style: none; cursor: pointer; }
-.brandmenu summary::-webkit-details-marker { display: none; }
-.brandmenu summary .caret { font-size: .8em; color: var(--muted); }
-.brandmenu[open] summary .caret { color: var(--accent); }
-.brand-panel { left: 0; right: auto; top: 2.2rem; min-width: 13rem; }
-.brandmenu:not([open]) > .brand-panel { display: none; }
 </style>
 <style>
 main { margin-left: 0; margin-right: auto; max-width: 40rem; padding-left: 1.25rem; padding-right: 1.25rem; }
@@ -983,8 +976,6 @@ main .btn { min-height: 2.6rem; }
 <style>
 /* The header and its menu sit above the map and every other layer */
 header.site { position: relative; z-index: 2000; }
-.brandmenu { z-index: 2000; }
-.brand-panel { z-index: 2001 !important; }
 .leaflet-container, .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 400 !important; }
 .leaflet-control-container { z-index: 800 !important; }
 </style>
@@ -1049,13 +1040,9 @@ header.site { position: relative; z-index: 2000; }
 .near-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem; margin-top: .8rem; }
 .near label { display: block; margin-top: 1rem; font-weight: 600; font-size: .9rem; }
 .near select { margin-top: .35rem; }
-.bottom-nav { display: none; }
 @media (max-width: 560px) {
   header.site nav.primary { display: none; }
   body { padding-bottom: 72px; }
-  .bottom-nav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1500; background: var(--surface); border-top: 1px solid var(--rule); justify-content: space-around; padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .bottom-nav a { flex: 1; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); text-decoration: none; font-size: .85rem; padding: .3rem; }
-  .bottom-nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 3px 0 var(--accent); }
 }
 </style>
 <style>
