@@ -6108,12 +6108,51 @@ def tracker_page():
     except (requests.RequestException, ValueError) as e:
         print(f"comet error: {e}", flush=True)
         comet_error = "Comet data isn't available right now. Try again in a few minutes."
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error,
+    live, live_error = [], None
+    try:
+        live = sorted(globe_snapshot()["satellites"], key=lambda x: x["name"])
+    except requests.RequestException as e:
+        print(f"tracker live error: {e}", flush=True)
+        live_error = "Live satellite positions aren't available right now. Try again in a few minutes."
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error,
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% block content %}
-<h1>Close-approach tracker</h1>
+<h1>Satellite tracker</h1>
+<p class="meta">Live positions of satellites in the stations group, updated every minute. Times are UTC. Tap a satellite to highlight its row; the Globe shows where each one is in its orbit.</p>
+{% if live_error %}
+<p class="error">{{ live_error }}</p>
+{% else %}
+<div class="table-wrap"><table class="data" id="live-table">
+<thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
+<tbody>
+{% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}"><td>{{ s['name'] }}</td><td>{{ '%.2f'|format(s['lat']) }}°</td><td>{{ '%.2f'|format(s['lon']) }}°</td><td>{{ s['alt_km']|round|int }} km</td><td>{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
+</tbody></table></div>
+<style>
+.live-row { cursor: pointer; }
+.live-row.picked td { background: var(--surface); color: var(--text); }
+.live-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+</style>
+<script>
+(function () {
+  var rows = document.querySelectorAll('.live-row');
+  function pick(row) {
+    rows.forEach(function (r) { r.classList.remove('picked'); });
+    row.classList.add('picked');
+  }
+  rows.forEach(function (row) {
+    row.addEventListener('click', function () { pick(row); });
+    row.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(row); }
+    });
+  });
+  setTimeout(function () { window.location.reload(); }, 60000);
+})();
+</script>
+{% endif %}
+
+<h2>Close-approach tracker</h2>
 <p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
 {% if error %}
 <p class="error">{{ error }}</p>
