@@ -6127,7 +6127,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <div class="table-wrap"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
 <tbody>
-{% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}"><td>{{ s['name'] }}</td><td>{{ '%.2f'|format(s['lat']) }}°</td><td>{{ '%.2f'|format(s['lon']) }}°</td><td>{{ s['alt_km']|round|int }} km</td><td>{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
+{% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}"><td>{{ s['name'] }}</td><td class="c-lat">{{ '%.2f'|format(s['lat']) }}°</td><td class="c-lon">{{ '%.2f'|format(s['lon']) }}°</td><td class="c-alt">{{ s['alt_km']|round|int }} km</td><td class="c-speed">{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
 </tbody></table></div>
 <style>
 .live-row { cursor: pointer; }
@@ -6147,7 +6147,57 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(row); }
     });
   });
-  setTimeout(function () { window.location.reload(); }, 60000);
+  var PERIOD = {};
+  var TRACK = {};
+  var EPOCH = Date.now();
+  function fmt(x, d) { return x.toFixed(d); }
+  function apply(snapshot) {
+    EPOCH = Date.now();
+    snapshot.satellites.forEach(function (s) {
+      PERIOD[s.name] = s.period_s;
+      TRACK[s.name] = s.ground;
+    });
+    tick();
+  }
+  function groundAt(name, elapsedSec) {
+    var g = TRACK[name], period = PERIOD[name];
+    if (!g || !period) return null;
+    var n = g.length - 1;
+    var idx = ((elapsedSec % period) + period) % period / period * n;
+    var i0 = Math.floor(idx), i1 = Math.min(i0 + 1, n), f = idx - i0;
+    var a = g[i0], b = g[i1];
+    var dlon = b[1] - a[1];
+    if (dlon > 180) dlon -= 360;
+    if (dlon < -180) dlon += 360;
+    var lon = a[1] + dlon * f;
+    if (lon > 180) lon -= 360;
+    if (lon < -180) lon += 360;
+    return [a[0] + (b[0] - a[0]) * f, lon];
+  }
+  function tick() {
+    var elapsed = (Date.now() - EPOCH) / 1000;
+    rows.forEach(function (row) {
+      var name = row.getAttribute('data-name');
+      var pos = groundAt(name, elapsed);
+      if (!pos) return;
+      var cell = row.querySelector('.c-lat');
+      if (cell) cell.textContent = fmt(pos[0], 2) + '°';
+      cell = row.querySelector('.c-lon');
+      if (cell) cell.textContent = fmt(pos[1], 2) + '°';
+    });
+  }
+  function resync() {
+    fetch('/api/globe', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (!d.error) apply(d); })
+      .catch(function () {});
+  }
+  apply({ satellites: Array.prototype.map.call(rows, function (row) {
+    return { name: row.getAttribute('data-name'), period_s: 0, ground: [] };
+  }) });
+  resync();
+  setInterval(tick, 1000);
+  setInterval(resync, 60000);
 })();
 </script>
 {% endif %}
