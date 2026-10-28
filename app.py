@@ -159,6 +159,13 @@ SEED = [
     ("Roque de los Muchachos Observatory", "observatory", "La Palma, Canary Islands, Spain", 28.758, -17.882, "https://www.iac.es"),
     ("Siding Spring Observatory", "observatory", "Coonabarabran, New South Wales, Australia", -31.273, 149.061, "https://www.anu.edu.au"),
     ("Oukaimeden Observatory", "observatory", "Atlas Mountains, Morocco", 31.206, -7.866, "https://www.oukaimeden.ma"),
+    ("Kerry International Dark Sky Reserve", "dark-sky", "Iveragh Peninsula, County Kerry, Ireland", 51.824, -10.001, "https://darksky.org/places/kerry-dark-sky-reserve/"),
+    ("Mont-Mégantic International Dark Sky Reserve", "dark-sky", "Notre-Dame-des-Bois, Québec, Canada", 45.4558, -71.1525, "https://www.omm-astro.ca/en/the-observatory/international-dark-sky-reserve/"),
+    ("Jasper National Park Dark Sky Preserve", "dark-sky", "Jasper, Alberta, Canada", 52.8773, -118.0808, "https://parks.canada.ca/pn-np/ab/jasper/gestion-management/designation/cieletoile-darksky"),
+    ("Cerro Tololo Inter-American Observatory", "observatory", "Vicuña, Coquimbo Region, Chile", -30.169, -70.804, "https://www.ctio.noirlab.edu/noao/content/about-ctio"),
+    ("Calar Alto Observatory", "observatory", "Gérgal, Almería, Andalusia, Spain", 37.22361, -2.54611, "https://kobe.caha.es/"),
+    ("Pic du Midi Observatory", "observatory", "Sers, Hautes-Pyrénées, Occitanie, France", 42.9318, 0.1443, "https://picdumidi.com/en/page/planetarium-observatory"),
+    ("Indian Astronomical Observatory", "observatory", "Hanle, Changthang, Ladakh, India", 32.7794, 78.9642, "https://www.iiap.res.in/centers/iao/"),
 ]
 
 EXAMPLE_POSTS = [
