@@ -1025,6 +1025,39 @@ header.site { position: relative; z-index: 2000; }
   header.site nav a, .menu-panel a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 </style>
+<style>
+/* Redesign: homepage, cards, and bottom navigation */
+.hero { padding: 1.5rem 0 1.2rem; border-bottom: 1px solid var(--rule); }
+.hero-lede { font-size: 1.2rem; color: var(--text); margin: .3rem 0 .4rem; }
+.sky-tonight { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 0 10px 10px 0; padding: 1rem 1.1rem; margin: 1.6rem 0 0; }
+.sky-tonight h2 { margin-top: 0; border: 0; padding: 0; }
+.sky-grid { display: grid; grid-template-columns: 1fr; gap: .6rem; margin: .6rem 0 .8rem; }
+@media (min-width: 640px) { .sky-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sky-item { display: flex; flex-direction: column; gap: .15rem; }
+.sky-item .k { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.sky-item .v { font-weight: 600; }
+.steps-list { list-style: none; padding: 0; margin: .6rem 0 0; display: grid; gap: .6rem; counter-reset: st; }
+.steps-list li { counter-increment: st; position: relative; }
+.step-card { display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: .85rem 1rem .85rem 3.4rem; color: var(--text); text-decoration: none; }
+.step-card:hover { border-color: var(--accent); }
+.steps-list li::before { content: counter(st); position: absolute; left: .9rem; top: .85rem; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: .9rem; }
+.feed-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: .6rem; }
+@media (min-width: 560px) { .feed-grid { grid-template-columns: 1fr 1fr; } }
+.feed-photo { margin: 0; }
+.feed-photo img { border-radius: 10px; background: #000; display: block; width: 100%; height: auto; }
+.feed-photo figcaption { margin-top: .4rem; }
+.near-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem; margin-top: .8rem; }
+.near label { display: block; margin-top: 1rem; font-weight: 600; font-size: .9rem; }
+.near select { margin-top: .35rem; }
+.bottom-nav { display: none; }
+@media (max-width: 560px) {
+  header.site nav.primary { display: none; }
+  body { padding-bottom: 72px; }
+  .bottom-nav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1500; background: var(--surface); border-top: 1px solid var(--rule); justify-content: space-around; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .bottom-nav a { flex: 1; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); text-decoration: none; font-size: .85rem; padding: .3rem; }
+  .bottom-nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 3px 0 var(--accent); }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -1072,6 +1105,13 @@ header.site { position: relative; z-index: 2000; }
     <p>Data from CelesTrak, NASA JPL, NASA EPIC, NOAA Space Weather Prediction Center, Open-Meteo, OpenStreetMap, and Natural Earth. Full credits are in the README.</p>
   </div>
 </footer>
+<nav class="bottom-nav" aria-label="Main navigation">
+  <a href="/" {% if section == 'home' %}aria-current="page"{% endif %}>Home</a>
+  <a href="/map" {% if section == 'map' %}aria-current="page"{% endif %}>Map</a>
+  <a href="/skyview?place=1" {% if section == 'compass' %}aria-current="page"{% endif %}>Sky</a>
+  <a href="/tracker" {% if section == 'tracker' %}aria-current="page"{% endif %}>Tracker</a>
+  <a href="/listings" {% if section == 'places' %}aria-current="page"{% endif %}>Places</a>
+</nav>
 {% block scripts %}{% endblock %}
 <script>
 (function () {
@@ -3823,16 +3863,6 @@ def aurora_page():
     return render_template("aurora.html", place=place, kp=kp_status(), title="Aurora", section="aurora")
 
 # ---------- Routes: places ----------
-@app.route("/")
-def index():
-    recent = get_db().execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
-        "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
-        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
-        "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
-        "ORDER BY p.id DESC LIMIT 6"
-    ).fetchall()
-    return render_template("home.html", recent=recent, title="VEMMSUNJ", section="home")
 
 @app.route("/listings")
 def listings():
@@ -6822,6 +6852,234 @@ def datacenter(db):
         "speeds": speed_rows,
         "trend": trend,
     }
+
+# ---------- Homepage redesign: sky tonight and the Near you card ----------
+def sky_tonight(place):
+    key = f"sky-tonight:{place['id']}"
+    cached = cache_get(key, 900)
+    if cached:
+        return json.loads(cached)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    out = {"place": place["name"], "place_id": place["id"], "dusk": None, "dusk_iso": None,
+           "next_pass": None, "planet": None}
+    try:
+        civil = twilight_times(place["latitude"], place["longitude"], now).get("Civil", {})
+        if civil.get("dusk_iso"):
+            out["dusk"] = civil["dusk"]
+            out["dusk_iso"] = civil["dusk_iso"]
+    except Exception as e:
+        print(f"sky tonight twilight error: {e}", flush=True)
+    try:
+        passes, _ = cached_passes(place["id"], place)
+        for pz in passes:
+            st = parse_when(pz["start"])
+            if st >= now and pz["max_altitude_deg"] >= 30:
+                out["next_pass"] = {"satellite": pz["satellite"], "start": st.strftime("%H:%M"),
+                                    "iso": st.isoformat(timespec="minutes"), "peak": pz["max_altitude_deg"]}
+                break
+    except Exception as e:
+        print(f"sky tonight passes error: {e}", flush=True)
+    try:
+        rows = [r for r in planet_rows(place, now)
+                if not r.get("earth") and r.get("alt") is not None and r["alt"] >= 0 and r.get("mag") is not None]
+        if rows:
+            best = min(rows, key=lambda r: r["mag"])
+            out["planet"] = {"name": best["name"], "mag": best["mag"], "dir": best["dir"]}
+    except Exception as e:
+        print(f"sky tonight planet error: {e}", flush=True)
+    cache_put(key, json.dumps(out))
+    return out
+
+HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1 class="hero-title">VEMMSUNJ</h1>
+  <p class="hero-lede">Explore the night sky. Track satellites. Discover the universe.</p>
+  <p class="meta">Find observing places, see tonight's passes and planets, and record what you see.</p>
+  <div class="actions">
+    <a class="btn" href="/listings">Explore places</a>
+    <a class="btn quiet" href="/map">Open map</a>
+    <a class="btn quiet" href="/posts">Log a sighting</a>
+  </div>
+</section>
+
+{% if sky %}
+<section class="sky-tonight" aria-labelledby="sky-title">
+  <h2 id="sky-title">Your sky tonight</h2>
+  <p class="meta">Starting from {{ sky['place'] }}. Choose another place below for your own sky.</p>
+  <div class="sky-grid">
+    <div class="sky-item">
+      <span class="k">Civil dusk</span>
+      {% if sky['dusk_iso'] %}<span class="v"><time data-utc="{{ sky['dusk_iso'] }}" data-utc-label="{{ sky['dusk'] }} UTC">{{ sky['dusk'] }} UTC</time></span>{% else %}<span class="v">Not tonight</span>{% endif %}
+    </div>
+    <div class="sky-item">
+      <span class="k">Next pass above 30°</span>
+      {% if sky['next_pass'] %}<span class="v">{{ sky['next_pass']['satellite'] }}, <time data-utc="{{ sky['next_pass']['iso'] }}" data-utc-label="{{ sky['next_pass']['start'] }} UTC">{{ sky['next_pass']['start'] }} UTC</time>, peak {{ sky['next_pass']['peak'] }}°</span>{% else %}<span class="v">None in the next 24 hours</span>{% endif %}
+    </div>
+    <div class="sky-item">
+      <span class="k">Brightest planet up</span>
+      {% if sky['planet'] %}<span class="v">{{ sky['planet']['name'] }}, magnitude {{ sky['planet']['mag'] }}, to the {{ sky['planet']['dir'] }}</span>{% else %}<span class="v">None above the horizon</span>{% endif %}
+    </div>
+  </div>
+  <p><a class="btn" href="/places/{{ sky['place_id'] }}/tonight">Full sky tonight</a></p>
+</section>
+{% endif %}
+
+<section class="near" id="near-card">
+  <h2>Near you tonight</h2>
+  <p class="meta">Find the closest place and its next pass, or choose a place yourself. Your location stays in your browser. We don't store it.</p>
+  <div class="actions">
+    <button id="near-go" class="btn quiet" type="button">Find my nearest place</button>
+  </div>
+  <label for="near-pick">Or choose a place</label>
+  <select id="near-pick">
+    <option value="">Choose a place</option>
+    {% for pl in places %}<option value="{{ pl['id'] }}">{{ pl['name'] }}</option>{% endfor %}
+  </select>
+  <p class="meta" id="near-status" role="status" aria-live="polite"></p>
+  <div id="near-result"></div>
+  <script type="application/json" id="places-data">{{ places|tojson }}</script>
+</section>
+
+<section aria-labelledby="how-title">
+  <h2 id="how-title">How it works</h2>
+  <ol class="steps-list">
+    <li><a class="step-card" href="/listings"><strong>Pick a place.</strong> Choose an observatory or a dark-sky spot.</a></li>
+    <li><a class="step-card" href="/places/1/tonight"><strong>Check tonight's passes.</strong> See which satellites and planets are above it.</a></li>
+    <li><a class="step-card" href="/posts"><strong>Log what you saw.</strong> Add the place and time so the app can help identify it.</a></li>
+  </ol>
+</section>
+
+<section class="recent" aria-labelledby="feed-title">
+  <h2 id="feed-title">Astronomy feed</h2>
+  <p class="meta">Images from NASA. Dates in captions are from NASA's records.</p>
+  <div class="feed-grid">
+  {% for s in recent[:4] %}
+  <figure class="feed-photo">
+    <img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%">
+    <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
+  </figure>
+  {% else %}
+  <p>No astronomy images yet.</p>
+  {% endfor %}
+  </div>
+  <p><a class="btn quiet" href="/posts">All sightings</a></p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var places = JSON.parse(document.getElementById('places-data').textContent);
+  var btn = document.getElementById('near-go');
+  var pick = document.getElementById('near-pick');
+  var out = document.getElementById('near-status');
+  var res = document.getElementById('near-result');
+  var here = null;
+  function km(lat1, lon1, lat2, lon2) {
+    var R = 6371, r = Math.PI / 180;
+    var dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function nextLine(passes) {
+    var now = Date.now(), best = null;
+    (passes || []).forEach(function (p) {
+      var t = Date.parse(p.start);
+      if (!isNaN(t) && t > now && (best === null || t < best.t)) best = { p: p, t: t };
+    });
+    if (!best) return 'No passes in the next 24 hours.';
+    var local = new Date(best.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return 'Next pass: ' + best.p.satellite + ' at ' + local + ' (' + best.p.start.slice(11, 16) + ' UTC), peak ' + best.p.max_altitude_deg + ' degrees.';
+  }
+  function show(place, distKm) {
+    res.textContent = '';
+    var box = document.createElement('div');
+    box.className = 'near-card';
+    var name = document.createElement('strong');
+    name.textContent = place.name;
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = distKm == null ? '' : Math.round(distKm).toLocaleString() + ' km away';
+    var next = document.createElement('div');
+    next.textContent = 'Checking the next pass...';
+    var actions = document.createElement('div');
+    actions.className = 'actions';
+    [['Full sky tonight', '/places/' + place.id + '/tonight', 'btn'],
+     ["Tonight's passes", '/places/' + place.id, 'btn quiet'],
+     ['Planets tonight', '/planets?place=' + place.id, 'btn quiet']].forEach(function (l) {
+      var a = document.createElement('a');
+      a.className = l[2];
+      a.href = l[1];
+      a.textContent = l[0];
+      actions.appendChild(a);
+    });
+    box.appendChild(name);
+    box.appendChild(meta);
+    box.appendChild(next);
+    box.appendChild(actions);
+    res.appendChild(box);
+    fetch('/api/passes/' + place.id, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { next.textContent = d.error ? "Pass times aren't available right now." : nextLine(d.passes); })
+      .catch(function () { next.textContent = "Pass times aren't available right now."; });
+  }
+  btn.addEventListener('click', function () {
+    if (!navigator.geolocation) {
+      out.textContent = "Location isn't available in this browser. Choose a place below.";
+      return;
+    }
+    out.textContent = 'Finding your location...';
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      here = pos.coords;
+      var best = null, bestD = Infinity;
+      places.forEach(function (pl) {
+        var d = km(here.latitude, here.longitude, pl.latitude, pl.longitude);
+        if (d < bestD) { bestD = d; best = pl; }
+      });
+      if (!best) { out.textContent = 'No places yet.'; return; }
+      pick.value = String(best.id);
+      out.textContent = 'Nearest place to you. You can also choose any place below.';
+      show(best, bestD);
+    }, function (err) {
+      out.textContent = err.code === 1
+        ? 'Location was blocked. Choose a place below instead.'
+        : "Couldn't get your location. Choose a place below instead.";
+    }, { timeout: 10000, maximumAge: 300000 });
+  });
+  pick.addEventListener('change', function () {
+    var pl = places.filter(function (x) { return String(x.id) === pick.value; })[0];
+    if (!pl) return;
+    var d = here ? km(here.latitude, here.longitude, pl.latitude, pl.longitude) : null;
+    out.textContent = here ? '' : 'Showing the chosen place.';
+    show(pl, d);
+  });
+})();
+</script>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(HOME_NEW_TEMPLATES)
+
+@app.route("/")
+def index():
+    db = get_db()
+    recent = db.execute(
+        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
+        "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
+        "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
+        "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
+        "ORDER BY p.id DESC LIMIT 6"
+    ).fetchall()
+    first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
+    sky = None
+    if first is not None:
+        try:
+            sky = sky_tonight(first)
+        except Exception as e:
+            print(f"sky tonight error: {e}", flush=True)
+    places = [dict(r) for r in db.execute(
+        "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
+    return render_template("home.html", recent=recent, sky=sky, places=places,
+                           title="VEMMSUNJ", section="home")
 
 if __name__ == "__main__":
     from waitress import serve
