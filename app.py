@@ -1225,15 +1225,22 @@ header.site { width: 100%; }
 </style>
 <script>
 (function () {
-  var slides = document.querySelectorAll('.hero-slide');
-  if (slides.length < 2) return;
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var i = 0;
-  setInterval(function () {
-    slides[i].classList.remove('is-on');
-    i = (i + 1) % slides.length;
-    slides[i].classList.add('is-on');
-  }, 6000);
+  function start() {
+    var slides = document.querySelectorAll('.hero-slide');
+    if (slides.length < 2) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var i = 0;
+    setInterval(function () {
+      for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
+      i = (i + 1) % slides.length;
+      slides[i].classList.add('is-on');
+    }, 6000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
 })();
 </script>
 <style>
@@ -1324,15 +1331,22 @@ main {
 </style>
 <script>
 (function () {
-  var slides = document.querySelectorAll('.hero-slide');
-  if (slides.length < 2) return;
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var i = 0;
-  setInterval(function () {
-    slides[i].classList.remove('is-on');
-    i = (i + 1) % slides.length;
-    slides[i].classList.add('is-on');
-  }, 6000);
+  function start() {
+    var slides = document.querySelectorAll('.hero-slide');
+    if (slides.length < 2) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var i = 0;
+    setInterval(function () {
+      for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
+      i = (i + 1) % slides.length;
+      slides[i].classList.add('is-on');
+    }, 6000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
 })();
 </script>
 </head>
