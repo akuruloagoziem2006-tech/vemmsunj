@@ -6681,7 +6681,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <div class="table-wrap table-scroll"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
 <tbody>
-{% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}"><td>{{ s['name'] }}</td><td class="c-lat">{{ '%.2f'|format(s['lat']) }}°</td><td class="c-lon">{{ '%.2f'|format(s['lon']) }}°</td><td class="c-alt">{{ s['alt_km']|round|int }} km</td><td class="c-speed">{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
+{% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}" data-period="{{ s['period_s'] }}"><td>{{ s['name'] }}</td><td class="c-lat">{{ '%.2f'|format(s['lat']) }}°</td><td class="c-lon">{{ '%.2f'|format(s['lon']) }}°</td><td class="c-alt">{{ s['alt_km']|round|int }} km</td><td class="c-speed">{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
 </tbody></table></div>
 <style>
 .live-row { cursor: pointer; }
@@ -6748,6 +6748,73 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 })();
 </script>
 {% endif %}
+
+<h2>Satellite details</h2>
+<div id="sat-detail" class="place" role="status" aria-live="polite">Tap a satellite in the table above to see its details.</div>
+<style>
+#sat-detail { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1.1rem; margin: .6rem 0 1.2rem; }
+#sat-detail .row { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem 0; border-bottom: 1px solid var(--rule); }
+#sat-detail .row:last-of-type { border-bottom: 0; }
+#sat-detail .k { color: var(--muted); }
+#sat-detail .links { margin-top: .8rem; display: flex; flex-wrap: wrap; gap: .6rem; }
+</style>
+<script>
+(function () {
+  var panel = document.getElementById('sat-detail');
+  if (!panel) return;
+  function cell(row, sel) {
+    var c = row.querySelector(sel);
+    return c ? c.textContent : '-';
+  }
+  function addRow(label, value) {
+    var r = document.createElement('div');
+    r.className = 'row';
+    var k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = label;
+    var v = document.createElement('span');
+    v.textContent = value;
+    r.appendChild(k);
+    r.appendChild(v);
+    panel.appendChild(r);
+  }
+  function render() {
+    var row = document.querySelector('.live-row.picked');
+    panel.textContent = '';
+    if (!row) {
+      panel.textContent = 'Tap a satellite in the table above to see its details.';
+      return;
+    }
+    var name = row.getAttribute('data-name');
+    var period = parseFloat(row.getAttribute('data-period'));
+    var calc = document.getElementById('calc-time');
+    var title = document.createElement('strong');
+    title.textContent = name;
+    panel.appendChild(title);
+    addRow('Latitude', cell(row, '.c-lat'));
+    addRow('Longitude', cell(row, '.c-lon'));
+    addRow('Altitude', cell(row, '.c-alt'));
+    addRow('Speed', cell(row, '.c-speed'));
+    addRow('Orbit time', isNaN(period) ? '-' : (period / 60).toFixed(1) + ' minutes');
+    addRow('Position calculated', (calc ? calc.textContent : '-') + ' UTC');
+    var links = document.createElement('div');
+    links.className = 'links';
+    [['See the orbit on the Globe', '/globe'],
+     ['Pass simulation for Griffith Observatory', '/places/1/simulate']].forEach(function (l) {
+      var a = document.createElement('a');
+      a.className = 'btn quiet';
+      a.href = l[1];
+      a.textContent = l[0];
+      links.appendChild(a);
+    });
+    panel.appendChild(links);
+  }
+  document.addEventListener('click', function () { setTimeout(render, 0); });
+  document.addEventListener('keydown', function () { setTimeout(render, 0); });
+  setInterval(render, 1000);
+  render();
+})();
+</script>
 
 <h2>Close-approach tracker</h2>
 <p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
