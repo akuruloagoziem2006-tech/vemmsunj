@@ -1380,6 +1380,22 @@ main {
   .hero-slide.is-on { opacity: .85 !important; }
 }
 </style>
+<style>
+/* Tracker tables: readable on a phone, with the column headings kept in view */
+.table-scroll { max-height: 70vh; overflow: auto; border: 1px solid var(--rule); border-radius: 10px; }
+.table-scroll table.data thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--rule);
+}
+@media (max-width: 560px) {
+  .table-scroll table.data { font-size: 1rem; }
+  .table-scroll table.data th, .table-scroll table.data td { padding: .7rem .6rem; }
+  .table-scroll table.data th { font-size: .85rem; }
+  .table-scroll table.data td { color: var(--text); }
+  .meta { font-size: .95rem; }
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -6619,7 +6635,8 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% if live_error %}
 <p class="error">{{ live_error }}</p>
 {% else %}
-<div class="table-wrap"><table class="data" id="live-table">
+<p class="meta">On a phone, swipe the table sideways to see every column.</p>
+<div class="table-wrap table-scroll"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
 <tbody>
 {% for s in live %}<tr class="live-row" tabindex="0" data-name="{{ s['name'] }}"><td>{{ s['name'] }}</td><td class="c-lat">{{ '%.2f'|format(s['lat']) }}°</td><td class="c-lon">{{ '%.2f'|format(s['lon']) }}°</td><td class="c-alt">{{ s['alt_km']|round|int }} km</td><td class="c-speed">{{ '%.2f'|format(s['speed_kms']) }} km/s</td><td>{{ '%.0f'|format(s['period_s'] / 60) }} min</td></tr>{% else %}<tr><td colspan="6">No satellites in the stations group right now.</td></tr>{% endfor %}
