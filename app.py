@@ -1371,6 +1371,15 @@ main {
   .hero-slide.is-on { opacity: .42; }
 }
 </style>
+<style>
+/* Phones: the photo shows clearly behind the title; a lighter shade and stronger photo */
+@media (max-width: 899px) {
+  .hero-shade {
+    background: linear-gradient(180deg, rgba(8,11,17,.45) 0%, rgba(8,11,17,.38) 50%, rgba(8,11,17,.72) 100%) !important;
+  }
+  .hero-slide.is-on { opacity: .85 !important; }
+}
+</style>
 </head>
 <body>
 <header class="site">
