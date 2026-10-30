@@ -4112,9 +4112,12 @@ def sky_objects(lat, lon, when):
     try:
         for name, l1, l2 in parse_tle(get_group_text("stations")):
             sat = EarthSatellite(l1, l2, name, ts)
-            alt, az, _ = (sat - observer).at(t).altaz()
+            topo = (sat - observer).at(t)
+            alt, az, _ = topo.altaz()
+            dist = topo.distance()
             if alt.degrees > 0:
-                out.append({"name": name, "kind": "satellite", "alt": round(alt.degrees, 2), "az": round(az.degrees, 2)})
+                out.append({"name": name, "kind": "satellite", "alt": round(alt.degrees, 2), "az": round(az.degrees, 2),
+                            "alt_km": round(float(dist.km), 0)})
     except requests.RequestException:
         pass
     return out
@@ -6653,14 +6656,14 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   </select>
   <noscript><button class="btn quiet" type="submit">Show</button></noscript>
 </form>
-<p class="meta">Satellites above 10 degrees from {{ place['name'] }} right now. Times are UTC.</p>
+<p class="meta">Satellites above the horizon from {{ place['name'] }} right now. Height is the angle above the horizon. Distance is the straight-line distance from the place to the satellite. Times are UTC.</p>
 {% if tonight_error %}
 <p class="error">{{ tonight_error }}</p>
 {% elif tonight %}
 <div class="table-wrap table-scroll"><table class="data">
-<thead><tr><th>Satellite</th><th>Height</th><th>Direction</th><th>Altitude</th></tr></thead>
+<thead><tr><th>Satellite</th><th>Height</th><th>Direction</th><th>Distance</th></tr></thead>
 <tbody>
-{% for o in tonight %}<tr><td>{{ o['name'] }}</td><td>{{ o['alt']|round(1) }}°</td><td>{{ o['az']|round|int }}°</td><td>{{ o['alt_km'] if o['alt_km'] is defined else '-' }}</td></tr>{% endfor %}
+{% for o in tonight %}<tr><td>{{ o['name'] }}</td><td>{{ o['alt']|round(1) }}°</td><td>{{ o['az']|round|int }}°</td><td>{{ '{:,.0f}'.format(o['alt_km']) }} km</td></tr>{% endfor %}
 </tbody></table></div>
 {% else %}
 <p class="meta">No tracked satellites are above 10 degrees from {{ place['name'] }} right now.</p>
