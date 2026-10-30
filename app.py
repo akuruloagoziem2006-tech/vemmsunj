@@ -6539,18 +6539,22 @@ JPL_CAD_URL = "https://ssd-api.jpl.nasa.gov/cad.api"
 TRACKER_MAX_AU = 0.1
 TRACKER_MAX_H = 16.0
 
-def close_approaches():
-    body = cache_get("jpl-cad", 6 * 3600)
+TRACKER_DISTANCES = {"0.05": 0.05, "0.1": 0.1, "0.2": 0.2}
+TRACKER_WINDOWS = {"30": 30, "60": 60, "120": 120}
+
+def close_approaches(dist_au=TRACKER_MAX_AU, days=60):
+    key = f"jpl-cad:{dist_au}:{days}"
+    body = cache_get(key, 6 * 3600)
     if body is None:
         r = requests.get(JPL_CAD_URL, params={
             "date-min": "now",
-            "date-max": "+60",
-            "dist-max": str(TRACKER_MAX_AU),
+            "date-max": f"+{days}",
+            "dist-max": str(dist_au),
             "sort": "date",
         }, timeout=20)
         r.raise_for_status()
         body = r.text
-        cache_put("jpl-cad", body)
+        cache_put(key, body)
     data = json.loads(body)
     fields = data.get("fields", [])
     idx = {name: i for i, name in enumerate(fields)}
@@ -6613,6 +6617,15 @@ def tracker_page():
     except (requests.RequestException, ValueError) as e:
         print(f"tracker error: {e}", flush=True)
         error = "The close-approach data isn't available right now. Try again in a few minutes."
+    dist_key = request.args.get("dist", "0.1")
+    win_key = request.args.get("days", "60")
+    dist_au = TRACKER_DISTANCES.get(dist_key, TRACKER_MAX_AU)
+    days = TRACKER_WINDOWS.get(win_key, 60)
+    try:
+        items = close_approaches(dist_au, days)
+    except (requests.RequestException, ValueError) as e:
+        print(f"tracker error: {e}", flush=True)
+        error = "The close-approach data isn't available right now. Try again in a few minutes."
     comets, comet_error = [], None
     try:
         comets = bright_comets()
@@ -6641,7 +6654,7 @@ def tracker_page():
         except Exception as e:
             print(f"tracker tonight error: {e}", flush=True)
             tonight_error = "Satellites above the horizon aren't available right now."
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, place=place, places=places, tonight=tonight, tonight_error=tonight_error,
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, dist_key=dist_key, win_key=win_key, place=place, places=places, tonight=tonight, tonight_error=tonight_error,
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
@@ -6818,6 +6831,17 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 
 <h2>Close-approach tracker</h2>
 <p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
+<form method="get" action="/tracker" class="near" id="close-filters">
+  <label for="dist">Within</label>
+  <select id="dist" name="dist" onchange="this.form.submit()">
+    {% for k, label in [('0.05', '0.05 AU, about 7.5 million km'), ('0.1', '0.1 AU, about 15 million km'), ('0.2', '0.2 AU, about 30 million km')] %}<option value="{{ k }}" {% if dist_key == k %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <label for="days">Over the next</label>
+  <select id="days" name="days" onchange="this.form.submit()">
+    {% for k, label in [('30', '30 days'), ('60', '60 days'), ('120', '120 days')] %}<option value="{{ k }}" {% if win_key == k %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn quiet" type="submit">Apply</button></noscript>
+</form>
 <p class="meta">0.1 AU is about 15 million kilometres, roughly 39 times the Earth–Moon distance. A close approach is not a threat: most objects in this list pass by safely, and the table shows distance so you can judge the scale yourself.</p>
 {% if error %}
 <p class="error">{{ error }}</p>
