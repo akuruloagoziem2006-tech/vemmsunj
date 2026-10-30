@@ -6609,6 +6609,96 @@ def bright_comets():
     out.sort(key=lambda c: c["m1"])
     return out[:40]
 
+import urllib.parse as _up
+import re as _re
+
+COMET_NAME_OK = _re.compile(r"^[0-9A-Za-z/ .()\-]{1,40}$")
+
+def comet_detail(designation):
+    key = f"jpl-comet:{designation}"
+    body = cache_get(key, 24 * 3600)
+    if body is None:
+        r = requests.get("https://ssd-api.jpl.nasa.gov/sbdb.api", params={
+            "sstr": designation,
+            "phys-par": "1",
+        }, timeout=20)
+        r.raise_for_status()
+        body = r.text
+        cache_put(key, body)
+    data = json.loads(body)
+    if "object" not in data:
+        return None
+    obj = data.get("object", {})
+    orbit = data.get("orbit", {}) or {}
+    phys = {}
+    for item in data.get("phys_par", []) or []:
+        phys[item.get("name")] = item
+    elements = {}
+    for el in orbit.get("elements", []) or []:
+        elements[el.get("name")] = el
+    def val(d, key):
+        item = d.get(key)
+        return item.get("value") if item else None
+    return {
+        "name": obj.get("fullname", designation),
+        "class": (obj.get("orbit_class") or {}).get("name", "-"),
+        "neo": obj.get("neo"),
+        "m1": val(phys, "M1"), "k1": val(phys, "K1"), "m2": val(phys, "M2"),
+        "q": val(elements, "q"),
+        "e": val(elements, "e"),
+        "i": val(elements, "i"),
+        "moid": orbit.get("moid"),
+        "source": f"https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr={_up.quote(designation)}",
+    }
+
+@app.route("/tracker/comet/<path:designation>")
+def comet_page(designation):
+    if not COMET_NAME_OK.match(designation):
+        abort(404)
+    try:
+        info = comet_detail(designation)
+    except (requests.RequestException, ValueError) as e:
+        print(f"comet detail error: {e}", flush=True)
+        return render_template("comet.html", info=None, error="Comet data isn't available right now. Try again in a few minutes.",
+                               title="Comet", section="tracker"), 502
+    if info is None:
+        abort(404)
+    return render_template("comet.html", info=info, error=None, title=info["name"], section="tracker")
+
+COMET_TEMPLATES = {"comet.html": """{% extends "base.html" %}
+{% block content %}
+<p><a href="/tracker">Back to the tracker</a></p>
+{% if error %}
+<h1>Comet</h1>
+<p class="error">{{ error }}</p>
+{% else %}
+<h1>{{ info['name'] }}</h1>
+<p class="meta">{{ info['class'] }}{% if info['neo'] %} · near-Earth object{% endif %}</p>
+<h2>Brightness</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Parameter</th><th>Value</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>M1</td><td>{{ info['m1'] or '-' }}</td><td>Total absolute magnitude. Lower is brighter.</td></tr>
+<tr><td>K1</td><td>{{ info['k1'] or '-' }}</td><td>How quickly the total brightness changes with distance from the Sun.</td></tr>
+<tr><td>M2</td><td>{{ info['m2'] or '-' }}</td><td>Absolute magnitude of the nucleus alone.</td></tr>
+</tbody></table></div>
+<h2>Orbit</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Element</th><th>Value</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>q</td><td>{{ info['q'] or '-' }} AU</td><td>Closest distance to the Sun (perihelion).</td></tr>
+<tr><td>e</td><td>{{ info['e'] or '-' }}</td><td>Eccentricity: 0 is a circle, near 1 is a very long orbit.</td></tr>
+<tr><td>i</td><td>{{ info['i'] or '-' }}°</td><td>Inclination of the orbit to the planets' plane.</td></tr>
+<tr><td>MOID</td><td>{{ info['moid'] or '-' }} AU</td><td>Closest the orbit comes to Earth's orbit.</td></tr>
+</tbody></table></div>
+<p class="meta">Comets brighten and fade unpredictably, and their visibility depends on the Sun's position and your location. Check a current ephemeris before observing.</p>
+<p><a class="btn quiet" href="{{ info['source'] }}">Full record at NASA JPL</a></p>
+<p class="meta">Data: NASA JPL Small-Body Database (public domain).</p>
+{% endif %}
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(COMET_TEMPLATES)
+
 @app.route("/tracker")
 def tracker_page():
     error, items = None, []
@@ -6860,7 +6950,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Comet</th><th>M1</th><th>K1</th></tr></thead>
 <tbody>
-{% for c in comets %}<tr><td>{{ c['name'] }}</td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
+{% for c in comets %}<tr><td><a href="/tracker/comet/{{ c['name']|urlencode }}">{{ c['name'] }}</a></td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
 <p class="meta">Tap a column heading to sort its table. Numbers sort by value; names and dates sort as text.</p>
