@@ -1360,6 +1360,17 @@ main {
 }
 .hero-slide.is-on { opacity: .5; }
 </style>
+<style>
+/* Phones: the slides show behind the title too, with a stronger shade so the text stays readable */
+@media (max-width: 899px) {
+  .hero-slides, .hero-shade { display: block !important; }
+  .hero { position: relative; overflow: hidden; }
+  .hero-shade {
+    background: linear-gradient(180deg, rgba(8,11,17,.85) 0%, rgba(8,11,17,.78) 55%, rgba(8,11,17,.92) 100%) !important;
+  }
+  .hero-slide.is-on { opacity: .42; }
+}
+</style>
 </head>
 <body>
 <header class="site">
