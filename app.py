@@ -1234,7 +1234,7 @@ header.site { width: 100%; }
       for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
       i = (i + 1) % slides.length;
       slides[i].classList.add('is-on');
-    }, 6000);
+    }, 30000);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
@@ -1340,7 +1340,7 @@ main {
       for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
       i = (i + 1) % slides.length;
       slides[i].classList.add('is-on');
-    }, 6000);
+    }, 30000);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
@@ -1349,6 +1349,17 @@ main {
   }
 })();
 </script>
+<style>
+/* Hero slides: one framing and brightness for every photo, cross-faded slowly */
+.hero-slide {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center center;
+  opacity: 0; transition: opacity 2.4s ease-in-out;
+  filter: saturate(1.05) brightness(.9) contrast(1.02);
+  transform: scale(1.02);
+}
+.hero-slide.is-on { opacity: .5; }
+</style>
 </head>
 <body>
 <header class="site">
