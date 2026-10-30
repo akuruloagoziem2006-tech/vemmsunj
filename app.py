@@ -6623,12 +6623,51 @@ def tracker_page():
         print(f"tracker live error: {e}", flush=True)
         live_error = "Live satellite positions aren't available right now. Try again in a few minutes."
     calc_time = datetime.now(timezone.utc).strftime("%H:%M:%S")
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time,
+    place_id = request.args.get("place", "1")
+    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                             (int(place_id) if place_id.isdigit() else 1,)).fetchone()
+    places = get_db().execute("SELECT id, name FROM listings ORDER BY name").fetchall()
+    tonight, tonight_error = [], None
+    if place is not None:
+        try:
+            now = datetime.now(timezone.utc)
+            tonight = sorted(
+                [o for o in sky_objects(place["latitude"], place["longitude"], now)
+                 if o["kind"] == "satellite" and o["alt"] > 0],
+                key=lambda o: o["alt"], reverse=True)
+        except Exception as e:
+            print(f"tracker tonight error: {e}", flush=True)
+            tonight_error = "Satellites above the horizon aren't available right now."
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, place=place, places=places, tonight=tonight, tonight_error=tonight_error,
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% block content %}
 <h1>Satellite tracker</h1>
+{% if place %}
+<h2>Above the horizon tonight</h2>
+<form method="get" action="/tracker" class="near">
+  <label for="place-pick">Choose a place</label>
+  <select id="place-pick" name="place" onchange="this.form.submit()">
+    {% for pl in places %}<option value="{{ pl['id'] }}" {% if pl['id'] == place['id'] %}selected{% endif %}>{{ pl['name'] }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn quiet" type="submit">Show</button></noscript>
+</form>
+<p class="meta">Satellites above 10 degrees from {{ place['name'] }} right now. Times are UTC.</p>
+{% if tonight_error %}
+<p class="error">{{ tonight_error }}</p>
+{% elif tonight %}
+<div class="table-wrap table-scroll"><table class="data">
+<thead><tr><th>Satellite</th><th>Height</th><th>Direction</th><th>Altitude</th></tr></thead>
+<tbody>
+{% for o in tonight %}<tr><td>{{ o['name'] }}</td><td>{{ o['alt']|round(1) }}°</td><td>{{ o['az']|round|int }}°</td><td>{{ o['alt_km'] if o['alt_km'] is defined else '-' }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="meta">No tracked satellites are above 10 degrees from {{ place['name'] }} right now.</p>
+{% endif %}
+{% endif %}
+
+<h2>Satellite positions</h2>
 <p class="meta">Positions in the stations group move every second, and the underlying orbital data refreshes every minute. Times are UTC.</p>
 <p class="meta">Positions calculated at <span id="calc-time">{{ calc_time }}</span> UTC. Orbital data from CelesTrak, refreshed at most every six hours.</p>
 <p class="meta">Several satellites share coordinates because they're docked together: modules attached to one station orbit within metres of each other. Tap a satellite to highlight its row; the Globe shows each one's orbit.</p>
