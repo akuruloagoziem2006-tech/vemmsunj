@@ -6713,6 +6713,54 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% for c in comets %}<tr><td>{{ c['name'] }}</td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
+<p class="meta">Tap a column heading to sort its table. Numbers sort by value; names and dates sort as text.</p>
+<style>
+main table.data th[role="button"]:hover { color: var(--text); }
+main table.data th[role="button"]::after { content: " \2195"; color: var(--muted); font-size: .75em; }
+@media (max-width: 899px) {
+  main table.data th, main table.data td { font-size: 1rem; padding: .6rem .5rem; }
+}
+</style>
+<script>
+(function () {
+  function val(cell) {
+    var t = cell ? cell.textContent.trim() : "";
+    var m = t.match(/^([\-+]?\d+(?:\.\d+)?)(?=\s|°|$)/);
+    if (m && !/^\d{4}-/.test(t)) return parseFloat(m[1]);
+    return t.toLowerCase();
+  }
+  document.querySelectorAll("main table.data").forEach(function (table) {
+    var body = table.querySelector("tbody");
+    if (!body) return;
+    table.querySelectorAll("thead th").forEach(function (th, idx) {
+      if (!th.textContent.trim()) return;
+      var dir = 1;
+      th.setAttribute("role", "button");
+      th.setAttribute("tabindex", "0");
+      th.setAttribute("title", "Sort by " + th.textContent.trim());
+      th.style.cursor = "pointer";
+      function sort() {
+        var rows = Array.prototype.slice.call(body.querySelectorAll("tr")).filter(function (r) {
+          return r.children.length > idx && r.children.length > 1;
+        });
+        rows.sort(function (a, b) {
+          var x = val(a.children[idx]), y = val(b.children[idx]);
+          var xs = typeof x === "string", ys = typeof y === "string";
+          if (xs !== ys) return xs ? 1 : -1;
+          if (xs) return x.localeCompare(y) * dir;
+          return (x - y) * dir;
+        });
+        rows.forEach(function (r) { body.appendChild(r); });
+        dir = -dir;
+      }
+      th.addEventListener("click", sort);
+      th.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sort(); }
+      });
+    });
+  });
+})();
+</script>
 <p class="meta">Data: NASA JPL Small-Body Database (public domain).</p>
 {% endif %}
 {% endblock %}
