@@ -6606,13 +6606,16 @@ def tracker_page():
     except requests.RequestException as e:
         print(f"tracker live error: {e}", flush=True)
         live_error = "Live satellite positions aren't available right now. Try again in a few minutes."
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error,
+    calc_time = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time,
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% block content %}
 <h1>Satellite tracker</h1>
-<p class="meta">Live positions of satellites in the stations group, updated every minute. Times are UTC. Tap a satellite to highlight its row; the Globe shows where each one is in its orbit.</p>
+<p class="meta">Positions in the stations group move every second, and the underlying orbital data refreshes every minute. Times are UTC.</p>
+<p class="meta">Positions calculated at <span id="calc-time">{{ calc_time }}</span> UTC. Orbital data from CelesTrak, refreshed at most every six hours.</p>
+<p class="meta">Several satellites share coordinates because they're docked together: modules attached to one station orbit within metres of each other. Tap a satellite to highlight its row; the Globe shows each one's orbit.</p>
 {% if live_error %}
 <p class="error">{{ live_error }}</p>
 {% else %}
@@ -6689,6 +6692,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 
 <h2>Close-approach tracker</h2>
 <p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
+<p class="meta">0.1 AU is about 15 million kilometres, roughly 39 times the Earth–Moon distance. A close approach is not a threat: most objects in this list pass by safely, and the table shows distance so you can judge the scale yourself.</p>
 {% if error %}
 <p class="error">{{ error }}</p>
 {% else %}
