@@ -8211,7 +8211,7 @@ def run_pass_summaries(now=None):
             skipped.append({"place": name, "reason": "sun is up"})
             continue
         try:
-            upcoming = upcoming_passes(place, now)
+            upcoming = upcoming_passes(place)
         except requests.RequestException as e:
             skipped.append({"place": name, "reason": f"satellite data unavailable: {e.__class__.__name__}"})
             continue
@@ -8236,7 +8236,11 @@ def cron_passes():
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
         abort(401)
-    return jsonify(run_pass_summaries())
+    try:
+        return jsonify(run_pass_summaries())
+    except Exception as e:
+        print(f"pass summaries error: {e}", flush=True)
+        return jsonify({"error": "Pass summaries couldn't be posted this time.", "detail": str(e)[:200]}), 500
 
 if __name__ == "__main__":
     from waitress import serve
