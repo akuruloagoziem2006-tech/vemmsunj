@@ -8018,6 +8018,40 @@ def index():
     return render_template("home.html", recent=recent, slides=slides, sky=sky, places=places,
                            title="VEMMSUNJ", section="home")
 
+# ---------- Globe consistency check (read-only diagnostic) ----------
+@app.route("/api/globe-check")
+def api_globe_check():
+    """For each satellite: the snapshot's position against a fresh calculation at the snapshot's own time."""
+    try:
+        snap = globe_snapshot()
+        fetched = datetime.fromisoformat(snap["fetched_at"])
+        ts, sats = get_satellites()
+        by_name = {sat.name: sat for sat in sats}
+        t = ts.from_datetime(fetched)
+        rows = []
+        for item in snap["satellites"]:
+            sat = by_name.get(item["name"])
+            row = {"name": item["name"], "snapshot_lat": item["lat"], "snapshot_lon": item["lon"]}
+            if sat is not None:
+                sp = (sat - wgs84.latlon(0, 0)).at(t) if False else sat.at(t).subpoint()
+                rlat = float(sp.latitude.degrees)
+                rlon = float(sp.longitude.degrees)
+                dlon = ((rlon - item["lon"] + 540) % 360) - 180
+                row.update({"recalc_lat": round(rlat, 3), "recalc_lon": round(rlon, 3),
+                            "lat_diff": round(rlat - item["lat"], 3), "lon_diff": round(dlon, 3)})
+            best = min(
+                (((pt[0] - item["lat"]) ** 2 + (((pt[1] - item["lon"]) + 540) % 360 - 180) ** 2) ** 0.5, pt)
+                for pt in item.get("ground", [])
+            ) if item.get("ground") else None
+            if best:
+                row["nearest_track_point"] = best[1]
+                row["track_gap_deg"] = round(best[0], 3)
+            rows.append(row)
+        return jsonify({"fetched_at": snap["fetched_at"], "gmst_deg": snap.get("gmst_deg"), "satellites": rows})
+    except Exception as e:
+        print(f"globe check error: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
