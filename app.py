@@ -2689,7 +2689,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   function buildSatellites(list) {
     sats.forEach(function (s) {
       earthGroup.remove(s.group);
-      earthGroup.remove(s.line);
+      scene.remove(s.line);
       disposeGroup(s.group);
       s.line.geometry.dispose();
       s.line.material.dispose();
@@ -2701,10 +2701,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       earthGroup.add(group);
       var pts = new Float32Array(d.track.length * 3);
       d.track.forEach(function (p, i) {
-        var v0 = sc(p, 1 / R);
-        var gi = Math.round(i / (d.track.length - 1) * (d.ground.length - 1));
-        var gp = d.ground[gi];
-        var v = llToVec(gp[0], gp[1], v0.length());
+        var v = sc(p, 1 / R);
         pts[i * 3] = v.x;
         pts[i * 3 + 1] = v.y;
         pts[i * 3 + 2] = v.z;
@@ -2714,7 +2711,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       var line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
         color: isIss ? 0xC9553A : 0x5C7DA6, transparent: true, opacity: 0.55
       }));
-      earthGroup.add(line);
+      scene.add(line);
       return { data: d, group: group, line: line };
     });
   }
