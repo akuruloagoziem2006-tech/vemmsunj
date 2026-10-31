@@ -2917,7 +2917,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     requestAnimationFrame(frame);
   }
 
-  var DEFAULT_VIEW = { az: camAz, el: camEl, dist: camDist };
+  var DEFAULT_VIEW = { az: 0.6, el: 0.35, dist: 3.8 };
   loadCountries();
   var groundOn = false, groundLine = null, groundFor = null;
   // Latitude and longitude in degrees to a point on the unit sphere, using the three.js sphere
