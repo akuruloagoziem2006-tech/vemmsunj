@@ -344,30 +344,41 @@ def visible_at(lat, lon, when, min_alt=10.0, dark_alt=-6.0):
     return found, True
 
 def find_passes(lat, lon, hours=24, min_alt=10.0, start=None):
+    """Exact passes: each rise and set is the moment a satellite crosses min_alt degrees."""
+    from skyfield.searchlib import find_discrete
     ts, sats = get_satellites()
     observer = wgs84.latlon(lat, lon)
     start = start or datetime.now(timezone.utc)
-    step = 5 if STARLINK else 1
-    t = ts.from_datetimes([start + timedelta(minutes=m) for m in range(0, hours * 60, step)])
+    t0 = ts.from_datetime(start)
+    t1 = ts.from_datetime(start + timedelta(hours=hours))
+    step_days = (5 if STARLINK else 1) / 1440.0
     passes = []
+
+    def record(ta, tb, sat):
+        n = max(3, int((tb.tt - ta.tt) * 1440) + 1)
+        alt = (sat - observer).at(ts.linspace(ta, tb, n)).altaz()[0].degrees
+        passes.append({
+            "satellite": sat.name,
+            "start": ta.utc_datetime().isoformat(timespec="minutes"),
+            "end": tb.utc_datetime().isoformat(timespec="minutes"),
+            "max_altitude_deg": round(float(alt.max()), 1),
+        })
+
     for sat in sats:
-        alt = (sat - observer).at(t).altaz()[0].degrees
-        visible = alt >= min_alt
-        i = 0
-        while i < len(visible):
-            if visible[i]:
-                j = i
-                while j < len(visible) and visible[j]:
-                    j += 1
-                passes.append({
-                    "satellite": sat.name,
-                    "start": (start + timedelta(minutes=i * step)).isoformat(timespec="minutes"),
-                    "end": (start + timedelta(minutes=(j - 1) * step)).isoformat(timespec="minutes"),
-                    "max_altitude_deg": round(float(alt[i:j].max()), 1),
-                })
-                i = j
-            else:
-                i += 1
+        def above(t, sat=sat):
+            return (sat - observer).at(t).altaz()[0].degrees >= min_alt
+        above.step_days = step_days
+        times, flags = find_discrete(t0, t1, above)
+        cur = t0 if above(t0) else None
+        for tt, flag in zip(times, flags):
+            if flag:
+                cur = tt
+            elif cur is not None:
+                record(cur, tt, sat)
+                cur = None
+        if cur is not None:
+            record(cur, t1, sat)
+
     passes.sort(key=lambda p: p["start"])
     return passes
 
@@ -6763,7 +6774,7 @@ def upcoming_passes(place):
         st = parse_when(pz["start"])
         if now <= st <= now + timedelta(hours=24) and pz["max_altitude_deg"] >= 10:
             en = parse_when(pz["end"])
-            minutes = max(1, round((en - st).total_seconds() / 60) + 1)
+            minutes = max(1, round((en - st).total_seconds() / 60))
             out.append({"satellite": pz["satellite"], "start": st.strftime("%H:%M"),
                         "iso": st.isoformat(timespec="minutes"), "peak": pz["max_altitude_deg"],
                         "end": en.strftime("%H:%M"), "end_iso": en.isoformat(timespec="minutes"),
