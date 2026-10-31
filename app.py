@@ -8180,6 +8180,64 @@ def post_age(value):
 
 app.jinja_env.filters["age"] = post_age
 
+# ---------- Pass summaries every six hours (separate from the daily photo run) ----------
+PASS_POST_GAP = timedelta(hours=6)
+
+def run_pass_summaries(now=None):
+    now = now or datetime.now(timezone.utc)
+    started = time.time()
+    db = connect()
+    posted, skipped = [], []
+    for place in db.execute("SELECT * FROM listings ORDER BY id").fetchall():
+        name = place["name"]
+        if time.time() - started > BOT_TIME_BUDGET:
+            skipped.append({"place": name, "reason": "time budget used up"})
+            continue
+        last = db.execute(
+            "SELECT created_at FROM posts WHERE author = ? AND listing_id = ? ORDER BY id DESC LIMIT 1",
+            (BOT_NAME, place["id"]),
+        ).fetchone()
+        if last:
+            try:
+                t = datetime.fromisoformat(str(last["created_at"]).replace("Z", "+00:00"))
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                if now - t < PASS_POST_GAP:
+                    skipped.append({"place": name, "reason": "posted within the last six hours"})
+                    continue
+            except ValueError:
+                pass
+        if sun_altitude_deg(place["latitude"], place["longitude"], now) > -6.0:
+            skipped.append({"place": name, "reason": "sun is up"})
+            continue
+        try:
+            upcoming = upcoming_passes(place, now)
+        except requests.RequestException as e:
+            skipped.append({"place": name, "reason": f"satellite data unavailable: {e.__class__.__name__}"})
+            continue
+        if not upcoming:
+            skipped.append({"place": name, "reason": "no passes in the next 24 hours"})
+            continue
+        lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
+                 for start, p in upcoming]
+        body = (f"{name}, passes calculated at {now.strftime('%H:%M')} UTC for the 24 hours after that: "
+                + "; ".join(lines) + ". Times are UTC.")
+        db.execute(
+            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), bot_chart(name, upcoming)),
+        )
+        db.commit()
+        posted.append(name)
+    db.close()
+    return {"time": now.isoformat(timespec="minutes"), "posted": posted, "skipped": skipped}
+
+@app.route("/api/cron/passes", methods=["GET", "POST"])
+def cron_passes():
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    return jsonify(run_pass_summaries())
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,

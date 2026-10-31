@@ -1,0 +1,16 @@
+name: Pass summaries every six hours
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  passes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post pass summaries
+        run: |
+          curl -fsS --max-time 280 -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://vemmsunj.vercel.app/api/cron/passes
