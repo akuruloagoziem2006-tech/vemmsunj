@@ -2893,7 +2893,6 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       simElapsed += dt * speed;
       var gmst = data.gmst_deg + EARTH_RATE_DEG_PER_DAY * (simElapsed / 86400);
       earthGroup.rotation.y = gmst * DEG;
-      satGroup.rotation.y = SAT_FRAME_SIGN * gmst * DEG;
       sunLight.position.copy(sc(data.sun, 10));
       sats.forEach(function (s) {
         var p0 = sc(satPosition(s.data, simElapsed), 1 / R);
@@ -2905,33 +2904,10 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         s.line.material.opacity = isSel ? 0.95 : 0.55;
         s.line.material.color.set(isSel ? 0xE8C27A : (isIssOrbit ? 0xC9553A : 0x5C7DA6));
       });
-      updateGroundTrack();
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
       if (sel) sel.group.getWorldPosition(target);
       else target.set(0, 0, 0);
     }
-    (function () {
-      var sel = sats.find(function (s) { return s.data.name === selectedName; });
-      var out = document.getElementById("frame-debug");
-      if (!out) {
-        out = document.createElement("p");
-        out.id = "frame-debug";
-        out.className = "meta";
-        infoEl.parentNode.insertBefore(out, infoEl);
-      }
-      if (!sel || !data) { out.textContent = ""; return; }
-      var w = new THREE.Vector3();
-      sel.group.getWorldPosition(w);
-      earthGroup.worldToLocal(w);
-      var r = w.length();
-      var mLat = Math.asin(w.y / r) / DEG;
-      var mLon = Math.atan2(-w.z, w.x) / DEG;
-      var d = selectedSatellite();
-      var dLon = ((mLon - d.lon + 540) % 360) - 180;
-      out.textContent = "Frame check: marker lat " + mLat.toFixed(2) + ", lon " + mLon.toFixed(2) +
-        " | data lat " + d.lat.toFixed(2) + ", lon " + d.lon.toFixed(2) +
-        " | lon offset " + dLon.toFixed(1) + " degrees";
-    })();
     cam.lerp(target, 0.08);
     camera.position.set(
       cam.x + camDist * Math.cos(camEl) * Math.sin(camAz),
@@ -2950,56 +2926,6 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     if (box) box.textContent = "Globe script error: " + (e.message || "unknown") + " (line " + (e.lineno || "?") + ")";
   });
   loadCountries();
-  var groundOn = false, groundLine = null, groundFor = null;
-  function llToVec(lat, lon, r) {
-    var la = lat * DEG, lo = lon * DEG;
-    return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
-  }
-  function clearGround() {
-    if (!groundLine) return;
-    earthGroup.remove(groundLine);
-    groundLine.traverse(function (o) {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
-    });
-    groundLine = null;
-  }
-  function updateGroundTrack() {
-    var want = groundOn ? selectedName : null;
-    if (groundFor === want) return;
-    clearGround();
-    groundFor = want;
-    if (!want) return;
-    var s = selectedSatellite();
-    if (!s || !s.ground || s.ground.length < 2) return;
-    groundLine = new THREE.Group();
-    var dotGeo = new THREE.SphereGeometry(0.006, 6, 6);
-    var trailMat = new THREE.MeshBasicMaterial({ color: 0xE8C27A, transparent: true, opacity: 0.8 });
-    for (var i = 0; i < s.ground.length; i += 2) {
-      var m = new THREE.Mesh(dotGeo, trailMat);
-      m.position.copy(llToVec(s.ground[i][0], s.ground[i][1], 1.004));
-      groundLine.add(m);
-    }
-    var head = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12),
-                              new THREE.MeshBasicMaterial({ color: 0xFF3B3B }));
-    head.position.copy(llToVec(s.lat, s.lon, 1.01));
-    groundLine.add(head);
-    earthGroup.add(groundLine);
-  }
-  var groundBtn = document.createElement("button");
-  groundBtn.type = "button";
-  groundBtn.className = "btn quiet";
-  groundBtn.textContent = "Show ground track";
-  groundBtn.setAttribute("aria-pressed", "false");
-  groundBtn.style.margin = "0 0 .6rem .4rem";
-  canvas.parentNode.insertBefore(groundBtn, canvas);
-  groundBtn.addEventListener("click", function () {
-    groundOn = !groundOn;
-    groundBtn.setAttribute("aria-pressed", groundOn ? "true" : "false");
-    groundBtn.textContent = groundOn ? "Hide ground track" : "Show ground track";
-    if (window.vmTrack) window.vmTrack('ground_track', groundOn ? 'on' : 'off');
-    updateGroundTrack();
-  });
   var resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "btn quiet";
