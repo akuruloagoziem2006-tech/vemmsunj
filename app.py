@@ -8385,6 +8385,52 @@ PLANET_PROFILE_TEMPLATES = {"planet.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(PLANET_PROFILE_TEMPLATES)
 
+# ---------- Observation calendar: the next 14 nights at a place ----------
+@app.route("/observe/<int:listing_id>")
+def observe_page(listing_id):
+    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                             (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    nights = []
+    for k in range(14):
+        day = today + timedelta(days=k)
+        try:
+            phase, illum = moon_phase(day)
+        except Exception as e:
+            print(f"observe moon error: {e}", flush=True)
+            phase, illum = "-", None
+        try:
+            civil = twilight_times(place["latitude"], place["longitude"], day).get("Civil", {})
+        except Exception as e:
+            print(f"observe twilight error: {e}", flush=True)
+            civil = {}
+        nights.append({
+            "date": day.strftime("%a %d %b"),
+            "phase": phase,
+            "illum": illum,
+            "dusk": civil.get("dusk"),
+            "dawn": civil.get("dawn"),
+        })
+    return render_template("observe.html", place=place, nights=nights,
+                           title="Observation calendar", section="places")
+
+OBSERVE_TEMPLATES = {"observe.html": """{% extends "base.html" %}
+{% block content %}
+<p><a href="/places/{{ place['id'] }}">Back to {{ place['name'] }}</a></p>
+<h1>Observation calendar</h1>
+<p class="meta">The next 14 nights at {{ place['name'] }}. Times are UTC. Dusk and dawn are civil twilight, when the sun is 6 degrees below the horizon.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Night</th><th>Moon</th><th>Lit</th><th>Dusk</th><th>Dawn</th></tr></thead>
+<tbody>
+{% for n in nights %}<tr><td>{{ n['date'] }}</td><td>{{ n['phase'] }}</td><td>{% if n['illum'] is not none %}{{ n['illum'] }}%{% else %}-{% endif %}</td><td>{{ n['dusk'] or '-' }}</td><td>{{ n['dawn'] or '-' }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">A bright Moon brightens the sky and hides faint objects. Plan deep-sky observing for the nights when the Moon is small and sets early.</p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(OBSERVE_TEMPLATES)
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
