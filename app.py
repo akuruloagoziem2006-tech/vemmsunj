@@ -6659,7 +6659,7 @@ def comet_detail(designation):
         "e": val(elements, "e"),
         "i": val(elements, "i"),
         "moid": orbit.get("moid"),
-        "source": f"https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr={_up.quote(designation)}",
+        "source": f"https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr={_up.quote(designation.split('/')[0].strip())}&view=OPD",
     }
 
 @app.route("/tracker/comet/<path:designation>")
