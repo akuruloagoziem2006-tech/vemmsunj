@@ -6953,7 +6953,8 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% for r in items %}<tr><td>{{ r['name'] }}</td><td>{{ r['when'] }}</td><td>{{ r['au'] }} AU ({{ r['lunar'] }} Moon distances)</td><td>{{ r['speed'] }} km/s</td><td>{{ r['h'] }}</td></tr>{% else %}<tr><td colspan="5">No bright close approaches in the next 60 days.</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="meta">H is the object's intrinsic brightness: lower is brighter. Its apparent brightness depends on how close it is, so check current magnitudes before observing. Comets are not included yet.</p>
-<h2>Comets brighter than magnitude 10</h2>
+<details class="comet-panel">
+<summary><strong>Comets brighter than magnitude 10</strong> ({{ comets|length }} listed. Tap to show.)</summary>
 <p class="meta">Total visual magnitude (M1) and its slope (K1), from the JPL query. Lower M1 is brighter. Comets brighten and fade unpredictably, so check a current ephemeris before observing.</p>
 {% if comet_error %}
 <p class="error">{{ comet_error }}</p>
