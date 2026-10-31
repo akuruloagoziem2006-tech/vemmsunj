@@ -2900,6 +2900,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         s.line.material.opacity = isSel ? 0.95 : 0.55;
         s.line.material.color.set(isSel ? 0xE8C27A : (isIssOrbit ? 0xC9553A : 0x5C7DA6));
       });
+      updateGroundTrack();
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
       if (sel) target.copy(sel.group.position);
       else target.set(0, 0, 0);
@@ -2918,6 +2919,47 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   var DEFAULT_VIEW = { az: camAz, el: camEl, dist: camDist };
   loadCountries();
+  var groundOn = false, groundLine = null, groundFor = null;
+  // Latitude and longitude in degrees to a point on the unit sphere, using the three.js sphere
+  // layout that an equirectangular Earth texture uses.
+  function llToVec(lat, lon, r) {
+    var la = lat * DEG, lo = lon * DEG;
+    return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
+  }
+  function updateGroundTrack() {
+    var want = groundOn ? selectedName : null;
+    if (groundFor === want) return;
+    if (groundLine) {
+      earthGroup.remove(groundLine);
+      groundLine.geometry.dispose();
+      groundLine.material.dispose();
+      groundLine = null;
+    }
+    groundFor = want;
+    if (!want) return;
+    var s = selectedSatellite();
+    if (!s || !s.ground || s.ground.length < 2) return;
+    var pts = s.ground.map(function (p) { return llToVec(p[0], p[1], 1.004); });
+    var geo = new THREE.BufferGeometry().setFromPoints(pts);
+    groundLine = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
+      color: 0xE8C27A, transparent: true, opacity: 0.9
+    }));
+    earthGroup.add(groundLine);
+  }
+  var groundBtn = document.createElement("button");
+  groundBtn.type = "button";
+  groundBtn.className = "btn quiet";
+  groundBtn.textContent = "Show ground track";
+  groundBtn.setAttribute("aria-pressed", "false");
+  groundBtn.style.margin = "0 0 .6rem .4rem";
+  canvas.parentNode.insertBefore(groundBtn, canvas);
+  groundBtn.addEventListener("click", function () {
+    groundOn = !groundOn;
+    groundBtn.setAttribute("aria-pressed", groundOn ? "true" : "false");
+    groundBtn.textContent = groundOn ? "Hide ground track" : "Show ground track";
+    if (window.vmTrack) window.vmTrack('ground_track', groundOn ? 'on' : 'off');
+    updateGroundTrack();
+  });
   var resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "btn quiet";
