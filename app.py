@@ -2184,6 +2184,7 @@ fetch("/api/listings")
     <strong>{{ p['author'] }}</strong>
     {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
     {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
+    <span class="meta">· posted {{ p['created_at']|age }}</span>
     {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
       <form class="inline ajax" method="post" action="/follow/{{ p['author'] }}">
         <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
@@ -4678,7 +4679,7 @@ def bot_chart(place_name, upcoming):
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 {height}" role="img" aria-label="Schematic of satellite passes at {escape(place_name)}">',
         f'<rect width="600" height="{height}" fill="#151A22"/>',
         f'<text x="24" y="36" fill="#E9E6DC" font-family="Georgia, serif" font-size="20">{escape(place_name)}</text>',
-        '<text x="24" y="58" fill="#8C929C" font-family="sans-serif" font-size="13">Next passes in the next 24 hours</text>',
+        '<text x="24" y="58" fill="#8C929C" font-family="sans-serif" font-size="13">Passes in the 24 hours after the calculation time</text>',
     ]
     for i, (start, p) in enumerate(upcoming):
         top = 80 + 96 * i
@@ -4742,7 +4743,7 @@ def run_daily_bot(now=None):
             continue
         lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
                  for start, p in upcoming]
-        body = f"{place['name']}, next 24 hours: " + "; ".join(lines) + ". Times are UTC."
+        body = f"{place['name']}, passes calculated at {datetime.now(timezone.utc).strftime('%H:%M')} UTC for the 24 hours after that: " + "; ".join(lines) + ". Times are UTC."
         chart = bot_chart(place["name"], upcoming)
         db.execute(
             "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -8159,6 +8160,25 @@ def vm_server_error(e):
             "<p>The page couldn't load. Please try again in a minute.</p>"
             "<p><a href='/'>Go to the home page</a></p></html>")
     return Response(body, status=500, mimetype="text/html")
+
+# ---------- Post age, shown beside each sighting ----------
+def post_age(value):
+    try:
+        t = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+    except Exception:
+        return ""
+    secs = (datetime.now(timezone.utc) - t).total_seconds()
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        return f"{int(secs // 60)} min ago"
+    if secs < 86400:
+        return f"{int(secs // 3600)} h ago"
+    return f"{int(secs // 86400)} days ago"
+
+app.jinja_env.filters["age"] = post_age
 
 if __name__ == "__main__":
     from waitress import serve
