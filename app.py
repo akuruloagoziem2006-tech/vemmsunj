@@ -1396,6 +1396,20 @@ main {
   .meta { font-size: .95rem; }
 }
 </style>
+<style>
+/* Tracker: jump links between sections, and a back-to-top link that stays in view */
+.tracker-jump { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: .4rem 0 1rem; }
+.tracker-jump a { min-height: 44px; display: inline-flex; align-items: center; color: var(--muted); text-decoration: none; }
+.tracker-jump a:hover { color: var(--text); text-decoration: underline; }
+main h2[id], details[id] { scroll-margin-top: 1rem; }
+.back-to-top {
+  position: fixed; right: 1rem; bottom: 1rem; z-index: 1500;
+  min-height: 44px; padding: .5rem .9rem;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--rule);
+  color: var(--text); text-decoration: none; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+}
+</style>
 </head>
 <body>
 <header class="site">
@@ -2125,6 +2139,7 @@ fetch("/api/listings")
 })();
 </script>
 </details>
+<p><a class="back-to-top" href="#top">Back to top</a></p>
 {% else %}
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
 {% endif %}
@@ -6779,9 +6794,16 @@ def tracker_page():
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% block content %}
-<h1>Satellite tracker</h1>
+<h1 id="top">Satellite tracker</h1>
+<nav class="tracker-jump" aria-label="Jump to a section">
+  <a href="#tonight">Tonight</a>
+  <a href="#positions">Positions</a>
+  <a href="#details">Details</a>
+  <a href="#asteroids">Asteroids</a>
+  <a href="#comets">Comets</a>
+</nav>
 {% if place %}
-<h2>Above the horizon tonight</h2>
+<h2 id="tonight">Above the horizon tonight</h2>
 <form method="get" action="/tracker" class="near">
   <label for="place-pick">Choose a place</label>
   <select id="place-pick" name="place" onchange="this.form.submit()">
@@ -6814,7 +6836,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% endif %}
 {% endif %}
 
-<h2>Satellite positions</h2>
+<h2 id="positions">Satellite positions</h2>
 <p class="meta">Positions in the stations group move every second, and the underlying orbital data refreshes every minute. Times are UTC.</p>
 <p class="meta">Positions calculated at <span id="calc-time">{{ calc_time }}</span> UTC. Orbital data from CelesTrak, refreshed at most every six hours.</p>
 <p class="meta">Several satellites share coordinates because they're docked together: modules attached to one station orbit within metres of each other. Tap a satellite to highlight its row; the Globe shows each one's orbit.</p>
@@ -7043,7 +7065,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 </script>
 {% endif %}
 
-<h2>Satellite details</h2>
+<h2 id="details">Satellite details</h2>
 <div id="sat-detail" class="place" role="status" aria-live="polite">Tap a satellite in the table above to see its details.</div>
 <style>
 #sat-detail { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1.1rem; margin: .6rem 0 1.2rem; }
@@ -7110,7 +7132,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 })();
 </script>
 
-<h2>Close-approach tracker</h2>
+<h2 id="asteroids">Close-approach tracker</h2>
 <p class="meta">Asteroids passing within 0.1 AU of Earth in the next 60 days, and bright enough (absolute magnitude 16 or lower) to be worth a telescope. Times are UTC.</p>
 <form method="get" action="/tracker" class="near" id="close-filters">
   <label for="dist">Within</label>
@@ -7133,7 +7155,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% for r in items %}<tr><td>{{ r['name'] }}</td><td>{{ r['when'] }}</td><td>{{ r['au'] }} AU ({{ r['lunar'] }} Moon distances)</td><td>{{ r['speed'] }} km/s</td><td>{{ r['h'] }}</td></tr>{% else %}<tr><td colspan="5">No bright close approaches in the next 60 days.</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="meta">H is the object's intrinsic brightness: lower is brighter. Its apparent brightness depends on how close it is, so check current magnitudes before observing. Comets are not included yet.</p>
-<details class="comet-panel">
+<details class="comet-panel" id="comets">
 <summary><strong>Comets brighter than magnitude 10</strong> ({{ comets|length }} listed. Tap to show.)</summary>
 <p class="meta">Total visual magnitude (M1) and its slope (K1), from the JPL query. Lower M1 is brighter. Comets brighten and fade unpredictably, so check a current ephemeris before observing.</p>
 {% if comet_error %}
