@@ -2918,6 +2918,10 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   }
 
   var DEFAULT_VIEW = { az: 0.6, el: 0.35, dist: 3.8 };
+  window.addEventListener("error", function (e) {
+    var box = document.getElementById("globe-status");
+    if (box) box.textContent = "Globe script error: " + (e.message || "unknown") + " (line " + (e.lineno || "?") + ")";
+  });
   loadCountries();
   var groundOn = false, groundLine = null, groundFor = null;
   // Latitude and longitude in degrees to a point on the unit sphere, using the three.js sphere
