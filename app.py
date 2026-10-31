@@ -2665,10 +2665,31 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     });
   }
 
+  function llToVec(lat, lon, r) {
+    var la = lat * DEG, lo = lon * DEG;
+    return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
+  }
+  // Latitude and longitude of a satellite at a moment, from its stored ground points.
+  function groundPosition(d, elapsed) {
+    var g = d.ground, period = d.period_s;
+    var phase = ((elapsed % period) + period) % period;
+    var n = g.length - 1;
+    var idx = (phase / period) * n;
+    var i0 = Math.floor(idx), i1 = Math.min(i0 + 1, n), f = idx - i0;
+    var a = g[i0], b = g[i1];
+    var dlon = b[1] - a[1];
+    if (dlon > 180) dlon -= 360;
+    if (dlon < -180) dlon += 360;
+    var lon = a[1] + dlon * f;
+    if (lon > 180) lon -= 360;
+    if (lon < -180) lon += 360;
+    return [a[0] + (b[0] - a[0]) * f, lon];
+  }
+
   function buildSatellites(list) {
     sats.forEach(function (s) {
-      satGroup.remove(s.group);
-      satGroup.remove(s.line);
+      earthGroup.remove(s.group);
+      earthGroup.remove(s.line);
       disposeGroup(s.group);
       s.line.geometry.dispose();
       s.line.material.dispose();
@@ -2677,10 +2698,13 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     sats = list.map(function (d) {
       var isIss = /ISS/i.test(d.name);
       var group = makeSatellite(isIss);
-      satGroup.add(group);
+      earthGroup.add(group);
       var pts = new Float32Array(d.track.length * 3);
       d.track.forEach(function (p, i) {
-        var v = sc(p, 1 / R);
+        var v0 = sc(p, 1 / R);
+        var gi = Math.round(i / (d.track.length - 1) * (d.ground.length - 1));
+        var gp = d.ground[gi];
+        var v = llToVec(gp[0], gp[1], v0.length());
         pts[i * 3] = v.x;
         pts[i * 3 + 1] = v.y;
         pts[i * 3 + 2] = v.z;
@@ -2690,7 +2714,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       var line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
         color: isIss ? 0xC9553A : 0x5C7DA6, transparent: true, opacity: 0.55
       }));
-      satGroup.add(line);
+      earthGroup.add(line);
       return { data: d, group: group, line: line };
     });
   }
@@ -2895,10 +2919,11 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       earthGroup.rotation.y = gmst * DEG;
       sunLight.position.copy(sc(data.sun, 10));
       sats.forEach(function (s) {
-        var p0 = sc(satPosition(s.data, simElapsed), 1 / R);
-        var p1 = sc(satPosition(s.data, simElapsed + 2), 1 / R);
-        s.group.position.copy(p0);
-        s.group.lookAt(p1);
+        var r0 = sc(satPosition(s.data, simElapsed), 1 / R).length();
+        var g0 = groundPosition(s.data, simElapsed);
+        var g1 = groundPosition(s.data, simElapsed + 2);
+        s.group.position.copy(llToVec(g0[0], g0[1], r0));
+        s.group.lookAt(earthGroup.localToWorld(llToVec(g1[0], g1[1], r0)));
         s.group.scale.setScalar(s.data.name === selectedName ? 1.6 : 1);
         var isSel = s.data.name === selectedName, isIssOrbit = /ISS/i.test(s.data.name);
         s.line.material.opacity = isSel ? 0.95 : 0.55;
