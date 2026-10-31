@@ -7018,6 +7018,35 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 </script>
 <label for="sat-search" class="meta">Search satellites</label>
 <input id="sat-search" type="search" placeholder="Type a satellite name" autocomplete="off" style="width:100%;min-height:44px;margin:.3rem 0 .6rem">
+<script>
+(function () {
+  function filterRows(inputId, rowSelector) {
+    var box = document.getElementById(inputId);
+    if (!box) return;
+    var q = box.value.trim().toLowerCase();
+    document.querySelectorAll(rowSelector).forEach(function (row) {
+      var name = (row.getAttribute('data-name') || row.textContent || '').toLowerCase();
+      row.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+  }
+  function bind() {
+    var sat = document.getElementById('sat-search');
+    var com = document.getElementById('comet-search');
+    if (sat && !sat.__vmBound) {
+      sat.__vmBound = true;
+      sat.addEventListener('input', function () { filterRows('sat-search', '.live-row'); });
+    }
+    if (com && !com.__vmBound) {
+      com.__vmBound = true;
+      com.addEventListener('input', function () { filterRows('comet-search', '#comet-table tr'); });
+    }
+    filterRows('sat-search', '.live-row');
+    filterRows('comet-search', '#comet-table tr');
+  }
+  bind();
+  if (!window.__vmFilterTimer) window.__vmFilterTimer = setInterval(bind, 1000);
+})();
+</script>
 <p class="meta">On a phone, swipe the table sideways to see every column.</p>
 <div class="table-wrap table-scroll"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
