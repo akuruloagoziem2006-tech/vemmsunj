@@ -2601,6 +2601,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   var earthGroup = new THREE.Group();
   scene.add(earthGroup);
+  var satGroup = new THREE.Group();
+  scene.add(satGroup);
+  var SAT_FRAME_SIGN = 1;
   earthGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 72), earthMat));
   scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(1.05, 64, 48),
@@ -2673,7 +2676,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     sats = list.map(function (d) {
       var isIss = /ISS/i.test(d.name);
       var group = makeSatellite(isIss);
-      scene.add(group);
+      satGroup.add(group);
       var pts = new Float32Array(d.track.length * 3);
       d.track.forEach(function (p, i) {
         var v = sc(p, 1 / R);
@@ -2686,7 +2689,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       var line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
         color: isIss ? 0xC9553A : 0x5C7DA6, transparent: true, opacity: 0.55
       }));
-      scene.add(line);
+      satGroup.add(line);
       return { data: d, group: group, line: line };
     });
   }
@@ -2889,6 +2892,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       simElapsed += dt * speed;
       var gmst = data.gmst_deg + EARTH_RATE_DEG_PER_DAY * (simElapsed / 86400);
       earthGroup.rotation.y = gmst * DEG;
+      satGroup.rotation.y = SAT_FRAME_SIGN * gmst * DEG;
       sunLight.position.copy(sc(data.sun, 10));
       sats.forEach(function (s) {
         var p0 = sc(satPosition(s.data, simElapsed), 1 / R);
@@ -2900,8 +2904,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         s.line.material.opacity = isSel ? 0.95 : 0.55;
         s.line.material.color.set(isSel ? 0xE8C27A : (isIssOrbit ? 0xC9553A : 0x5C7DA6));
       });
+      updateGroundTrack();
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
-      if (sel) target.copy(sel.group.position);
+      if (sel) sel.group.getWorldPosition(target);
       else target.set(0, 0, 0);
     }
     cam.lerp(target, 0.08);
@@ -2922,6 +2927,56 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     if (box) box.textContent = "Globe script error: " + (e.message || "unknown") + " (line " + (e.lineno || "?") + ")";
   });
   loadCountries();
+  var groundOn = false, groundLine = null, groundFor = null;
+  function llToVec(lat, lon, r) {
+    var la = lat * DEG, lo = lon * DEG;
+    return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
+  }
+  function clearGround() {
+    if (!groundLine) return;
+    earthGroup.remove(groundLine);
+    groundLine.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    groundLine = null;
+  }
+  function updateGroundTrack() {
+    var want = groundOn ? selectedName : null;
+    if (groundFor === want) return;
+    clearGround();
+    groundFor = want;
+    if (!want) return;
+    var s = selectedSatellite();
+    if (!s || !s.ground || s.ground.length < 2) return;
+    groundLine = new THREE.Group();
+    var dotGeo = new THREE.SphereGeometry(0.006, 6, 6);
+    var trailMat = new THREE.MeshBasicMaterial({ color: 0xE8C27A, transparent: true, opacity: 0.8 });
+    for (var i = 0; i < s.ground.length; i += 2) {
+      var m = new THREE.Mesh(dotGeo, trailMat);
+      m.position.copy(llToVec(s.ground[i][0], s.ground[i][1], 1.004));
+      groundLine.add(m);
+    }
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12),
+                              new THREE.MeshBasicMaterial({ color: 0xFF3B3B }));
+    head.position.copy(llToVec(s.lat, s.lon, 1.01));
+    groundLine.add(head);
+    earthGroup.add(groundLine);
+  }
+  var groundBtn = document.createElement("button");
+  groundBtn.type = "button";
+  groundBtn.className = "btn quiet";
+  groundBtn.textContent = "Show ground track";
+  groundBtn.setAttribute("aria-pressed", "false");
+  groundBtn.style.margin = "0 0 .6rem .4rem";
+  canvas.parentNode.insertBefore(groundBtn, canvas);
+  groundBtn.addEventListener("click", function () {
+    groundOn = !groundOn;
+    groundBtn.setAttribute("aria-pressed", groundOn ? "true" : "false");
+    groundBtn.textContent = groundOn ? "Hide ground track" : "Show ground track";
+    if (window.vmTrack) window.vmTrack('ground_track', groundOn ? 'on' : 'off');
+    updateGroundTrack();
+  });
   var resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "btn quiet";
