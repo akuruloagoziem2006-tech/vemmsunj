@@ -6189,6 +6189,7 @@ def planets_page():
 PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 {% block content %}
 <h1>Planets</h1>
+<p class="meta">Open a planet for its times, a calendar file, and a share link: {% for n in ['Venus','Mercury','Mars','Saturn','Uranus','Neptune','Jupiter'] %}<a href="/planet/{{ n }}?place={{ place['id'] }}">{{ n }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
 <p class="meta">Seen from {{ place['name'] }} at {{ now }} UTC. Times are UTC. Change place with <a href="/places/{{ place['id'] }}">the place page</a>.</p>
 {% if error %}
 <p class="error">{{ error }}</p>
@@ -8257,6 +8258,127 @@ def cron_passes():
         print("pass summaries traceback: " + _tb.format_exc(), flush=True)
         return jsonify({"error": "Pass summaries couldn't be posted this time.", "detail": str(e)[:200],
                         "where": f"{fr.name} line {fr.lineno}: {fr.line}"}), 500
+
+# ---------- Planet profiles: position, calendar file, and share ----------
+PROFILE_PLANETS = ["Venus", "Mercury", "Mars", "Saturn", "Uranus", "Neptune", "Jupiter"]
+
+def _profile_place(pid):
+    if not pid.isdigit():
+        return None
+    return get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                            (int(pid),)).fetchone()
+
+def _hhmm_to_dt(hhmm, now):
+    if not hhmm:
+        return None
+    h, m = (int(x) for x in hhmm.split(":"))
+    t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    if t < now - timedelta(minutes=30):
+        t += timedelta(days=1)
+    return t
+
+def _profile_data(name, place):
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    row = None
+    try:
+        row = next((r for r in planet_rows(place, now) if r.get("name") == name), None)
+    except Exception as e:
+        print(f"planet profile error: {e}", flush=True)
+    best = _hhmm_to_dt(row.get("transit") if row else None, now)
+    return now, row, best
+
+@app.route("/planet/<name>")
+def planet_profile(name):
+    if name not in PROFILE_PLANETS:
+        abort(404)
+    place = _profile_place(request.args.get("place", "1"))
+    if place is None:
+        abort(404)
+    now, row, best = _profile_data(name, place)
+    share_text = (f"{name} from {place['name']}"
+                  + (f" at {best.strftime('%H:%M')} UTC" if best else "")
+                  + (f", magnitude {row['mag']}" if row and row.get("mag") is not None else "")
+                  + ". Found on VEMMSUNJ.")
+    return render_template("planet.html", name=name, place=place, row=row, best=best,
+                           now=now.strftime("%H:%M"), share_text=share_text,
+                           title=name, section="planets")
+
+@app.route("/planet/<name>/calendar.ics")
+def planet_calendar(name):
+    if name not in PROFILE_PLANETS:
+        abort(404)
+    place = _profile_place(request.args.get("place", "1"))
+    if place is None:
+        abort(404)
+    now, row, best = _profile_data(name, place)
+    if best is None:
+        abort(404)
+    fmt = "%Y%m%dT%H%M%SZ"
+    start, end = best - timedelta(minutes=30), best + timedelta(minutes=30)
+    summary = f"Observe {name} from {place['name']}".replace(",", "\\,").replace(";", "\\;")
+    uid = f"{name.lower()}-{place['id']}-{start:%Y%m%d%H%M}@vemmsunj"
+    body = "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//VEMMSUNJ//Planets//EN",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{now.strftime(fmt)}",
+        f"DTSTART:{start.strftime(fmt)}",
+        f"DTEND:{end.strftime(fmt)}",
+        f"SUMMARY:{summary}",
+        "DESCRIPTION:Highest point of the planet in the sky, from VEMMSUNJ. Times are UTC.",
+        "END:VEVENT", "END:VCALENDAR", ""
+    ])
+    return Response(body, mimetype="text/calendar",
+                    headers={"Content-Disposition": f"attachment; filename=vemmsunj-{name.lower()}.ics"})
+
+PLANET_PROFILE_TEMPLATES = {"planet.html": """{% extends "base.html" %}
+{% block content %}
+<p><a href="/planets?place={{ place['id'] }}">Back to the planets</a></p>
+<h1>{{ name }}</h1>
+<p class="meta">From {{ place['name'] }} at {{ now }} UTC. Times are UTC.</p>
+{% if row %}
+<div class="place"><strong>{{ row['status'] }}</strong>
+<div class="meta">Altitude {{ row['alt'] if row['alt'] is not none else '-' }}° · {{ row['dir'] }}</div>
+<div class="meta">Magnitude {{ row['mag'] if row['mag'] is not none else '-' }} · {{ row['constellation'] }}</div>
+<div class="meta">Rise {{ row['rise'] or '-' }} · Highest {{ row['transit'] or '-' }} · Set {{ row['set'] or '-' }}</div>
+</div>
+<p class="meta">Magnitude is brightness: lower is brighter. Times cover the next 24 hours.</p>
+<p class="actions">
+  {% if best %}<a class="btn" href="/planet/{{ name }}/calendar.ics?place={{ place['id'] }}">Add to calendar</a>{% endif %}
+  <button id="share-btn" class="btn quiet" type="button">Share this observation</button>
+</p>
+<p class="meta" id="share-status" role="status" aria-live="polite"></p>
+{% else %}
+<p class="error">Planet data isn't available right now. Try again in a few minutes.</p>
+{% endif %}
+<p><a href="/planets/orbits">Watch the planets orbit the Sun</a></p>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var text = {{ share_text|tojson }};
+  var btn = document.getElementById('share-btn');
+  var out = document.getElementById('share-status');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var url = location.href;
+    if (navigator.share) {
+      navigator.share({ title: 'VEMMSUNJ', text: text, url: url }).catch(function () {});
+      return;
+    }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text + ' ' + url).then(function () {
+        out.textContent = 'Copied. Paste it anywhere to share.';
+      }, function () { out.textContent = 'Sharing is not available in this browser.'; });
+    } else {
+      out.textContent = 'Sharing is not available in this browser.';
+    }
+  });
+})();
+</script>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(PLANET_PROFILE_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
