@@ -2910,6 +2910,28 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       if (sel) sel.group.getWorldPosition(target);
       else target.set(0, 0, 0);
     }
+    (function () {
+      var sel = sats.find(function (s) { return s.data.name === selectedName; });
+      var out = document.getElementById("frame-debug");
+      if (!out) {
+        out = document.createElement("p");
+        out.id = "frame-debug";
+        out.className = "meta";
+        infoEl.parentNode.insertBefore(out, infoEl);
+      }
+      if (!sel || !data) { out.textContent = ""; return; }
+      var w = new THREE.Vector3();
+      sel.group.getWorldPosition(w);
+      earthGroup.worldToLocal(w);
+      var r = w.length();
+      var mLat = Math.asin(w.y / r) / DEG;
+      var mLon = Math.atan2(-w.z, w.x) / DEG;
+      var d = selectedSatellite();
+      var dLon = ((mLon - d.lon + 540) % 360) - 180;
+      out.textContent = "Frame check: marker lat " + mLat.toFixed(2) + ", lon " + mLon.toFixed(2) +
+        " | data lat " + d.lat.toFixed(2) + ", lon " + d.lon.toFixed(2) +
+        " | lon offset " + dLon.toFixed(1) + " degrees";
+    })();
     cam.lerp(target, 0.08);
     camera.position.set(
       cam.x + camDist * Math.cos(camEl) * Math.sin(camAz),
