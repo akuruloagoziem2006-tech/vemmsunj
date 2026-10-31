@@ -8121,6 +8121,45 @@ def api_globe_check():
         print(f"globe check error: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
+# ---------- Robustness: headers, robots, sitemap, health check, readable errors ----------
+@app.after_request
+def vm_security_headers(resp):
+    # Permissions-Policy keeps location and motion sensors available to this site, which the Near me and sky views need.
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self)")
+    return resp
+
+VM_PUBLIC_PAGES = ["/", "/listings", "/map", "/posts", "/calendar", "/globe", "/aurora",
+                   "/planets", "/tracker", "/about", "/privacy", "/login", "/signup"]
+
+@app.route("/robots.txt")
+def vm_robots():
+    body = "User-agent: *\nAllow: /\nSitemap: https://vemmsunj.vercel.app/sitemap.xml\n"
+    return Response(body, mimetype="text/plain")
+
+@app.route("/sitemap.xml")
+def vm_sitemap():
+    urls = "".join(f"<url><loc>https://vemmsunj.vercel.app{page}</loc></url>" for page in VM_PUBLIC_PAGES)
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>")
+    return Response(body, mimetype="application/xml")
+
+@app.route("/healthz")
+def vm_health():
+    return Response("ok\n", mimetype="text/plain")
+
+@app.errorhandler(500)
+def vm_server_error(e):
+    body = ("<!doctype html><html lang='en'><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            "<title>VEMMSUNJ: temporary problem</title>"
+            "<h1>Something went wrong</h1>"
+            "<p>The page couldn't load. Please try again in a minute.</p>"
+            "<p><a href='/'>Go to the home page</a></p></html>")
+    return Response(body, status=500, mimetype="text/html")
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
