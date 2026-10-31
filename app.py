@@ -2886,6 +2886,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         s.group.position.copy(p0);
         s.group.lookAt(p1);
         s.group.scale.setScalar(s.data.name === selectedName ? 1.6 : 1);
+        var isSel = s.data.name === selectedName, isIssOrbit = /ISS/i.test(s.data.name);
+        s.line.material.opacity = isSel ? 0.95 : 0.55;
+        s.line.material.color.set(isSel ? 0xE8C27A : (isIssOrbit ? 0xC9553A : 0x5C7DA6));
       });
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
       if (sel) target.copy(sel.group.position);
@@ -2903,7 +2906,23 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     requestAnimationFrame(frame);
   }
 
+  var DEFAULT_VIEW = { az: camAz, el: camEl, dist: camDist };
   loadCountries();
+  var resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "btn quiet";
+  resetBtn.textContent = "Reset view";
+  resetBtn.style.margin = "0 0 .6rem";
+  canvas.parentNode.insertBefore(resetBtn, canvas);
+  resetBtn.addEventListener("click", function () {
+    selectedName = null;
+    camAz = DEFAULT_VIEW.az;
+    camEl = DEFAULT_VIEW.el;
+    camDist = DEFAULT_VIEW.dist;
+    if (window.vmTrack) window.vmTrack('globe_reset', '');
+    updateHighlights();
+    updateInfo();
+  });
   load();
   setInterval(load, 60000);
   requestAnimationFrame(frame);
