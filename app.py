@@ -2361,6 +2361,15 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 <div class="globe-full"><div id="globe" class="globe-wrap" role="img" aria-label="Rotating Earth with satellites and the countries they pass over"><div id="globe-loading" class="globe-loading">Loading globe…</div></div></div>
 <p class="meta" id="globe-status" role="status" aria-live="polite"></p>
 <p class="meta" id="country-status"></p>
+<div class="globe-key meta" aria-label="Globe key">
+  <span>Gold: selected orbit</span>
+  <span>Orange: ISS orbit</span>
+  <span>Blue: other orbits</span>
+  <span>Red shading: countries under the satellite paths. This is not predicted coverage.</span>
+</div>
+<style>
+.globe-key { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin: .4rem 0 .6rem; font-size: .88rem; }
+</style>
 <div class="globe-controls">
   <button class="btn quiet" type="button" data-speed="1" aria-pressed="true">Real time</button>
   <button class="btn quiet" type="button" data-speed="60" aria-pressed="false">60 times faster</button>
