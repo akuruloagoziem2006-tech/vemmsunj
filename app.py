@@ -2667,12 +2667,13 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   function buildSatellites(list) {
     sats.forEach(function (s) {
-      scene.remove(s.group);
-      scene.remove(s.line);
+      satGroup.remove(s.group);
+      satGroup.remove(s.line);
       disposeGroup(s.group);
       s.line.geometry.dispose();
       s.line.material.dispose();
     });
+    satGroup.children.slice().forEach(function (c) { satGroup.remove(c); });
     sats = list.map(function (d) {
       var isIss = /ISS/i.test(d.name);
       var group = makeSatellite(isIss);
