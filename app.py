@@ -2139,6 +2139,29 @@ fetch("/api/listings")
 })();
 </script>
 </details>
+<script>
+(function () {
+  function filterRows(inputId, rowSelector) {
+    var box = document.getElementById(inputId);
+    if (!box) return;
+    var q = box.value.trim().toLowerCase();
+    document.querySelectorAll(rowSelector).forEach(function (row) {
+      var name = (row.getAttribute('data-name') || row.textContent || '').toLowerCase();
+      row.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+  }
+  function bind() {
+    var sat = document.getElementById('sat-search');
+    var com = document.getElementById('comet-search');
+    if (sat && !sat.__bound) { sat.__bound = true; sat.addEventListener('input', function () { filterRows('sat-search', '.live-row'); }); }
+    if (com && !com.__bound) { com.__bound = true; com.addEventListener('input', function () { filterRows('comet-search', '#comet-table tr'); }); }
+    filterRows('sat-search', '.live-row');
+    filterRows('comet-search', '#comet-table tr');
+  }
+  bind();
+  setInterval(bind, 1000);
+})();
+</script>
 <p><a class="back-to-top" href="#top">Back to top</a></p>
 {% else %}
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
@@ -6993,6 +7016,8 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   draw();
 })();
 </script>
+<label for="sat-search" class="meta">Search satellites</label>
+<input id="sat-search" type="search" placeholder="Type a satellite name" autocomplete="off" style="width:100%;min-height:44px;margin:.3rem 0 .6rem">
 <p class="meta">On a phone, swipe the table sideways to see every column.</p>
 <div class="table-wrap table-scroll"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
@@ -7156,6 +7181,8 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 </tbody></table></div>
 <p class="meta">H is the object's intrinsic brightness: lower is brighter. Its apparent brightness depends on how close it is, so check current magnitudes before observing. Comets are not included yet.</p>
 <details class="comet-panel" id="comets">
+<label for="comet-search" class="meta">Search comets</label>
+<input id="comet-search" type="search" placeholder="Type a comet name" autocomplete="off" style="width:100%;min-height:44px;margin:.3rem 0 .6rem">
 <summary><strong>Comets brighter than magnitude 10</strong> ({{ comets|length }} listed. Tap to show.)</summary>
 <p class="meta">Total visual magnitude (M1) and its slope (K1), from the JPL query. Lower M1 is brighter. Comets brighten and fade unpredictably, so check a current ephemeris before observing.</p>
 {% if comet_error %}
