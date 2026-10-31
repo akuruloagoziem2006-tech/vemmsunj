@@ -2737,7 +2737,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       ["Altitude", Math.round(d.alt_km) + " km"],
       ["Speed", d.speed_kms.toFixed(2) + " km/s"],
       ["Orbit time", (d.period_s / 60).toFixed(1) + " minutes"],
-      ["Position calculated", (data && data.time ? data.time : "-")]
+      ["Position calculated", (data && data.fetched_at ? data.fetched_at.replace("T", " ").slice(0, 19) + " UTC" : "-")]
     ];
     if (selCountries.length) {
       var shown = selCountries.slice(0, 15).join(", ");
