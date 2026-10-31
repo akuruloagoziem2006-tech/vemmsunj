@@ -6615,18 +6615,29 @@ import re as _re
 COMET_NAME_OK = _re.compile(r"^[0-9A-Za-z/ .()\-]{1,40}$")
 
 def comet_detail(designation):
-    key = f"jpl-comet:{designation}"
-    body = cache_get(key, 24 * 3600)
-    if body is None:
-        r = requests.get("https://ssd-api.jpl.nasa.gov/sbdb.api", params={
-            "sstr": designation,
-            "phys-par": "1",
-        }, timeout=20)
-        r.raise_for_status()
-        body = r.text
-        cache_put(key, body)
-    data = json.loads(body)
-    if "object" not in data:
+    # JPL looks comets up by designation ("1P"), not the full name ("1P/Halley"),
+    # which can match an asteroid as well. Try the designation first, then the full name.
+    candidates = []
+    for c in (designation.split("/")[0].strip(), designation.strip()):
+        if c and c not in candidates:
+            candidates.append(c)
+    data = None
+    for cand in candidates:
+        key = f"jpl-comet-v2:{cand}"
+        body = cache_get(key, 24 * 3600)
+        if body is None:
+            r = requests.get("https://ssd-api.jpl.nasa.gov/sbdb.api", params={
+                "sstr": cand,
+                "phys-par": "1",
+            }, timeout=20)
+            r.raise_for_status()
+            body = r.text
+            cache_put(key, body)
+        parsed = json.loads(body)
+        if "object" in parsed:
+            data = parsed
+            break
+    if data is None:
         return None
     obj = data.get("object", {})
     orbit = data.get("orbit", {}) or {}
