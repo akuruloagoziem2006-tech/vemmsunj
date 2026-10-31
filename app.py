@@ -4734,7 +4734,7 @@ def run_daily_bot(now=None):
             skipped.append({"place": place["name"], "reason": "sun is up"})
             continue
         try:
-            upcoming = upcoming_passes(place)
+            upcoming = upcoming_passes(place, now)
         except requests.RequestException as e:
             skipped.append({"place": place["name"], "reason": f"satellite data unavailable: {e.__class__.__name__}"})
             continue
@@ -4742,9 +4742,9 @@ def run_daily_bot(now=None):
             skipped.append({"place": place["name"], "reason": "no passes in the next 24 hours"})
             continue
         lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
-                 for start, p in _pairs(upcoming)]
+                 for start, p in upcoming]
         body = f"{place['name']}, passes calculated at {datetime.now(timezone.utc).strftime('%H:%M')} UTC for the 24 hours after that: " + "; ".join(lines) + ". Times are UTC."
-        chart = bot_chart(place["name"], _pairs(upcoming))
+        chart = bot_chart(place["name"], upcoming)
         db.execute(
             "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), chart),
@@ -8180,16 +8180,6 @@ def post_age(value):
 
 app.jinja_env.filters["age"] = post_age
 
-def _pairs(items):
-    out = []
-    for u in items:
-        if isinstance(u, dict):
-            out.append((datetime.fromisoformat(u["iso"]),
-                        {"satellite": u["satellite"], "max_altitude_deg": u.get("peak", u.get("max_altitude_deg"))}))
-        else:
-            out.append(u)
-    return out
-
 # ---------- Pass summaries every six hours (separate from the daily photo run) ----------
 PASS_POST_GAP = timedelta(hours=6)
 
@@ -8252,11 +8242,7 @@ def cron_passes():
         return jsonify(run_pass_summaries())
     except Exception as e:
         print(f"pass summaries error: {e}", flush=True)
-        import traceback as _tb
-        fr = _tb.extract_tb(e.__traceback__)[-1]
-        print("pass summaries traceback: " + _tb.format_exc(), flush=True)
-        return jsonify({"error": "Pass summaries couldn't be posted this time.", "detail": str(e)[:200],
-                        "where": f"{fr.name} line {fr.lineno}: {fr.line}"}), 500
+        return jsonify({"error": "Pass summaries couldn't be posted this time.", "detail": str(e)[:200]}), 500
 
 if __name__ == "__main__":
     from waitress import serve
