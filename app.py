@@ -6762,8 +6762,12 @@ def upcoming_passes(place):
     for pz in passes:
         st = parse_when(pz["start"])
         if now <= st <= now + timedelta(hours=24) and pz["max_altitude_deg"] >= 10:
+            en = parse_when(pz["end"])
+            minutes = max(1, round((en - st).total_seconds() / 60) + 1)
             out.append({"satellite": pz["satellite"], "start": st.strftime("%H:%M"),
-                        "iso": st.isoformat(timespec="minutes"), "peak": pz["max_altitude_deg"]})
+                        "iso": st.isoformat(timespec="minutes"), "peak": pz["max_altitude_deg"],
+                        "end": en.strftime("%H:%M"), "end_iso": en.isoformat(timespec="minutes"),
+                        "minutes": minutes})
     out.sort(key=lambda x: x["iso"])
     return out[:6]
 
@@ -6838,11 +6842,11 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <h3>Upcoming visible passes</h3>
 {% if upcoming %}
 <div class="table-wrap table-scroll"><table class="data">
-<thead><tr><th>Satellite</th><th>Starts (local time)</th><th>Peak height</th></tr></thead>
+<thead><tr><th>Satellite</th><th>Rises (local time)</th><th>Sets (local time)</th><th>Peak height</th><th>Duration</th></tr></thead>
 <tbody>
-{% for u in upcoming %}<tr><td>{{ u['satellite'] }}</td><td><time data-utc="{{ u['iso'] }}" data-utc-label="{{ u['start'] }} UTC">{{ u['start'] }} UTC</time></td><td>{{ u['peak'] }}°</td></tr>{% endfor %}
+{% for u in upcoming %}<tr><td>{{ u['satellite'] }}</td><td><time data-utc="{{ u['iso'] }}" data-utc-label="{{ u['start'] }} UTC">{{ u['start'] }} UTC</time></td><td><time data-utc="{{ u['end_iso'] }}" data-utc-label="{{ u['end'] }} UTC">{{ u['end'] }} UTC</time></td><td>{{ u['peak'] }}°</td><td>{{ u['minutes'] }} min</td></tr>{% endfor %}
 </tbody></table></div>
-<p class="meta">Peak height is the highest point of the pass above the horizon. Rise, set, and duration aren't shown yet.</p>
+<p class="meta">Rises and sets are when the satellite crosses 10 degrees above the horizon. Peak height is its highest point, and duration is how long it stays above 10 degrees. Times are in your local time, with UTC in brackets.</p>
 {% else %}
 <p class="meta">No visible passes above 10 degrees from {{ place['name'] if place else 'this place' }} in the next 24 hours.</p>
 {% endif %}
