@@ -6710,6 +6710,25 @@ COMET_TEMPLATES = {"comet.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(COMET_TEMPLATES)
 
+def upcoming_passes(place):
+    """Passes above 10 degrees in the next 24 hours for the chosen place, soonest first."""
+    if place is None:
+        return []
+    try:
+        passes, _ = cached_passes(place["id"], place)
+    except Exception as e:
+        print(f"upcoming passes error: {e}", flush=True)
+        return []
+    now = datetime.now(timezone.utc)
+    out = []
+    for pz in passes:
+        st = parse_when(pz["start"])
+        if now <= st <= now + timedelta(hours=24) and pz["max_altitude_deg"] >= 10:
+            out.append({"satellite": pz["satellite"], "start": st.strftime("%H:%M"),
+                        "iso": st.isoformat(timespec="minutes"), "peak": pz["max_altitude_deg"]})
+    out.sort(key=lambda x: x["iso"])
+    return out[:6]
+
 @app.route("/tracker")
 def tracker_page():
     error, items = None, []
@@ -6755,7 +6774,7 @@ def tracker_page():
         except Exception as e:
             print(f"tracker tonight error: {e}", flush=True)
             tonight_error = "Satellites above the horizon aren't available right now."
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, dist_key=dist_key, win_key=win_key, place=place, places=places, tonight=tonight, tonight_error=tonight_error,
+    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, dist_key=dist_key, win_key=win_key, place=place, places=places, tonight=tonight, tonight_error=tonight_error, upcoming=upcoming_passes(place),
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
@@ -6771,6 +6790,17 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   <noscript><button class="btn quiet" type="submit">Show</button></noscript>
 </form>
 <p class="meta">Satellites above the horizon from {{ place['name'] }} right now. Height is the angle above the horizon. Distance is the straight-line distance from the place to the satellite. Times are UTC.</p>
+<h3>Upcoming visible passes</h3>
+{% if upcoming %}
+<div class="table-wrap table-scroll"><table class="data">
+<thead><tr><th>Satellite</th><th>Starts (local time)</th><th>Peak height</th></tr></thead>
+<tbody>
+{% for u in upcoming %}<tr><td>{{ u['satellite'] }}</td><td><time data-utc="{{ u['iso'] }}" data-utc-label="{{ u['start'] }} UTC">{{ u['start'] }} UTC</time></td><td>{{ u['peak'] }}°</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">Peak height is the highest point of the pass above the horizon. Rise, set, and duration aren't shown yet.</p>
+{% else %}
+<p class="meta">No visible passes above 10 degrees from {{ place['name'] if place else 'this place' }} in the next 24 hours.</p>
+{% endif %}
 {% if tonight_error %}
 <p class="error">{{ tonight_error }}</p>
 {% elif tonight %}
@@ -6791,6 +6821,78 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% if live_error %}
 <p class="error">{{ live_error }}</p>
 {% else %}
+<div class="sky-map-wrap" style="position:relative;margin:.6rem 0 1rem">
+  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:10px"></canvas>
+  <p class="meta">Map of tracked satellites now: each dot is one satellite. Tap a dot to select it.</p>
+</div>
+<p class="meta"><strong>Data status:</strong> orbital data from CelesTrak. Positions calculated at {{ calc_time }} UTC. {% if live_error %}Live positions are unavailable right now.{% else %}Current positions are available.{% endif %}</p>
+<script>
+(function () {
+  var canvas = document.getElementById('sky-map');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  function size() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function points() {
+    var out = [];
+    document.querySelectorAll('.live-row').forEach(function (row) {
+      var lat = parseFloat((row.querySelector('.c-lat') || {}).textContent);
+      var lon = parseFloat((row.querySelector('.c-lon') || {}).textContent);
+      if (!isNaN(lat) && !isNaN(lon)) out.push({ name: row.getAttribute('data-name'), lat: lat, lon: lon, row: row });
+    });
+    return out;
+  }
+  function xy(lat, lon) {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    return [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
+  }
+  function draw() {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    if (!W || !H) return;
+    ctx.fillStyle = '#05070B';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#1C2330';
+    ctx.lineWidth = 1;
+    for (var lon = -180; lon <= 180; lon += 30) {
+      var x = (lon + 180) / 360 * W;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (var lat = -60; lat <= 60; lat += 30) {
+      var y = (90 - lat) / 180 * H;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.strokeStyle = '#2A313C';
+    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+    points().forEach(function (pt) {
+      var p = xy(pt.lat, pt.lon);
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], /ISS/i.test(pt.name) ? 4 : 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = /ISS/i.test(pt.name) ? '#C9553A' : '#C9D6E8';
+      ctx.fill();
+    });
+  }
+  canvas.addEventListener('click', function (e) {
+    var r = canvas.getBoundingClientRect();
+    var mx = e.clientX - r.left, my = e.clientY - r.top;
+    var best = null, bestD = 16;
+    points().forEach(function (pt) {
+      var p = xy(pt.lat, pt.lon);
+      var d = Math.hypot(p[0] - mx, p[1] - my);
+      if (d < bestD) { bestD = d; best = pt; }
+    });
+    if (best) best.row.click();
+  });
+  window.addEventListener('resize', function () { size(); draw(); });
+  size();
+  if (window.__vmSkyMapTimer) clearInterval(window.__vmSkyMapTimer);
+  window.__vmSkyMapTimer = setInterval(draw, 1000);
+  draw();
+})();
+</script>
 <p class="meta">On a phone, swipe the table sideways to see every column.</p>
 <div class="table-wrap table-scroll"><table class="data" id="live-table">
 <thead><tr><th>Satellite</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>Speed</th><th>Orbit</th></tr></thead>
