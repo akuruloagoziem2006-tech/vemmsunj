@@ -8218,13 +8218,15 @@ def run_pass_summaries(now=None):
         if not upcoming:
             skipped.append({"place": name, "reason": "no passes in the next 24 hours"})
             continue
+        rows = [(datetime.fromisoformat(u["iso"]), {"satellite": u["satellite"],
+                 "max_altitude_deg": u["peak"]}) for u in upcoming]
         lines = [f"{p['satellite']} at {start.strftime('%H:%M')} UTC, peak {p['max_altitude_deg']} degrees"
-                 for start, p in upcoming]
+                 for start, p in rows]
         body = (f"{name}, passes calculated at {now.strftime('%H:%M')} UTC for the 24 hours after that: "
                 + "; ".join(lines) + ". Times are UTC.")
         db.execute(
             "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), bot_chart(name, upcoming)),
+            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), bot_chart(name, rows)),
         )
         db.commit()
         posted.append(name)
