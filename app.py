@@ -2885,7 +2885,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 
   var canvas = renderer.domElement;
   canvas.style.touchAction = "none";
+  var lastTouch = 0;
   canvas.addEventListener("pointerdown", function (e) {
+    lastTouch = Date.now();
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
@@ -2893,6 +2895,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   });
   canvas.addEventListener("pointermove", function (e) {
     if (!dragging) return;
+    lastTouch = Date.now();
     camAz -= (e.clientX - lastX) * 0.01;
     camEl = Math.max(-1.4, Math.min(1.4, camEl + (e.clientY - lastY) * 0.01));
     lastX = e.clientX;
@@ -2927,6 +2930,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         s.line.material.opacity = isSel ? 0.95 : 0.55;
         s.line.material.color.set(isSel ? 0xE8C27A : (isIssOrbit ? 0xC9553A : 0x5C7DA6));
       });
+      if (!dragging && !selectedName && Date.now() - lastTouch > 10000) camAz += 0.035 * dt;
       updateGroundTrack();
       var sel = sats.find(function (s) { return s.data.name === selectedName; });
       if (sel) sel.group.getWorldPosition(target);
@@ -3005,6 +3009,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   resetBtn.addEventListener("click", function () {
     selectedName = null;
     camAz = DEFAULT_VIEW.az;
+    lastTouch = Date.now();
     camEl = DEFAULT_VIEW.el;
     camDist = DEFAULT_VIEW.dist;
     if (window.vmTrack) window.vmTrack('globe_reset', '');
