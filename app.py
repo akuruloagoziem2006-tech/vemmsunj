@@ -2603,7 +2603,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   scene.add(earthGroup);
   var satGroup = new THREE.Group();
   scene.add(satGroup);
-  var SAT_FRAME_SIGN = 1;
+  var SAT_FRAME_SIGN = -1;
   earthGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 72), earthMat));
   scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(1.05, 64, 48),
