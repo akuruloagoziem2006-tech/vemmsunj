@@ -6961,7 +6961,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Comet</th><th>M1</th><th>K1</th></tr></thead>
 <tbody>
-{% for c in comets %}<tr><td><a href="/tracker/comet/{{ c['name']|urlencode }}">{{ c['name'] }}</a></td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
+{% for c in comets %}<tr><td><a href="/tracker/comet/{{ c['name'].split('/')[0]|urlencode }}">{{ c['name'] }}</a></td><td>{{ c['m1'] }}</td><td>{{ c['k1'] }}</td></tr>{% else %}<tr><td colspan="3">No comets brighter than magnitude 10 right now.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
 <p class="meta">Tap a column heading to sort its table. Numbers sort by value; names and dates sort as text.</p>
