@@ -2930,24 +2930,37 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     var la = lat * DEG, lo = lon * DEG;
     return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
   }
+  function clearGround() {
+    if (!groundLine) return;
+    earthGroup.remove(groundLine);
+    groundLine.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    groundLine = null;
+  }
+  // Draws the ground track as a dotted trail, plus a white dot at the satellite's current
+  // latitude and longitude. The white dot should sit directly under the satellite's marker.
   function updateGroundTrack() {
     var want = groundOn ? selectedName : null;
     if (groundFor === want) return;
-    if (groundLine) {
-      earthGroup.remove(groundLine);
-      groundLine.geometry.dispose();
-      groundLine.material.dispose();
-      groundLine = null;
-    }
+    clearGround();
     groundFor = want;
     if (!want) return;
     var s = selectedSatellite();
     if (!s || !s.ground || s.ground.length < 2) return;
-    var pts = s.ground.map(function (p) { return llToVec(p[0], p[1], 1.004); });
-    var geo = new THREE.BufferGeometry().setFromPoints(pts);
-    groundLine = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
-      color: 0xE8C27A, transparent: true, opacity: 0.9
-    }));
+    groundLine = new THREE.Group();
+    var dotGeo = new THREE.SphereGeometry(0.006, 6, 6);
+    var trailMat = new THREE.MeshBasicMaterial({ color: 0xE8C27A, transparent: true, opacity: 0.8 });
+    for (var i = 0; i < s.ground.length; i += 2) {
+      var m = new THREE.Mesh(dotGeo, trailMat);
+      m.position.copy(llToVec(s.ground[i][0], s.ground[i][1], 1.004));
+      groundLine.add(m);
+    }
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 10),
+                              new THREE.MeshBasicMaterial({ color: 0xFFFFFF }));
+    head.position.copy(llToVec(s.lat, s.lon, 1.01));
+    groundLine.add(head);
     earthGroup.add(groundLine);
   }
   var groundBtn = document.createElement("button");
