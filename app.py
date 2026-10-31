@@ -6821,9 +6821,9 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 {% if live_error %}
 <p class="error">{{ live_error }}</p>
 {% else %}
-<div class="sky-map-wrap" style="position:relative;margin:.6rem 0 1rem">
-  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:10px"></canvas>
-  <p class="meta">Map of tracked satellites now: each dot is one satellite. Tap a dot to select it.</p>
+<div class="sky-map-wrap" style="margin:.6rem 0 1rem">
+  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;border:1px solid var(--rule);border-radius:12px"></canvas>
+  <p class="meta">Tracked satellites now, on a world map. Tap a satellite to select its row. The ISS is highlighted in orange.</p>
 </div>
 <p class="meta"><strong>Data status:</strong> orbital data from CelesTrak. Positions calculated at {{ calc_time }} UTC. {% if live_error %}Live positions are unavailable right now.{% else %}Current positions are available.{% endif %}</p>
 <script>
@@ -6832,31 +6832,62 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   if (!canvas) return;
   var ctx = canvas.getContext('2d');
   var dpr = window.devicePixelRatio || 1;
+
+  var seed = 7;
+  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+  var stars = [];
+  for (var i = 0; i < 180; i++) {
+    stars.push({ x: rnd(), y: rnd(), r: rnd() * 0.9 + 0.2, a: rnd() * 0.6 + 0.2 });
+  }
+
   function size() {
-    var w = canvas.clientWidth, h = canvas.clientHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight || Math.round(w / 2);
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+
   function points() {
     var out = [];
     document.querySelectorAll('.live-row').forEach(function (row) {
       var lat = parseFloat((row.querySelector('.c-lat') || {}).textContent);
       var lon = parseFloat((row.querySelector('.c-lon') || {}).textContent);
-      if (!isNaN(lat) && !isNaN(lon)) out.push({ name: row.getAttribute('data-name'), lat: lat, lon: lon, row: row });
+      if (!isNaN(lat) && !isNaN(lon)) {
+        out.push({ name: row.getAttribute('data-name'), lat: lat, lon: lon, row: row,
+                   selected: row.classList.contains('picked') });
+      }
     });
     return out;
   }
-  function xy(lat, lon) {
-    var W = canvas.clientWidth, H = canvas.clientHeight;
+
+  function xy(lat, lon, W, H) {
     return [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
   }
-  function draw() {
-    var W = canvas.clientWidth, H = canvas.clientHeight;
-    if (!W || !H) return;
-    ctx.fillStyle = '#05070B';
+
+  function background(W, H) {
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0B1A30');
+    g.addColorStop(0.5, '#05070B');
+    g.addColorStop(1, '#0A0F1C');
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#1C2330';
+    var glow = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, W * 0.6);
+    glow.addColorStop(0, 'rgba(43,90,150,0.10)');
+    glow.addColorStop(1, 'rgba(43,90,150,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+    stars.forEach(function (st) {
+      ctx.beginPath();
+      ctx.arc(st.x * W, st.y * H, st.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(233,230,220,' + st.a + ')';
+      ctx.fill();
+    });
+  }
+
+  function graticule(W, H) {
     ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(120,150,190,0.12)';
     for (var lon = -180; lon <= 180; lon += 30) {
       var x = (lon + 180) / 360 * W;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
@@ -6865,27 +6896,74 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
       var y = (90 - lat) / 180 * H;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
-    ctx.strokeStyle = '#2A313C';
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = 'rgba(232,194,122,0.35)';
     ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
-    points().forEach(function (pt) {
-      var p = xy(pt.lat, pt.lon);
+    ctx.setLineDash([]);
+  }
+
+  function drawSat(x, y, name, selected) {
+    var iss = /ISS/i.test(name);
+    var k = iss ? 1.9 : 1;
+    ctx.save();
+    ctx.translate(x, y);
+    if (selected || iss) {
       ctx.beginPath();
-      ctx.arc(p[0], p[1], /ISS/i.test(pt.name) ? 4 : 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = /ISS/i.test(pt.name) ? '#C9553A' : '#C9D6E8';
-      ctx.fill();
+      ctx.arc(0, 0, 12 * k, 0, Math.PI * 2);
+      ctx.strokeStyle = selected ? 'rgba(232,194,122,0.9)' : 'rgba(201,85,58,0.7)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    ctx.shadowColor = iss ? 'rgba(201,85,58,0.9)' : 'rgba(160,200,255,0.8)';
+    ctx.shadowBlur = iss ? 12 : 6;
+    ctx.fillStyle = '#2B5F9E';
+    ctx.strokeStyle = '#8FB7D6';
+    ctx.lineWidth = 0.6;
+    ctx.fillRect(-7 * k, -3 * k, 5 * k, 6 * k);
+    ctx.strokeRect(-7 * k, -3 * k, 5 * k, 6 * k);
+    ctx.fillRect(2 * k, -3 * k, 5 * k, 6 * k);
+    ctx.strokeRect(2 * k, -3 * k, 5 * k, 6 * k);
+    ctx.fillStyle = '#D9DEE6';
+    ctx.fillRect(-1.5 * k, -2.5 * k, 3 * k, 5 * k);
+    ctx.fillStyle = '#C9A24A';
+    ctx.fillRect(-0.7 * k, -4 * k, 1.4 * k, 1.5 * k);
+    ctx.restore();
+  }
+
+  function draw() {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
+    if (!W || !H) return;
+    background(W, H);
+    graticule(W, H);
+    var pts = points();
+    pts.forEach(function (pt) {
+      if (pt.selected || /ISS/i.test(pt.name)) return;
+      var p = xy(pt.lat, pt.lon, W, H);
+      drawSat(p[0], p[1], pt.name, false);
+    });
+    pts.forEach(function (pt) {
+      if (!(pt.selected || /ISS/i.test(pt.name))) return;
+      var p = xy(pt.lat, pt.lon, W, H);
+      drawSat(p[0], p[1], pt.name, pt.selected);
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = pt.selected ? '#E8C27A' : '#E9856A';
+      ctx.fillText(pt.name, p[0] + 14, p[1] - 10);
     });
   }
+
   canvas.addEventListener('click', function (e) {
+    var W = canvas.clientWidth, H = canvas.clientHeight;
     var r = canvas.getBoundingClientRect();
     var mx = e.clientX - r.left, my = e.clientY - r.top;
     var best = null, bestD = 16;
     points().forEach(function (pt) {
-      var p = xy(pt.lat, pt.lon);
+      var p = xy(pt.lat, pt.lon, W, H);
       var d = Math.hypot(p[0] - mx, p[1] - my);
       if (d < bestD) { bestD = d; best = pt; }
     });
     if (best) best.row.click();
   });
+
   window.addEventListener('resize', function () { size(); draw(); });
   size();
   if (window.__vmSkyMapTimer) clearInterval(window.__vmSkyMapTimer);
