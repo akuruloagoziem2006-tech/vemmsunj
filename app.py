@@ -2187,7 +2187,8 @@ fetch("/api/listings")
     {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
     <span class="meta">· posted {{ p['created_at']|age }}</span>
     {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
-      <form class="inline ajax" method="post" action="/follow/{{ p['author'] }}">
+      {% if username and p['author'] != username %}<form class="inline" method="post" action="/posts/{{ p['id'] }}/report"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Report</button></form>{% endif %}
+    <form class="inline ajax" method="post" action="/follow/{{ p['author'] }}">
         <input type="hidden" name="next" value="/posts#post-{{ p['id'] }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn quiet" type="submit">{% if p['author'] in following %}Unfollow{% else %}Follow{% endif %}</button>
@@ -4531,6 +4532,20 @@ def create_post():
     except ValueError:
         listing_id = None
     seen_at = f.get("seen_at", "").strip() or None
+    cfg = get_settings()
+    refused = refusal_reason(username, body, cfg)
+    if refused:
+        return moderation_page("Your post wasn't published", refused)
+    held = hold_reason(body, cfg)
+    if held:
+        ensure_moderation_schema()
+        db = connect()
+        db.execute(
+            "INSERT INTO held_posts (author, body, listing_id, seen_at, created_at, reason) VALUES (?, ?, ?, ?, ?, ?)",
+            (username, body, listing_id, seen_at, datetime.now(timezone.utc).isoformat(timespec="minutes"), held))
+        db.commit()
+        db.close()
+        return moderation_page("Your post is awaiting review", held + " An administrator will look at it, and it will appear once approved.")
 
     ai = None
     if listing_id and seen_at:
@@ -5453,7 +5468,7 @@ def admin_page():
         "(SELECT COUNT(*) FROM posts p WHERE p.listing_id = l.id) AS sightings "
         "FROM listings l ORDER BY l.name"
     ).fetchall()
-    return render_template("admin.html", dc=datacenter(db), places=places, total_users=total_users, active24=active24,
+    return render_template("admin.html", dc=datacenter(db), mod=moderation_data(db), places=places, total_users=total_users, active24=active24,
                            posts_total=posts_total, signups=signups, daily=daily, top=top,
                            rows=rows, title="Usage", section="admin")
 
@@ -5548,6 +5563,40 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
 <tbody>
 {% for pl in places %}<tr><td>{{ pl['name'] }}</td><td>{{ pl['category'] }}</td><td>{{ pl['sightings'] }}</td><td><form method="post" action="/admin/places/{{ pl['id'] }}/delete" class="inline" onsubmit="return confirm('Remove this place? Its sightings stay but are unlinked. This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Remove</button></form></td></tr>{% else %}<tr><td colspan="4">No places.</td></tr>{% endfor %}
 </tbody></table></div>
+
+<h2 id="moderation">Community moderation</h2>
+<p class="meta">Posts that fail a spam check are held here. Reports only come to this list, and nothing is hidden automatically.</p>
+<h3>Limits</h3>
+<form method="post" action="/admin/settings" class="near">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Posts per hour per person <input name="posts_per_hour" value="{{ mod['cfg']['posts_per_hour'] }}"></label>
+  <label>Seconds between posts <input name="min_gap_seconds" value="{{ mod['cfg']['min_gap_seconds'] }}"></label>
+  <label>Links allowed per post <input name="max_links" value="{{ mod['cfg']['max_links'] }}"></label>
+  <label>Repeated words before review <input name="repeat_limit" value="{{ mod['cfg']['repeat_limit'] }}"></label>
+  <button class="btn quiet" type="submit">Save limits</button>
+</form>
+<h3>Held posts</h3>
+{% for h in mod['held'] %}
+<div class="place"><strong>{{ h['author'] }}</strong> · {{ h['created_at'] }}
+<div>{{ h['body'] }}</div>
+<div class="meta">Held because: {{ h['reason'] }}</div>
+<div class="meta">Author history: {{ mod['history'].get(h['author'], {}).get('held', 0) }} held posts, {{ mod['history'].get(h['author'], {}).get('reported', 0) }} reported posts</div>
+<form method="post" action="/admin/moderation/approve_held/{{ h['id'] }}" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" type="submit">Approve</button></form>
+<form method="post" action="/admin/moderation/reject_held/{{ h['id'] }}" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Reject</button></form>
+</div>
+{% else %}<p class="meta">No posts are waiting for review.</p>
+{% endfor %}
+<h3>Reported posts</h3>
+{% for r in mod['reports'] %}
+<div class="place"><strong>{{ r['author'] }}</strong> · {{ r['total'] }} report{% if r['total'] != 1 %}s{% endif %} on this post
+<div>{{ r['body'] }}</div>
+<div class="meta">Reason from {{ r['reporter'] }}: {{ r['reason'] }}</div>
+<div class="meta">Author history: {{ mod['history'].get(r['author'], {}).get('held', 0) }} held posts, {{ mod['history'].get(r['author'], {}).get('reported', 0) }} reported posts</div>
+<form method="post" action="/admin/moderation/dismiss_report/{{ r['id'] }}" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Dismiss report</button></form>
+<form method="post" action="/admin/moderation/remove_post/{{ r['post_id'] }}" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Remove post</button></form>
+</div>
+{% else %}<p class="meta">No reports to review.</p>
+{% endfor %}
 
 <h2>Real accounts</h2>
 <div class="table-wrap"><table class="data">
@@ -8520,6 +8569,185 @@ SPACE_WEATHER_TEMPLATES = {"space_weather.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(SPACE_WEATHER_TEMPLATES)
+
+# ---------- Community moderation: spam checks, held posts, reports, admin review ----------
+import re as _mre
+MOD_DEFAULTS = {"posts_per_hour": "5", "min_gap_seconds": "30", "max_links": "2", "repeat_limit": "5"}
+_MOD_READY = False
+
+def ensure_moderation_schema():
+    global _MOD_READY
+    if _MOD_READY:
+        return
+    db = connect()
+    db.execute("""CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS held_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author TEXT NOT NULL,
+        body TEXT NOT NULL,
+        listing_id INTEGER,
+        seen_at TEXT,
+        created_at TEXT NOT NULL,
+        reason TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL,
+        reporter TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (post_id, reporter))""")
+    db.commit()
+    db.close()
+    _MOD_READY = True
+
+def get_settings():
+    ensure_moderation_schema()
+    db = connect()
+    try:
+        rows = db.execute("SELECT key, value FROM settings").fetchall()
+    finally:
+        db.close()
+    vals = dict(MOD_DEFAULTS)
+    for r in rows:
+        if r["key"] in vals:
+            vals[r["key"]] = r["value"]
+    return {k: int(v) for k, v in vals.items()}
+
+def _norm(text):
+    return " ".join(text.lower().split())
+
+def _parse_created(value):
+    try:
+        t = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+def refusal_reason(author, body, cfg):
+    """Rules that reject a post outright: rate limit, minimum gap, and exact repeats."""
+    now = datetime.now(timezone.utc)
+    hour_ago = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    db = connect()
+    try:
+        recent = db.execute(
+            "SELECT created_at, body FROM posts WHERE author = ? AND created_at >= ? "
+            "UNION ALL SELECT created_at, body FROM held_posts WHERE author = ? AND created_at >= ? "
+            "ORDER BY created_at DESC",
+            (author, hour_ago, author, hour_ago)).fetchall()
+    finally:
+        db.close()
+    if len(recent) >= cfg["posts_per_hour"]:
+        return "You've reached the limit of posts per hour. Please wait a little while."
+    if recent:
+        last = _parse_created(recent[0]["created_at"])
+        if last and (now - last).total_seconds() < cfg["min_gap_seconds"]:
+            return "Please wait a moment before posting again."
+    if any(_norm(r["body"]) == _norm(body) for r in recent):
+        return "That's the same as a recent post of yours."
+    return None
+
+def hold_reason(body, cfg):
+    """Rules that hold a post for admin review instead of publishing it."""
+    links = len(_mre.findall(r"https?://|www\.", body, _mre.I))
+    if links > cfg["max_links"]:
+        return f"It contains {links} links, more than the {cfg['max_links']} allowed without review."
+    if _mre.search(r"\b(\w+)(?:\W+\1\b){%d,}" % (cfg["repeat_limit"] - 1), body, _mre.I):
+        return "It repeats a word many times in a row, so it needs review."
+    return None
+
+def moderation_page(title, message):
+    body = ("<!doctype html><html lang='en'><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            f"<title>VEMMSUNJ: {escape(title)}</title><h1>{escape(title)}</h1>"
+            f"<p>{escape(message)}</p><p><a href='/posts'>Back to sightings</a></p></html>")
+    return Response(body, mimetype="text/html")
+
+@app.route("/posts/<int:post_id>/report", methods=["POST"])
+def report_post(post_id):
+    me = session.get("username")
+    if not me:
+        return redirect("/login")
+    ensure_moderation_schema()
+    reason = (request.form.get("reason") or "Reported from the sightings feed").strip()[:200]
+    db = connect()
+    try:
+        if db.execute("SELECT 1 FROM posts WHERE id = ?", (post_id,)).fetchone() is None:
+            abort(404)
+        db.execute(
+            "INSERT INTO reports (post_id, reporter, reason, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (post_id, reporter) DO NOTHING",
+            (post_id, me, reason, datetime.now(timezone.utc).isoformat(timespec="minutes")))
+        db.commit()
+    finally:
+        db.close()
+    return redirect("/posts")
+
+def _is_admin():
+    return (session.get("username") or "").lower() in ADMIN_USERNAMES
+
+def moderation_data(db):
+    ensure_moderation_schema()
+    cfg = get_settings()
+    held = db.execute("SELECT id, author, body, reason, created_at FROM held_posts ORDER BY id DESC LIMIT 50").fetchall()
+    reports = db.execute(
+        "SELECT r.id AS id, r.reason AS reason, r.reporter AS reporter, r.post_id AS post_id, "
+        "p.author AS author, p.body AS body, "
+        "(SELECT COUNT(*) FROM reports x WHERE x.post_id = p.id) AS total "
+        "FROM reports r JOIN posts p ON p.id = r.post_id ORDER BY r.id DESC LIMIT 50").fetchall()
+    history = {}
+    for r in db.execute("SELECT author, COUNT(*) AS n FROM held_posts GROUP BY author").fetchall():
+        history.setdefault(r["author"], {"held": 0, "reported": 0})["held"] = r["n"]
+    for r in db.execute("SELECT p.author AS author, COUNT(*) AS n FROM reports r JOIN posts p ON p.id = r.post_id GROUP BY p.author").fetchall():
+        history.setdefault(r["author"], {"held": 0, "reported": 0})["reported"] = r["n"]
+    return {"cfg": cfg, "held": held, "reports": reports, "history": history}
+
+@app.route("/admin/settings", methods=["POST"])
+def admin_settings():
+    if not _is_admin():
+        abort(404)
+    ensure_moderation_schema()
+    db = connect()
+    try:
+        for key in MOD_DEFAULTS:
+            raw = (request.form.get(key) or "").strip()
+            if raw.isdigit() and 0 < int(raw) <= 1000:
+                db.execute("DELETE FROM settings WHERE key = ?", (key,))
+                db.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, raw))
+        db.commit()
+    finally:
+        db.close()
+    return redirect("/admin#moderation")
+
+@app.route("/admin/moderation/<action>/<int:item_id>", methods=["POST"])
+def admin_moderate(action, item_id):
+    if not _is_admin():
+        abort(404)
+    ensure_moderation_schema()
+    db = connect()
+    try:
+        if action == "approve_held":
+            row = db.execute("SELECT author, body, listing_id, seen_at, created_at FROM held_posts WHERE id = ?", (item_id,)).fetchone()
+            if row is None:
+                abort(404)
+            db.execute(
+                "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (row["author"], row["body"], row["listing_id"], row["seen_at"], None, row["created_at"]))
+            db.execute("DELETE FROM held_posts WHERE id = ?", (item_id,))
+        elif action == "reject_held":
+            db.execute("DELETE FROM held_posts WHERE id = ?", (item_id,))
+        elif action == "dismiss_report":
+            db.execute("DELETE FROM reports WHERE id = ?", (item_id,))
+        elif action == "remove_post":
+            db.execute("DELETE FROM reports WHERE post_id = ?", (item_id,))
+            db.execute("DELETE FROM posts WHERE id = ?", (item_id,))
+        else:
+            abort(404)
+        db.commit()
+    finally:
+        db.close()
+    return redirect("/admin#moderation")
 
 if __name__ == "__main__":
     from waitress import serve
