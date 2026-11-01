@@ -4132,12 +4132,11 @@ def load_catalog_stars():
     global _STAR_CACHE
     if _STAR_CACHE is not None:
         return _STAR_CACHE
-    path = Path(__file__).resolve().parent / "public" / "data" / "bright_stars.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        out = [(float(st[2]) / 15.0, float(st[3]), float(st[4]))
-               for st in data["stars"] if float(st[4]) <= STAR_FILE_LIMIT]
-    except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+        from bright_stars_data import STAR_ROWS
+        out = [(float(ra) / 15.0, float(dec), float(mag))
+               for ra, dec, mag in STAR_ROWS if float(mag) <= STAR_FILE_LIMIT]
+    except (ImportError, ValueError, TypeError) as e:
         print(f"star catalogue not loaded: {e}", flush=True)
         return None
     _STAR_CACHE = out
