@@ -126,7 +126,7 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
         y = c - (R + 12) * math.cos(rad) + 4
         parts.append(f'<text x="{x:.1f}" y="{y:.1f}" fill="#8C929C" font-family="sans-serif" font-size="13" text-anchor="middle">{label}</text>')
     if catalog:
-        for ra, dec, mag in catalog:
+        for ra, dec, mag, *rest in catalog:
             if mag > 6.5:
                 continue
             alt, az = star_altaz(ra, dec, lat, lon, when)
@@ -137,6 +137,9 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
             y = c - r * math.cos(math.radians(az))
             radius = max(0.5, 2.2 - 0.3 * mag)
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.2f}" fill="#E9E6DC" opacity=".85"/>')
+            label = rest[0] if rest else ""
+            if label and mag < 1.7 and alt >= 10:
+                parts.append(f'<text x="{x + 6:.1f}" y="{y - 5:.1f}" fill="#8C929C" font-family="sans-serif" font-size="11">{escape(label)}</text>')
     for name, ra, dec, mag in STARS:
         alt, az = star_altaz(ra, dec, lat, lon, when)
         if alt < 0:

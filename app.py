@@ -4134,8 +4134,8 @@ def load_catalog_stars():
         return _STAR_CACHE
     try:
         from bright_stars_data import STAR_ROWS
-        out = [(float(ra) / 15.0, float(dec), float(mag))
-               for ra, dec, mag in STAR_ROWS if float(mag) <= STAR_FILE_LIMIT]
+        out = [(float(ra) / 15.0, float(dec), float(mag), name)
+               for ra, dec, mag, name in STAR_ROWS if float(mag) <= STAR_FILE_LIMIT]
     except (ImportError, ValueError, TypeError) as e:
         print(f"star catalogue not loaded: {e}", flush=True)
         return None
