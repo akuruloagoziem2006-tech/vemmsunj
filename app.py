@@ -8760,7 +8760,7 @@ def fresh_posts(posts):
     for p in posts:
         if p["author"] == BOT_NAME and PASS_SUMMARY_WORDING.search(p["body"] or ""):
             t = _parse_created(p["created_at"])
-            if t and now - t > timedelta(hours=24):
+            if t and now - t > timedelta(hours=6):
                 continue
         out.append(p)
     return out
@@ -8778,7 +8778,7 @@ def bot_freshness():
     if not t:
         return ""
     return (f"Automated posts last updated {t.strftime('%d %b %H:%M')} UTC. "
-            "Pass summaries older than 24 hours are hidden.")
+            "Pass summaries older than 6 hours are hidden, since a newer one is posted each run.")
 
 app.jinja_env.filters["fresh_posts"] = fresh_posts
 app.jinja_env.globals["bot_freshness"] = bot_freshness
