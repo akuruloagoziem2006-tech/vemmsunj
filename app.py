@@ -8431,6 +8431,41 @@ OBSERVE_TEMPLATES = {"observe.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(OBSERVE_TEMPLATES)
 
+# ---------- Space weather: a plain-language page built on the existing Kp feed ----------
+@app.route("/space-weather")
+def space_weather_page():
+    status = kp_status()
+    if status is None:
+        kp, level, when = None, None, None
+    else:
+        kp, level, when = status.get("kp"), status.get("level"), status.get("when")
+    return render_template("space_weather.html", kp=kp, level=level, when=when,
+                           title="Space weather", section="aurora")
+
+SPACE_WEATHER_TEMPLATES = {"space_weather.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Space weather</h1>
+<p class="meta">Geomagnetic activity from NOAA's Space Weather Prediction Center. Updated every 15 minutes.</p>
+{% if kp is not none %}
+<div class="place"><strong>Kp {{ kp }} · {{ level }}</strong>
+<div class="meta">Last reading {{ when }} UTC</div></div>
+{% else %}
+<p class="error">The space-weather reading isn't available right now. Try again in a few minutes.</p>
+{% endif %}
+<h2>What the numbers mean</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Kp</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>0 to 3</td><td>Quiet. Aurora is unlikely except far north or south.</td></tr>
+<tr><td>4</td><td>Active. Aurora may be visible at high latitudes.</td></tr>
+<tr><td>5 and above</td><td>Storm. Aurora can reach much farther south or north than usual.</td></tr>
+</tbody></table></div>
+<p class="meta">Kp is a three-hourly index of how much Earth's magnetic field is disturbed. A clear, dark sky is still needed to see aurora.</p>
+<p><a class="btn quiet" href="/aurora">Open the aurora map</a></p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(SPACE_WEATHER_TEMPLATES)
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
