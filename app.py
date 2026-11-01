@@ -4124,15 +4124,24 @@ def cron_stars():
     db.close()
     return jsonify({"stored": len(rows), "source": source, "sirius_check": star_check(rows)})
 
+_STAR_CACHE = None
+STAR_FILE_LIMIT = 6.0  # chart magnitude limit; the sky list applies its own cut-off in sky_objects
+
 def load_catalog_stars():
-    """The stored catalogue, or None if it hasn't been loaded yet."""
+    """Bright stars from public/data/bright_stars.json as (ra_hours, dec_deg, mag), or None to use the built-in list."""
+    global _STAR_CACHE
+    if _STAR_CACHE is not None:
+        return _STAR_CACHE
+    path = Path(__file__).resolve().parent / "public" / "data" / "bright_stars.json"
     try:
-        db = connect()
-        row = db.execute("SELECT body FROM star_catalog WHERE name = ?", ("bsc5",)).fetchone()
-        db.close()
-    except Exception:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        out = [(float(st[2]) / 15.0, float(st[3]), float(st[4]))
+               for st in data["stars"] if float(st[4]) <= STAR_FILE_LIMIT]
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+        print(f"star catalogue not loaded: {e}", flush=True)
         return None
-    return json.loads(row["body"]) if row else None
+    _STAR_CACHE = out
+    return out
 
 # ---------- Sky conditions, space weather, pass reminders ----------
 _kv = connect()
