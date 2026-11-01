@@ -1440,6 +1440,7 @@ main h2[id], details[id] { scroll-margin-top: 1rem; }
     <a href="/globe" {% if section == 'globe' %}aria-current="page"{% endif %}>Globe</a>
     <a href="/aurora" {% if section == 'aurora' %}aria-current="page"{% endif %}>Aurora</a>
     <a href="/planets" {% if section == 'planets' %}aria-current="page"{% endif %}>Planets</a>
+    <a href="/space-weather" {% if section == 'space' %}aria-current="page"{% endif %}>Space weather</a>
     {% if username %}<a href="/log" {% if section == 'log' %}aria-current="page"{% endif %}>My log</a><a href="/logout">Log out</a>{% else %}<a href="/login" {% if section == 'login' %}aria-current="page"{% endif %}>Log in</a>{% endif %}
     <button id="redlight" class="btn quiet" type="button">Red light: off</button>
   </nav>
@@ -3517,6 +3518,7 @@ AURORA_TEMPLATES = {"aurora.html": """{% extends "base.html" %}
   <div class="kp-value">Kp {{ kp['kp'] }}</div>
   <div class="kp-level">{{ kp['level'] }}</div>
   <div class="meta">Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div>
+<p class="meta"><a href="/space-weather">Space weather: solar activity and flares</a></p>
 </div>
 {% endif %}
 <div class="colour-key" aria-hidden="true">
