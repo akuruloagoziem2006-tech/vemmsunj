@@ -2292,6 +2292,7 @@ CAL_TEMPLATES = {"calendar.html": """{% extends "base.html" %}
 {% if kp %}
 <div class="place"><strong>Planetary Kp index: {{ kp['kp'] }}</strong>
 <div class="meta">{{ kp['level'] }}. Reading at {{ kp['time'] }} UTC. Source: NOAA Space Weather Prediction Center.</div></div>
+<p class="meta"><a href="/space-weather">Space weather: solar activity and flares</a></p>
 <p class="meta">Kp measures disturbance in Earth's magnetic field. Values of 5 and above can bring aurora to lower latitudes. See the Aurora page for the forecast map.</p>
 {% else %}
 <p class="meta">Space weather isn't available right now.</p>
