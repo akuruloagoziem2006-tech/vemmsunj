@@ -2179,7 +2179,8 @@ fetch("/api/listings")
 <p>Log in to post a sighting. <a href="/login">Log in</a> or <a href="/signup">sign up</a>.</p>
 {% endif %}
 
-{% for p in posts %}
+<p class="meta">{{ bot_freshness() }}</p>
+{% for p in posts|fresh_posts %}
 <article class="entry" id="post-{{ p[\'id\'] }}">
   <div class="meta">
     <strong>{{ p['author'] }}</strong>
@@ -8748,6 +8749,39 @@ def admin_moderate(action, item_id):
     finally:
         db.close()
     return redirect("/admin#moderation")
+
+# ---------- Freshness: hide stale automated pass summaries, and show when the feed was updated ----------
+PASS_SUMMARY_WORDING = _mre.compile(r"passes calculated at|next 24 hours:")
+
+def fresh_posts(posts):
+    """Drops automated pass summaries older than 24 hours, since their pass times have already passed."""
+    now = datetime.now(timezone.utc)
+    out = []
+    for p in posts:
+        if p["author"] == BOT_NAME and PASS_SUMMARY_WORDING.search(p["body"] or ""):
+            t = _parse_created(p["created_at"])
+            if t and now - t > timedelta(hours=24):
+                continue
+        out.append(p)
+    return out
+
+def bot_freshness():
+    db = connect()
+    try:
+        row = db.execute("SELECT created_at FROM posts WHERE author = ? ORDER BY id DESC LIMIT 1",
+                         (BOT_NAME,)).fetchone()
+    finally:
+        db.close()
+    if not row:
+        return "Automated posts: none yet."
+    t = _parse_created(row["created_at"])
+    if not t:
+        return ""
+    return (f"Automated posts last updated {t.strftime('%d %b %H:%M')} UTC. "
+            "Pass summaries older than 24 hours are hidden.")
+
+app.jinja_env.filters["fresh_posts"] = fresh_posts
+app.jinja_env.globals["bot_freshness"] = bot_freshness
 
 if __name__ == "__main__":
     from waitress import serve
