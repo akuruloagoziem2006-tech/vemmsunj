@@ -1730,7 +1730,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   <p class="meta">No passes in the next 24 hours.</p>
 {% endif %}
 {% endif %}
-<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a> · <a href="/places/{{ place['id'] }}/simulate">Pass simulation</a> · <a href="/places/{{ place['id'] }}/tonight">What's up tonight</a></p>
+<p><a href="/places/{{ place['id'] }}/sky{% if at_value %}?at={{ at_value }}{% endif %}">Sky chart</a> · <a href="/compass?place={{ place['id'] }}">Star compass</a> · <a href="/places/{{ place['id'] }}/simulate">Pass simulation</a> · <a href="/places/{{ place['id'] }}/tonight">What's up tonight</a> · <a href="/observe/{{ place['id'] }}">Observation calendar</a></p>
 {% if eclipse %}
 <h2>Next possible eclipse</h2>
 <div class="place"><strong>{{ eclipse['name'] }}</strong>
@@ -6211,6 +6211,7 @@ PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 {% else %}
 <p class="meta">No planet is above the horizon right now.</p>
 {% endif %}
+<p class="meta">Open a planet for its times, a calendar file, and a share link: <a href="/planet/Venus?place={{ place['id'] }}">Venus</a> · <a href="/planet/Mercury?place={{ place['id'] }}">Mercury</a> · <a href="/planet/Mars?place={{ place['id'] }}">Mars</a> · <a href="/planet/Saturn?place={{ place['id'] }}">Saturn</a> · <a href="/planet/Uranus?place={{ place['id'] }}">Uranus</a> · <a href="/planet/Neptune?place={{ place['id'] }}">Neptune</a> · <a href="/planet/Jupiter?place={{ place['id'] }}">Jupiter</a></p>
 <p><a href="/planets/orbits">Watch the planets orbit the Sun</a></p>
 <nav class="seg" aria-label="Viewing equipment">
   <a href="/planets?place={{ place['id'] }}&view=all" {% if view == 'all' %}aria-current="page"{% endif %}>All</a>
@@ -8359,6 +8360,7 @@ PLANET_PROFILE_TEMPLATES = {"planet.html": """{% extends "base.html" %}
 {% else %}
 <p class="error">Planet data isn't available right now. Try again in a few minutes.</p>
 {% endif %}
+<p class="meta">Open a planet for its times, a calendar file, and a share link: <a href="/planet/Venus?place={{ place['id'] }}">Venus</a> · <a href="/planet/Mercury?place={{ place['id'] }}">Mercury</a> · <a href="/planet/Mars?place={{ place['id'] }}">Mars</a> · <a href="/planet/Saturn?place={{ place['id'] }}">Saturn</a> · <a href="/planet/Uranus?place={{ place['id'] }}">Uranus</a> · <a href="/planet/Neptune?place={{ place['id'] }}">Neptune</a> · <a href="/planet/Jupiter?place={{ place['id'] }}">Jupiter</a></p>
 <p><a href="/planets/orbits">Watch the planets orbit the Sun</a></p>
 {% endblock %}
 {% block scripts %}
