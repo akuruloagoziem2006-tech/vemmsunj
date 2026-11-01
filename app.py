@@ -8432,6 +8432,49 @@ OBSERVE_TEMPLATES = {"observe.html": """{% extends "base.html" %}
 app.jinja_env.loader.mapping.update(OBSERVE_TEMPLATES)
 
 # ---------- Space weather: a plain-language page built on the existing Kp feed ----------
+FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
+XRAY_URL = "https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json"
+
+def _flare_class(flux):
+    if flux >= 1e-4:
+        return f"X{flux / 1e-4:.1f}"
+    if flux >= 1e-5:
+        return f"M{flux / 1e-5:.1f}"
+    if flux >= 1e-6:
+        return f"C{flux / 1e-6:.1f}"
+    if flux >= 1e-7:
+        return f"B{flux / 1e-7:.1f}"
+    return f"A{flux / 1e-8:.1f}"
+
+def solar_activity():
+    """Latest 10.7 cm solar radio flux and the latest flare class from GOES X-rays. None values if unavailable."""
+    out = {"flux": None, "flare": None, "flare_time": None}
+    try:
+        body = cache_get("flux", 900)
+        if body is None:
+            r = requests.get(FLUX_URL, timeout=15)
+            r.raise_for_status()
+            body = r.text
+            cache_put("flux", body)
+        out["flux"] = round(float(json.loads(body)[-1]["flux"]), 0)
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+        print(f"flux error: {e}", flush=True)
+    try:
+        body = cache_get("xray", 900)
+        if body is None:
+            r = requests.get(XRAY_URL, timeout=15)
+            r.raise_for_status()
+            body = r.text
+            cache_put("xray", body)
+        rows = [row for row in json.loads(body) if row.get("energy") == "0.1-0.8nm"]
+        if rows:
+            latest = rows[-1]
+            out["flare"] = _flare_class(float(latest["flux"]))
+            out["flare_time"] = latest["time_tag"].replace("T", " ").rstrip("Z")
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as e:
+        print(f"xray error: {e}", flush=True)
+    return out
+
 @app.route("/space-weather")
 def space_weather_page():
     status = kp_status()
@@ -8439,7 +8482,8 @@ def space_weather_page():
         kp, level, when = None, None, None
     else:
         kp, level, when = status.get("kp"), status.get("level"), status.get("when")
-    return render_template("space_weather.html", kp=kp, level=level, when=when,
+    sol = solar_activity()
+    return render_template("space_weather.html", kp=kp, level=level, when=when, sol=sol,
                            title="Space weather", section="aurora")
 
 SPACE_WEATHER_TEMPLATES = {"space_weather.html": """{% extends "base.html" %}
@@ -8452,6 +8496,11 @@ SPACE_WEATHER_TEMPLATES = {"space_weather.html": """{% extends "base.html" %}
 {% else %}
 <p class="error">The space-weather reading isn't available right now. Try again in a few minutes.</p>
 {% endif %}
+<h2>Sun right now</h2>
+<div class="place"><strong>Solar radio flux {{ sol['flux'] if sol['flux'] is not none else '-' }}</strong>
+<div class="meta">A measure of the Sun's radio output at 10.7 cm. Higher values mean more solar activity, and usually more disturbance a day or two later.</div></div>
+<div class="place"><strong>Latest flare: {{ sol['flare'] or 'none reported' }}</strong>
+<div class="meta">{% if sol['flare_time'] %}At {{ sol['flare_time'] }} UTC. {% endif %}Flares are classed A, B, C, M, and X, from weakest to strongest. Each step is ten times the energy of the one before.</div></div>
 <h2>What the numbers mean</h2>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Kp</th><th>Meaning</th></tr></thead>
@@ -8462,6 +8511,7 @@ SPACE_WEATHER_TEMPLATES = {"space_weather.html": """{% extends "base.html" %}
 </tbody></table></div>
 <p class="meta">Kp is a three-hourly index of how much Earth's magnetic field is disturbed. A clear, dark sky is still needed to see aurora.</p>
 <p><a class="btn quiet" href="/aurora">Open the aurora map</a></p>
+<p class="meta">Also see: <a href="/space-weather">Space weather</a> on the Aurora page.</p>
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(SPACE_WEATHER_TEMPLATES)
