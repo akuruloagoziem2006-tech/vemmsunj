@@ -8783,6 +8783,16 @@ def bot_freshness():
 app.jinja_env.filters["fresh_posts"] = fresh_posts
 app.jinja_env.globals["bot_freshness"] = bot_freshness
 
+# ---------- Bright star catalogue, served as a static file through Flask ----------
+STAR_FILE = Path(__file__).resolve().parent / "public" / "data" / "bright_stars.json"
+
+@app.route("/data/bright_stars.json")
+def bright_stars_json():
+    if not STAR_FILE.exists():
+        abort(404)
+    return Response(STAR_FILE.read_bytes(), mimetype="application/json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
