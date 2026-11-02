@@ -4252,6 +4252,9 @@ def alarm_list(passes):
     return out
 
 # ---------- Star compass ----------
+# Faintest star shown in the sky list. Raise it for more stars, lower it for a shorter list.
+SKY_LIST_MAG_LIMIT = 6.0
+
 def sky_objects(lat, lon, when):
     """Stars, planets, the Moon, and stations satellites above the horizon, as altitude and azimuth."""
     out = []
@@ -4260,8 +4263,8 @@ def sky_objects(lat, lon, when):
     observer = wgs84.latlon(lat, lon)
     catalog = load_catalog_stars()
     if catalog:
-        for ra, dec, mag in catalog:
-            if mag > 4.5:
+        for ra, dec, mag, *_ in catalog:
+            if mag > SKY_LIST_MAG_LIMIT:
                 continue
             alt, az = star_altaz(ra, dec, lat, lon, when)
             if alt > 0:
