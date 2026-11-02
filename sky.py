@@ -140,8 +140,13 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.2f}" fill="#E9E6DC" opacity=".85"/>')
             label = rest[0] if rest else ""
             if label and mag < 1.7 and alt >= 10:
-                if all(math.hypot(x - lx, y - ly) > 60 for lx, ly in placed_labels):
-                    placed_labels.append((x, y))
+                lx0, ly0 = x + 6, y - 14
+                lw, lh = 7.0 * len(label) + 4, 14
+                box = (lx0, ly0, lx0 + lw, ly0 + lh)
+                def _clash(b, o):
+                    return not (b[2] < o[0] or o[2] < b[0] or b[3] < o[1] or o[3] < b[1])
+                if not any(_clash(box, o) for o in placed_labels):
+                    placed_labels.append(box)
                     parts.append(f'<text x="{x + 6:.1f}" y="{y - 5:.1f}" fill="#8C929C" font-family="sans-serif" font-size="11">{escape(label)}</text>')
     for name, ra, dec, mag in STARS:
         alt, az = star_altaz(ra, dec, lat, lon, when)
