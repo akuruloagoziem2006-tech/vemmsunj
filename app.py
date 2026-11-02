@@ -7479,7 +7479,9 @@ def skyview_page():
     place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?", (int(pid),)).fetchone()
     if place is None:
         abort(404)
-    return render_template("skyview.html", place=place, title="Sky view", section="compass")
+    places = [dict(r) for r in get_db().execute(
+        "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
+    return render_template("skyview.html", place=place, places=places, title="Sky view", section="compass")
 
 SKYVIEW_TEMPLATES = {"skyview.html": r"""{% extends "base.html" %}
 {% block head %}
@@ -7492,7 +7494,16 @@ SKYVIEW_TEMPLATES = {"skyview.html": r"""{% extends "base.html" %}
 {% block content %}
 <p><a href="/compass?place={{ place['id'] }}">Back to the compass list</a></p>
 <h1>Sky view</h1>
-<p class="meta">Place: {{ place['name'] }}. Turn the phone to look around. Tap a star or planet on screen to line it up with your view.</p>
+<p class="meta">Place: <span id="sv-name">{{ place['name'] }}</span>. Turn the phone to look around. Tap a star or planet on screen to line it up with your view.</p>
+<div class="sv-where near">
+  <label for="sv-place">Choose a place</label>
+  <select id="sv-place" onchange="svPlace(this.value)">
+    {% for pl in places %}<option value="{{ pl['id'] }}" {% if pl['id'] == place['id'] %}selected{% endif %}>{{ pl['name'] }}</option>{% endfor %}
+  </select>
+  <div class="actions"><button class="btn quiet" type="button" onclick="svLocate()">Use my location</button></div>
+  <p class="meta">A place uses its public coordinates. Use my location asks your browser for your position, and sends those coordinates to VEMMSUNJ only to calculate the sky above you. They aren't stored.</p>
+</div>
+<script type="application/json" id="sv-places">{{ places|tojson }}</script>
 <div class="sv-bar">
   <button id="sv-start" class="btn" type="button">Start sky view</button>
   <button id="sv-reset" class="btn quiet" type="button">Reset alignment</button>
@@ -7505,6 +7516,30 @@ SKYVIEW_TEMPLATES = {"skyview.html": r"""{% extends "base.html" %}
 (function () {
   var LAT = {{ place['latitude'] }};
   var LON = {{ place['longitude'] }};
+  window.svSetLocation = function (lat, lon, label) {
+    LAT = lat;
+    LON = lon;
+    document.getElementById("sv-name").textContent = label;
+    statusEl.textContent = "Showing the sky for " + label + ".";
+    loadSky();
+  };
+  window.svPlace = function (id) {
+    var list = JSON.parse(document.getElementById("sv-places").textContent);
+    var pl = list.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (pl) window.svSetLocation(pl.latitude, pl.longitude, pl.name);
+  };
+  window.svLocate = function () {
+    if (!navigator.geolocation) {
+      statusEl.textContent = "Location isn't available in this browser. Choose a place instead.";
+      return;
+    }
+    statusEl.textContent = "Finding your location...";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      window.svSetLocation(pos.coords.latitude, pos.coords.longitude, "your location");
+    }, function () {
+      statusEl.textContent = "Location was blocked. Choose a place instead.";
+    }, { timeout: 10000, maximumAge: 300000 });
+  };
   var D = Math.PI / 180;
   var HFOV = 70;
   var canvas = document.getElementById("sv-canvas");
@@ -7763,7 +7798,7 @@ PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
 <h2>What we count</h2>
 <p>We count page views and feature uses per page and per day, plus which places, satellites, and settings are chosen across all visitors. We don't record IP addresses, device details, or what any one person did.</p>
 <h2>Your location</h2>
-<p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. They aren't sent to us or stored.</p>
+<p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. In the sky view, Use my location sends your coordinates to our server only to calculate the sky above you, and they aren't stored.</p>
 <h2>Services we use</h2>
 <p>Hosting on Vercel, the database on Neon, orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are NASA's.</p>
 <h2>Removing your account</h2>
