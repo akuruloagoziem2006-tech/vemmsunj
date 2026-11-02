@@ -4253,7 +4253,7 @@ def alarm_list(passes):
 
 # ---------- Star compass ----------
 # Faintest star shown in the sky list. Raise it for more stars, lower it for a shorter list.
-SKY_LIST_MAG_LIMIT = 6.0
+SKY_LIST_MAG_LIMIT = 5.0
 
 def sky_objects(lat, lon, when):
     """Stars, planets, the Moon, and stations satellites above the horizon, as altitude and azimuth."""
