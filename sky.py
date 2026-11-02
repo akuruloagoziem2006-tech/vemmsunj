@@ -140,8 +140,8 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.2f}" fill="#E9E6DC" opacity=".85"/>')
             label = rest[0] if rest else ""
             if label and mag < 1.7 and alt >= 10:
-                lx0, ly0 = x + 6, y - 14
-                lw, lh = 7.0 * len(label) + 4, 14
+                lx0, ly0 = x + 6, y - 16
+                lw, lh = 7.5 * len(label) + 8, 16
                 box = (lx0, ly0, lx0 + lw, ly0 + lh)
                 def _clash(b, o):
                     return not (b[2] < o[0] or o[2] < b[0] or b[3] < o[1] or o[3] < b[1])
