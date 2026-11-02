@@ -127,6 +127,7 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
         parts.append(f'<text x="{x:.1f}" y="{y:.1f}" fill="#8C929C" font-family="sans-serif" font-size="13" text-anchor="middle">{label}</text>')
     if catalog:
         placed_labels = []
+        placed_points = []
         for ra, dec, mag, *rest in sorted(catalog, key=lambda s: s[2]):
             if mag > 6.5:
                 continue
@@ -145,8 +146,9 @@ def sky_svg(lat, lon, when, size=440, catalog=None):
                 box = (lx0, ly0, lx0 + lw, ly0 + lh)
                 def _clash(b, o):
                     return not (b[2] < o[0] or o[2] < b[0] or b[3] < o[1] or o[3] < b[1])
-                if not any(_clash(box, o) for o in placed_labels):
+                if not any(_clash(box, o) for o in placed_labels) and all(math.hypot(x - px, y - py) > 40 for px, py in placed_points):
                     placed_labels.append(box)
+                    placed_points.append((x, y))
                     parts.append(f'<text x="{x + 6:.1f}" y="{y - 5:.1f}" fill="#8C929C" font-family="sans-serif" font-size="11">{escape(label)}</text>')
     for name, ra, dec, mag in STARS:
         alt, az = star_altaz(ra, dec, lat, lon, when)
