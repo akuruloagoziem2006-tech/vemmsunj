@@ -8941,9 +8941,16 @@ STAR_FILE = Path(__file__).resolve().parent / "public" / "data" / "bright_stars.
 
 @app.route("/data/bright_stars.json")
 def bright_stars_json():
-    if not STAR_FILE.exists():
-        abort(404)
-    return Response(STAR_FILE.read_bytes(), mimetype="application/json",
+    """The bright star catalogue, served from the bundled module so it works on the server."""
+    from bright_stars_data import STAR_ROWS
+    stars = [[ra, dec, mag, name] for ra, dec, mag, name in STAR_ROWS]
+    body = {
+        "source": "Yale Bright Star Catalogue, 5th revised edition (Hoffleit and Warren, 1991)",
+        "count": len(stars),
+        "fields": ["ra_deg_j2000", "dec_deg_j2000", "visual_mag", "common_name"],
+        "stars": stars,
+    }
+    return Response(json.dumps(body, separators=(",", ":")), mimetype="application/json",
                     headers={"Cache-Control": "public, max-age=86400"})
 
 # ---------- Machine-readable pages: any tool can read the main pages as JSON ----------
