@@ -7226,6 +7226,80 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   draw();
 })();
 </script>
+<div class="catnr-row">
+  <label for="tr-catnr">Track any satellite by NORAD catalogue number</label>
+  <div class="catnr-line">
+    <input id="tr-catnr" inputmode="numeric" maxlength="9" placeholder="for example 20580 (Hubble)">
+    <button id="tr-catnr-go" class="btn quiet" type="button">Track</button>
+  </div>
+  <p class="meta"><button id="tr-catnr-clear" class="btn quiet" type="button">Stop tracking added satellites</button></p>
+  <p id="tr-catnr-status" class="meta" role="status" aria-live="polite"></p>
+</div>
+<script>
+(function () {
+  var KEY = 'vm-tracked-catnr';
+  var S = window.__vemmsunjTrackerState;
+  var table = document.querySelector('#live-table tbody');
+  if (!table) return;
+  function saved() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
+  function store(list) { localStorage.setItem(KEY, JSON.stringify(list)); }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function hasRow(name) {
+    return Array.prototype.some.call(table.querySelectorAll('tr.live-row'), function (r) { return r.getAttribute('data-name') === name; });
+  }
+  function addRow(d) {
+    if (!d || !d.name || hasRow(d.name)) return;
+    if (S) {
+      S.period[d.name] = d.period_s;
+      S.track[d.name] = d.ground || [];
+    }
+    var tr = document.createElement('tr');
+    tr.className = 'live-row tracked-extra';
+    tr.tabIndex = 0;
+    tr.setAttribute('data-name', d.name);
+    tr.setAttribute('data-period', d.period_s);
+    tr.innerHTML = '<td>' + esc(d.name) + '</td>' +
+      '<td class="c-lat">' + d.lat.toFixed(2) + '\u00b0</td>' +
+      '<td class="c-lon">' + d.lon.toFixed(2) + '\u00b0</td>' +
+      '<td class="c-alt">' + Math.round(d.alt_km) + ' km</td>' +
+      '<td class="c-speed">' + d.speed_kms.toFixed(2) + ' km/s</td>' +
+      '<td>' + Math.round(d.period_s / 60) + ' min</td>';
+    table.appendChild(tr);
+  }
+  function fetchAdd(catnr) {
+    return fetch('/api/globe/sat?catnr=' + catnr, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.satellite) addRow(d.satellite); return d; });
+  }
+  saved().forEach(function (n) { fetchAdd(n).catch(function () {}); });
+  var go = document.getElementById('tr-catnr-go');
+  var input = document.getElementById('tr-catnr');
+  var out = document.getElementById('tr-catnr-status');
+  var clear = document.getElementById('tr-catnr-clear');
+  if (go && input) {
+    go.addEventListener('click', function () {
+      var n = input.value.trim();
+      if (!/^[0-9]{1,9}$/.test(n)) { out.textContent = 'Enter a NORAD catalogue number, such as 20580 for Hubble.'; return; }
+      out.textContent = 'Loading satellite ' + n + '...';
+      fetchAdd(n).then(function (d) {
+        if (d.error) { out.textContent = d.error; return; }
+        var list = saved().filter(function (x) { return x !== n; });
+        list.push(n);
+        store(list);
+        out.textContent = 'Tracking ' + d.satellite.name + ' in the table and on the map.';
+        input.value = '';
+      }).catch(function () { out.textContent = "Couldn't load that satellite right now."; });
+    });
+  }
+  if (clear) {
+    clear.addEventListener('click', function () {
+      store([]);
+      table.querySelectorAll('tr.tracked-extra').forEach(function (r) { r.parentNode.removeChild(r); });
+      if (out) out.textContent = 'Added satellites removed.';
+    });
+  }
+})();
+</script>
 <label for="sat-search" class="meta">Search satellites</label>
 <input id="sat-search" type="search" placeholder="Type a satellite name" autocomplete="off" style="width:100%;min-height:44px;margin:.3rem 0 .6rem">
 <script>
