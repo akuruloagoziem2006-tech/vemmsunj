@@ -7124,7 +7124,8 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     ctx.lineWidth = 0.8;
     ctx.fillStyle = INK;
     ctx.font = '10px sans-serif';
-    for (var lon = -180; lon <= 180; lon += 30) {
+    var lonStep = B.W < 560 ? 60 : 30;
+    for (var lon = -180; lon <= 180; lon += lonStep) {
       var x = B.x0 + (lon + 180) / 360 * B.w;
       ctx.beginPath(); ctx.moveTo(x, B.y0); ctx.lineTo(x, B.y0 + B.h); ctx.stroke();
       ctx.textAlign = 'center';
@@ -7189,8 +7190,11 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
       if (iss || pt.selected) {
         ctx.font = '11px sans-serif';
         ctx.textAlign = 'left';
+        var tw = ctx.measureText(pt.name).width;
+        ctx.fillStyle = 'rgba(233,230,220,0.92)';
+        ctx.fillRect(p[0] + 5, p[1] - 17, tw + 6, 15);
         ctx.fillStyle = INK;
-        ctx.fillText(pt.name, p[0] + 7, p[1] - 6);
+        ctx.fillText(pt.name, p[0] + 8, p[1] - 6);
       }
     });
   }
