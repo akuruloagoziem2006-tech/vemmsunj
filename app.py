@@ -8344,7 +8344,7 @@ def vm_security_headers(resp):
     return resp
 
 VM_PUBLIC_PAGES = ["/", "/listings", "/map", "/posts", "/calendar", "/globe", "/aurora",
-                   "/planets", "/tracker", "/about", "/privacy", "/login", "/signup"]
+                   "/planets", "/tracker", "/about", "/privacy", "/login", "/signup", "/space-weather", "/planets/orbits", "/places/1/sky", "/observe/1", "/api/pages"]
 
 @app.route("/robots.txt")
 def vm_robots():
@@ -8944,6 +8944,121 @@ def bright_stars_json():
         abort(404)
     return Response(STAR_FILE.read_bytes(), mimetype="application/json",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+# ---------- Machine-readable pages: any tool can read the main pages as JSON ----------
+def _safe(what, fn):
+    try:
+        return fn()
+    except Exception as e:
+        print(f"{what} json error: {e}", flush=True)
+        return {"error": f"{what} isn't available right now. Try again in a few minutes."}
+
+def _json_places():
+    rows = get_db().execute(
+        "SELECT id, name, category, address, latitude, longitude, website FROM listings ORDER BY name").fetchall()
+    return {"places": [dict(r) for r in rows]}
+
+def _json_tracker():
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return {
+        "time": now,
+        "satellites": _safe("satellite positions", lambda: globe_snapshot()["satellites"]),
+        "asteroids": _safe("asteroid data", lambda: close_approaches()[:40]),
+        "comets": _safe("comet data", lambda: bright_comets()),
+    }
+
+def _json_planets():
+    place = _profile_place(request.args.get("place", "1"))
+    if place is None:
+        return {"error": "No place with that id."}
+    now = datetime.now(timezone.utc)
+    return {"place": place["name"], "time": now.isoformat(timespec="minutes"),
+            "planets": _safe("planet data", lambda: planet_rows(place, now))}
+
+def _json_space_weather():
+    return {"kp": _safe("Kp reading", kp_status), "solar": _safe("solar activity", solar_activity)}
+
+def _json_sightings():
+    rows = get_db().execute(
+        "SELECT id, author, body, listing_id, seen_at, created_at FROM posts ORDER BY id DESC LIMIT 50").fetchall()
+    return {"posts": fresh_posts([dict(r) for r in rows])}
+
+def _json_home():
+    first = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
+    return {
+        "name": "VEMMSUNJ",
+        "about": "Sky-watching map for observatories, satellite passes, planets, and sightings.",
+        "sky_tonight": _safe("sky tonight", lambda: sky_tonight(first)) if first else None,
+        "pages": "/api/pages",
+    }
+
+JSON_PAGES = {
+    "/": _json_home,
+    "/listings": _json_places,
+    "/tracker": _json_tracker,
+    "/planets": _json_planets,
+    "/space-weather": _json_space_weather,
+    "/posts": _json_sightings,
+}
+
+@app.before_request
+def vm_json_negotiation():
+    if request.method != "GET":
+        return None
+    builder = JSON_PAGES.get(request.path)
+    if builder is None:
+        return None
+    accept = request.accept_mimetypes
+    wants_json = request.args.get("format") == "json" or accept["application/json"] > accept["text/html"]
+    if not wants_json:
+        return None
+    resp = jsonify(builder())
+    resp.headers["Cache-Control"] = "public, max-age=60"
+    return resp
+
+NOSCRIPT_NOTE = ('<noscript><p class="meta">This page is built with JavaScript for its live views. '
+                 'Its data is available as JSON from <a href="/api/pages">the page index</a>.</p></noscript>')
+
+@app.after_request
+def vm_noscript_note(resp):
+    try:
+        if resp.status_code == 200 and resp.mimetype == "text/html" and not resp.direct_passthrough:
+            text = resp.get_data(as_text=True)
+            if "</body>" in text and "<noscript><p class=\"meta\">This page is built with JavaScript" not in text:
+                resp.set_data(text.replace("</body>", NOSCRIPT_NOTE + "</body>", 1))
+    except Exception as e:
+        print(f"noscript note error: {e}", flush=True)
+    return resp
+
+@app.route("/api/pages")
+def api_pages():
+    """Index of every page, with its HTML address and, where available, its JSON address."""
+    pages = [
+        ("/", "Home"), ("/listings", "Places"), ("/map", "Map"), ("/posts", "Sightings"),
+        ("/calendar", "Calendar"), ("/globe", "Globe"), ("/aurora", "Aurora"), ("/planets", "Planets"),
+        ("/planets/orbits", "Planet orbits"), ("/tracker", "Satellite tracker"),
+        ("/skyview?place=1", "Sky view"), ("/space-weather", "Space weather"),
+        ("/about", "About"), ("/privacy", "Privacy"), ("/places/1", "Place: Griffith Observatory"),
+        ("/places/1/sky", "Sky chart"), ("/places/1/tonight", "What's up tonight"),
+        ("/observe/1", "Observation calendar"), ("/planet/Jupiter?place=1", "Planet profile: Jupiter"),
+    ]
+    json_for = {
+        "/": "/?format=json", "/listings": "/listings?format=json", "/tracker": "/tracker?format=json",
+        "/planets": "/planets?format=json", "/space-weather": "/space-weather?format=json",
+        "/posts": "/posts?format=json",
+    }
+    data_endpoints = {
+        "Globe satellites": "/api/globe", "Globe consistency check": "/api/globe-check",
+        "Sky data for a place": "/api/sky?lat=34.1184&lon=-118.3004",
+        "Passes for a place": "/api/passes/1", "Planet positions": "/api/orbits",
+        "Bright star catalogue": "/data/bright_stars.json",
+    }
+    return jsonify({
+        "pages": [{"name": name, "html": path, "json": json_for.get(path.split("?")[0])
+                   if path.split("?")[0] in json_for else None} for path, name in pages],
+        "data": data_endpoints,
+        "note": "Add ?format=json to a page address, or send Accept: application/json, to read its JSON.",
+    })
 
 if __name__ == "__main__":
     from waitress import serve
