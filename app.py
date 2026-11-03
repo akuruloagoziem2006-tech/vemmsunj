@@ -5576,6 +5576,7 @@ ADMIN_TEMPLATES = {"admin.html": """{% extends "base.html" %}
 {% for pl in places %}<tr><td>{{ pl['name'] }}</td><td>{{ pl['category'] }}</td><td>{{ pl['sightings'] }}</td><td><form method="post" action="/admin/places/{{ pl['id'] }}/delete" class="inline" onsubmit="return confirm('Remove this place? Its sightings stay but are unlinked. This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Remove</button></form></td></tr>{% else %}<tr><td colspan="4">No places.</td></tr>{% endfor %}
 </tbody></table></div>
 
+<p class="meta"><a href="/admin/health">Data health checks</a></p>
 <h2 id="moderation">Community moderation</h2>
 <p class="meta">Posts that fail a spam check are held here. Reports only come to this list, and nothing is hidden automatically.</p>
 <h3>Limits</h3>
@@ -9059,6 +9060,70 @@ def api_pages():
         "data": data_endpoints,
         "note": "Add ?format=json to a page address, or send Accept: application/json, to read its JSON.",
     })
+
+# ---------- Health dashboard: checks each data endpoint from the server ----------
+HEALTH_CHECKS = [
+    ("Bright star catalogue", "/data/bright_stars.json", None),
+    ("Globe satellites", "/api/globe", "satellites"),
+    ("Globe consistency", "/api/globe-check", "satellites"),
+    ("Planet positions", "/api/orbits", "planets"),
+    ("Sky data (Griffith)", "/api/sky?lat=34.1184&lon=-118.3004", "objects"),
+    ("Passes (Griffith)", "/api/passes/1", "passes"),
+    ("Page index", "/api/pages", "pages"),
+]
+
+def run_health_checks():
+    import time as _t
+    results = []
+    client = app.test_client()
+    for name, path, key in HEALTH_CHECKS:
+        t0 = _t.time()
+        row = {"name": name, "path": path, "status": None, "ms": None, "ok": False, "detail": ""}
+        try:
+            r = client.get(path, headers={"Host": "vemmsunj.vercel.app"})
+            row["status"] = r.status_code
+            row["ms"] = round((_t.time() - t0) * 1000)
+            if r.status_code != 200:
+                row["detail"] = f"returned {r.status_code}"
+            elif key is None:
+                row["ok"] = len(r.get_data()) > 1000
+                row["detail"] = f"{len(r.get_data())} bytes"
+            else:
+                body = r.get_json(silent=True) or {}
+                if key not in body:
+                    row["detail"] = f"missing field '{key}'"
+                elif isinstance(body[key], list) and not body[key] and key not in ("passes",):
+                    row["detail"] = f"'{key}' is empty"
+                else:
+                    row["ok"] = True
+                    row["detail"] = body.get("time") or body.get("fetched_at") or "ok"
+        except Exception as e:
+            row["detail"] = f"error: {e.__class__.__name__}"
+        results.append(row)
+    return results
+
+@app.route("/admin/health")
+def admin_health():
+    if not _is_admin():
+        abort(404)
+    return render_template("health.html", rows=run_health_checks(), title="Health", section="")
+
+HEALTH_TEMPLATES = {"health.html": """{% extends "base.html" %}
+{% block content %}
+<p><a href="/admin">Back to the admin page</a></p>
+<h1>Data health</h1>
+<p class="meta">Each data endpoint, checked from the server now. Refresh the page to check again.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Source</th><th>Status</th><th>Response time</th><th>Result</th></tr></thead>
+<tbody>
+{% for r in rows %}<tr><td>{{ r['name'] }}<div class="meta">{{ r['path'] }}</div></td>
+<td>{% if r['ok'] %}OK{% else %}Problem{% endif %} ({{ r['status'] or 'no response' }})</td>
+<td>{{ r['ms'] if r['ms'] is not none else '-' }} ms</td>
+<td>{{ r['detail'] }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(HEALTH_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
