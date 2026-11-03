@@ -7070,22 +7070,88 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   if (!canvas) return;
   var ctx = canvas.getContext('2d');
   var dpr = window.devicePixelRatio || 1;
-
-  var seed = 7;
-  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-  var stars = [];
-  for (var i = 0; i < 180; i++) {
-    stars.push({ x: rnd(), y: rnd(), r: rnd() * 0.9 + 0.2, a: rnd() * 0.6 + 0.2 });
-  }
+  var M = { l: 36, r: 14, t: 22, b: 30 };
+  var PAPER = '#E9E6DC', INK = '#0a0a0a';
+  var OCEAN_A = '#1d4670', OCEAN_B = '#0f2a47', LAND = '#5a7a45';
+  var COUNTRIES = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson';
+  var land = [];
 
   function size() {
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight || Math.round(w / 2);
+    var w = canvas.clientWidth, h = canvas.clientHeight || Math.round(w / 2);
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-
+  function box() {
+    var W = canvas.clientWidth, H = canvas.clientHeight || Math.round(W / 2);
+    return { W: W, H: H, x0: M.l, y0: M.t, w: W - M.l - M.r, h: H - M.t - M.b };
+  }
+  function xy(lat, lon, B) {
+    return [B.x0 + (lon + 180) / 360 * B.w, B.y0 + (90 - lat) / 180 * B.h];
+  }
+  function degLabel(v, pos, neg) {
+    var suffix = v > 0 ? pos : (v < 0 ? neg : '');
+    return Math.abs(v) + '\u00b0' + suffix;
+  }
+  function loadLand() {
+    fetch(COUNTRIES).then(function (r) { return r.json(); }).then(function (gj) {
+      gj.features.forEach(function (f) {
+        var g = f.geometry;
+        if (!g) return;
+        var polys = g.type === 'Polygon' ? [g.coordinates] : (g.type === 'MultiPolygon' ? g.coordinates : []);
+        polys.forEach(function (poly) { land.push(poly[0]); });
+      });
+      draw();
+    }).catch(function () {});
+  }
+  function drawLand(B) {
+    ctx.fillStyle = LAND;
+    land.forEach(function (ring) {
+      ctx.beginPath();
+      var prevLon = null;
+      ring.forEach(function (pt) {
+        var p = xy(pt[1], pt[0], B);
+        if (prevLon === null || Math.abs(pt[0] - prevLon) > 180) ctx.moveTo(p[0], p[1]);
+        else ctx.lineTo(p[0], p[1]);
+        prevLon = pt[0];
+      });
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+  function drawGrid(B) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.fillStyle = INK;
+    ctx.font = '10px sans-serif';
+    for (var lon = -180; lon <= 180; lon += 30) {
+      var x = B.x0 + (lon + 180) / 360 * B.w;
+      ctx.beginPath(); ctx.moveTo(x, B.y0); ctx.lineTo(x, B.y0 + B.h); ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillText(degLabel(lon, 'E', 'W'), x, B.y0 - 8);
+      ctx.fillText(degLabel(lon, 'E', 'W'), x, B.y0 + B.h + 16);
+    }
+    for (var lat = -60; lat <= 60; lat += 30) {
+      var y = B.y0 + (90 - lat) / 180 * B.h;
+      ctx.beginPath(); ctx.moveTo(B.x0, y); ctx.lineTo(B.x0 + B.w, y); ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.fillText(degLabel(lat, 'N', 'S'), B.x0 - 5, y + 3);
+    }
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.2;
+    var ey = B.y0 + B.h / 2;
+    ctx.beginPath(); ctx.moveTo(B.x0, ey); ctx.lineTo(B.x0 + B.w, ey); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = INK;
+    ctx.fillText('Equator', B.x0 + 6, ey - 4);
+    ctx.restore();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(B.x0, B.y0, B.w, B.h);
+  }
   function points() {
     var out = [];
     document.querySelectorAll('.live-row').forEach(function (row) {
@@ -7098,112 +7164,51 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     });
     return out;
   }
-
-  function xy(lat, lon, W, H) {
-    return [(lon + 180) / 360 * W, (90 - lat) / 180 * H];
-  }
-
-  function background(W, H) {
-    var g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#0B1A30');
-    g.addColorStop(0.5, '#05070B');
-    g.addColorStop(1, '#0A0F1C');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-    var glow = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, W * 0.6);
-    glow.addColorStop(0, 'rgba(43,90,150,0.10)');
-    glow.addColorStop(1, 'rgba(43,90,150,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, W, H);
-    stars.forEach(function (st) {
-      ctx.beginPath();
-      ctx.arc(st.x * W, st.y * H, st.r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(233,230,220,' + st.a + ')';
-      ctx.fill();
-    });
-  }
-
-  function graticule(W, H) {
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(120,150,190,0.12)';
-    for (var lon = -180; lon <= 180; lon += 30) {
-      var x = (lon + 180) / 360 * W;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (var lat = -60; lat <= 60; lat += 30) {
-      var y = (90 - lat) / 180 * H;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-    ctx.setLineDash([4, 6]);
-    ctx.strokeStyle = 'rgba(232,194,122,0.35)';
-    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  function drawSat(x, y, name, selected) {
-    var iss = /ISS/i.test(name);
-    var k = iss ? 1.9 : 1;
-    ctx.save();
-    ctx.translate(x, y);
-    if (selected || iss) {
-      ctx.beginPath();
-      ctx.arc(0, 0, 12 * k, 0, Math.PI * 2);
-      ctx.strokeStyle = selected ? 'rgba(232,194,122,0.9)' : 'rgba(201,85,58,0.7)';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-    }
-    ctx.shadowColor = iss ? 'rgba(201,85,58,0.9)' : 'rgba(160,200,255,0.8)';
-    ctx.shadowBlur = iss ? 12 : 6;
-    ctx.fillStyle = '#2B5F9E';
-    ctx.strokeStyle = '#8FB7D6';
-    ctx.lineWidth = 0.6;
-    ctx.fillRect(-7 * k, -3 * k, 5 * k, 6 * k);
-    ctx.strokeRect(-7 * k, -3 * k, 5 * k, 6 * k);
-    ctx.fillRect(2 * k, -3 * k, 5 * k, 6 * k);
-    ctx.strokeRect(2 * k, -3 * k, 5 * k, 6 * k);
-    ctx.fillStyle = '#D9DEE6';
-    ctx.fillRect(-1.5 * k, -2.5 * k, 3 * k, 5 * k);
-    ctx.fillStyle = '#C9A24A';
-    ctx.fillRect(-0.7 * k, -4 * k, 1.4 * k, 1.5 * k);
-    ctx.restore();
-  }
-
   function draw() {
-    var W = canvas.clientWidth, H = canvas.clientHeight;
-    if (!W || !H) return;
-    background(W, H);
-    graticule(W, H);
-    var pts = points();
-    pts.forEach(function (pt) {
-      if (pt.selected || /ISS/i.test(pt.name)) return;
-      var p = xy(pt.lat, pt.lon, W, H);
-      drawSat(p[0], p[1], pt.name, false);
-    });
-    pts.forEach(function (pt) {
-      if (!(pt.selected || /ISS/i.test(pt.name))) return;
-      var p = xy(pt.lat, pt.lon, W, H);
-      drawSat(p[0], p[1], pt.name, pt.selected);
-      ctx.font = '11px sans-serif';
-      ctx.fillStyle = pt.selected ? '#E8C27A' : '#E9856A';
-      ctx.fillText(pt.name, p[0] + 14, p[1] - 10);
+    var B = box();
+    if (!B.W || !B.H) return;
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, B.W, B.H);
+    var g = ctx.createLinearGradient(0, B.y0, 0, B.y0 + B.h);
+    g.addColorStop(0, OCEAN_A);
+    g.addColorStop(1, OCEAN_B);
+    ctx.fillStyle = g;
+    ctx.fillRect(B.x0, B.y0, B.w, B.h);
+    drawLand(B);
+    drawGrid(B);
+    points().forEach(function (pt) {
+      var p = xy(pt.lat, pt.lon, B);
+      var iss = /ISS/i.test(pt.name);
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], pt.selected ? 5.5 : (iss ? 4.5 : 3), 0, Math.PI * 2);
+      ctx.fillStyle = iss ? '#b8432b' : '#111';
+      ctx.fill();
+      ctx.lineWidth = pt.selected ? 2 : 1;
+      ctx.strokeStyle = pt.selected ? '#E8C27A' : '#fff';
+      ctx.stroke();
+      if (iss || pt.selected) {
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = INK;
+        ctx.fillText(pt.name, p[0] + 7, p[1] - 6);
+      }
     });
   }
-
   canvas.addEventListener('click', function (e) {
-    var W = canvas.clientWidth, H = canvas.clientHeight;
+    var B = box();
     var r = canvas.getBoundingClientRect();
     var mx = e.clientX - r.left, my = e.clientY - r.top;
     var best = null, bestD = 16;
     points().forEach(function (pt) {
-      var p = xy(pt.lat, pt.lon, W, H);
+      var p = xy(pt.lat, pt.lon, B);
       var d = Math.hypot(p[0] - mx, p[1] - my);
       if (d < bestD) { bestD = d; best = pt; }
     });
     if (best) best.row.click();
   });
-
   window.addEventListener('resize', function () { size(); draw(); });
   size();
+  if (!land.length) loadLand();
   if (window.__vmSkyMapTimer) clearInterval(window.__vmSkyMapTimer);
   window.__vmSkyMapTimer = setInterval(draw, 1000);
   draw();
