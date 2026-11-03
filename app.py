@@ -7236,7 +7236,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   <p id="tr-catnr-status" class="meta" role="status" aria-live="polite"></p>
 </div>
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
   var KEY = 'vm-tracked-catnr';
   var S = window.__vemmsunjTrackerState;
   var table = document.querySelector('#live-table tbody');
@@ -7298,7 +7298,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
       if (out) out.textContent = 'Added satellites removed.';
     });
   }
-})();
+});
 </script>
 <label for="sat-search" class="meta">Search satellites</label>
 <input id="sat-search" type="search" placeholder="Type a satellite name" autocomplete="off" style="width:100%;min-height:44px;margin:.3rem 0 .6rem">
