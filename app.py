@@ -7454,7 +7454,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var links = document.createElement('div');
     links.className = 'links';
     [['See the orbit on the Globe', '/globe'],
-     ['Pass simulation for Griffith Observatory', '/places/1/simulate']].forEach(function (l) {
+     ['Pass simulation for Griffith Observatory', '/places/1/simulate'], ['Log a sighting', '/posts']].forEach(function (l) {
       var a = document.createElement('a');
       a.className = 'btn quiet';
       a.href = l[1];
@@ -7870,6 +7870,20 @@ ABOUT_TEMPLATES = {"about.html": """{% extends "base.html" %}
 <p>Your location stays in your browser when you use Near me or the sky view. We store your account, your sightings, your likes and follows, and your log entries. See the <a href="/privacy">privacy page</a>.</p>
 <h2>Contact</h2>
 <p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a>.</p>
+<h2>Data sources and how they're calculated</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Data</th><th>Source</th><th>Updated</th><th>Method and limits</th></tr></thead>
+<tbody>
+<tr><td>Satellite positions</td><td>CelesTrak orbit data (TLE)</td><td>Orbit data at most every 6 hours; positions every second</td><td>SGP4 propagation from the orbit data. Accuracy degrades as the orbit data ages.</td></tr>
+<tr><td>Planet positions</td><td>NASA JPL DE421 ephemeris</td><td>Fixed ephemeris file</td><td>Geometric positions, apparent for the observer. Accurate for observing, not for spacecraft navigation.</td></tr>
+<tr><td>Bright stars</td><td>Yale Bright Star Catalogue (Hoffleit and Warren, 1991)</td><td>Static</td><td>Positions precessed to the date. Accurate to about a quarter of a degree. Stars to magnitude 6.5 on charts.</td></tr>
+<tr><td>Pass times</td><td>Calculated from CelesTrak orbits</td><td>Pass summaries every six hours</td><td>Predicted, not observed. Times are the 10 degree crossings, so they are close to but not exactly when a satellite clears the horizon.</td></tr>
+<tr><td>Aurora and space weather</td><td>NOAA Space Weather Prediction Center</td><td>About every 15 to 30 minutes</td><td>Forecast and reported values. Reality can differ, especially in short-term storms.</td></tr>
+<tr><td>Seeing and weather</td><td>7Timer! and Open-Meteo</td><td>Cached for an hour</td><td>Model forecasts. Local conditions can differ.</td></tr>
+<tr><td>Asteroids and comets</td><td>NASA JPL Small-Body Database</td><td>Cached for six hours</td><td>Orbit-derived. Comet brightness is hard to predict.</td></tr>
+</tbody></table></div>
+<p class="meta">Automated sightings are predictions, not observations. Each one shows when it was posted, and pass summaries older than six hours are hidden.</p>
+
 <h2>Open source</h2>
 <p>VEMMSUNJ is released under the MIT licence. The code and the credits are on <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a>.</p>
 {% endblock %}
@@ -8544,6 +8558,7 @@ PLANET_PROFILE_TEMPLATES = {"planet.html": """{% extends "base.html" %}
   <button id="share-btn" class="btn quiet" type="button">Share this observation</button>
 </p>
 <p class="meta" id="share-status" role="status" aria-live="polite"></p>
+<p class="meta">Next steps: <a href="/places/{{ place['id'] }}/sky">sky chart</a> · <a href="/observe/{{ place['id'] }}">observation calendar</a> · <a href="/posts">log what you see</a></p>
 {% else %}
 <p class="error">Planet data isn't available right now. Try again in a few minutes.</p>
 {% endif %}
