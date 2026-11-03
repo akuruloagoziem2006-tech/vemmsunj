@@ -7187,14 +7187,22 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
       ctx.lineWidth = pt.selected ? 2 : 1;
       ctx.strokeStyle = pt.selected ? '#E8C27A' : '#fff';
       ctx.stroke();
-      if (iss || pt.selected) {
+      if ((iss || pt.selected) && !pt.grouped) {
+        var names = [pt.name];
+        points().forEach(function (o) {
+          if (o !== pt && Math.abs(o.lat - pt.lat) < 0.01 && Math.abs(o.lon - pt.lon) < 0.01 && (/ISS/i.test(o.name) || o.selected)) {
+            names.push(o.name);
+            o.grouped = true;
+          }
+        });
+        var label = names.join(' / ');
         ctx.font = '11px sans-serif';
         ctx.textAlign = 'left';
-        var tw = ctx.measureText(pt.name).width;
+        var tw = ctx.measureText(label).width;
         ctx.fillStyle = 'rgba(233,230,220,0.92)';
         ctx.fillRect(p[0] + 5, p[1] - 17, tw + 6, 15);
         ctx.fillStyle = INK;
-        ctx.fillText(pt.name, p[0] + 8, p[1] - 6);
+        ctx.fillText(label, p[0] + 8, p[1] - 6);
       }
     });
   }
