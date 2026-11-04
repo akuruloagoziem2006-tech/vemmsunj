@@ -9,3 +9,7 @@ secret_key.txt
 __pycache__/
 *.pyc
 android.keystore
+
+bsc5/
+check_site.sh
+java.js
