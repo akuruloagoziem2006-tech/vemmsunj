@@ -9087,7 +9087,7 @@ def run_health_checks():
         t0 = _t.time()
         row = {"name": name, "path": path, "status": None, "ms": None, "ok": False, "detail": ""}
         try:
-            r = client.get(path, headers={"Host": "vemmsunj.vercel.app"})
+            r = client.get(path, headers={"Host": "vemmsunj.vercel.app", "Cache-Control": "no-cache"})
             row["status"] = r.status_code
             row["ms"] = round((_t.time() - t0) * 1000)
             if r.status_code != 200:
