@@ -94,6 +94,7 @@ def connect():
     ))
 
 def get_db():
+    ensure_extra_schema()
     if "db" not in g:
         g.db = connect()
     return g.db
@@ -4075,10 +4076,11 @@ def load_catalog_stars():
     return out
 
 # ---------- Sky conditions, space weather, pass reminders ----------
-_kv = connect()
-_kv.execute("CREATE TABLE IF NOT EXISTS cache_kv (key TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at REAL NOT NULL)")
-_kv.commit()
-_kv.close()
+def _extra_schema_0():
+    _kv = connect()
+    _kv.execute("CREATE TABLE IF NOT EXISTS cache_kv (key TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at REAL NOT NULL)")
+    _kv.commit()
+    _kv.close()
 
 WX_URL = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
           "&hourly=cloud_cover,visibility,relative_humidity_2m,precipitation_probability"
@@ -4766,16 +4768,17 @@ def post_satellite_image(now=None):
         db.close()
 
 # ---------- Private observation log ----------
-_obs = connect()
-_obs.execute("""CREATE TABLE IF NOT EXISTS observations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    note TEXT NOT NULL,
-    listing_id INTEGER,
-    seen_at TEXT,
-    created_at TEXT NOT NULL)""")
-_obs.commit()
-_obs.close()
+def _extra_schema_1():
+    _obs = connect()
+    _obs.execute("""CREATE TABLE IF NOT EXISTS observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        note TEXT NOT NULL,
+        listing_id INTEGER,
+        seen_at TEXT,
+        created_at TEXT NOT NULL)""")
+    _obs.commit()
+    _obs.close()
 
 @app.route("/log")
 def log_page():
@@ -5062,10 +5065,11 @@ def new_recovery_code():
 def normalize_code(text):
     return re.sub(r"[^A-Z0-9]", "", text.upper())
 
-_db_recovery = connect()
-_db_recovery.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT")
-_db_recovery.commit()
-_db_recovery.close()
+def _extra_schema_2():
+    _db_recovery = connect()
+    _db_recovery.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT")
+    _db_recovery.commit()
+    _db_recovery.close()
 
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot():
@@ -5274,16 +5278,17 @@ def safe_next(value):
     return "/posts"
 
 # ---------- Usage statistics (counts only; no IP addresses) ----------
-_stats = connect()
-_stats.execute("""CREATE TABLE IF NOT EXISTS visits (
-    day TEXT NOT NULL,
-    path TEXT NOT NULL,
-    hits INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, path))""")
-_stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TEXT")
-_stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
-_stats.commit()
-_stats.close()
+def _extra_schema_3():
+    _stats = connect()
+    _stats.execute("""CREATE TABLE IF NOT EXISTS visits (
+        day TEXT NOT NULL,
+        path TEXT NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, path))""")
+    _stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TEXT")
+    _stats.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
+    _stats.commit()
+    _stats.close()
 
 ADMIN_USERNAMES = {u.strip().lower() for u in os.environ.get("ADMIN_USERNAMES", "").split(",") if u.strip()}
 SKIP_PREFIXES = ("/api/", "/static/", "/admin", "/sw.js", "/manifest", "/icon.svg", "/posts/")
@@ -7854,20 +7859,21 @@ def privacy_page():
     return render_template("privacy.html", title="Privacy", section="")
 
 # ---------- Data center: aggregated activity, no per-person records ----------
-_dc = connect()
-_dc.execute("""CREATE TABLE IF NOT EXISTS place_views (
-    day TEXT NOT NULL,
-    listing_id INTEGER NOT NULL,
-    views INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, listing_id))""")
-_dc.execute("""CREATE TABLE IF NOT EXISTS events (
-    day TEXT NOT NULL,
-    name TEXT NOT NULL,
-    item TEXT NOT NULL DEFAULT '',
-    hits INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, name, item))""")
-_dc.commit()
-_dc.close()
+def _extra_schema_4():
+    _dc = connect()
+    _dc.execute("""CREATE TABLE IF NOT EXISTS place_views (
+        day TEXT NOT NULL,
+        listing_id INTEGER NOT NULL,
+        views INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, listing_id))""")
+    _dc.execute("""CREATE TABLE IF NOT EXISTS events (
+        day TEXT NOT NULL,
+        name TEXT NOT NULL,
+        item TEXT NOT NULL DEFAULT '',
+        hits INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, name, item))""")
+    _dc.commit()
+    _dc.close()
 
 EVENT_LABELS = {
     "satellite_pick": "Satellite followed",
@@ -9094,6 +9100,17 @@ def vm_schema_once_disabled():
         return None
     init_schema()
     return None
+
+_EXTRA_SCHEMA_DONE = False
+
+def ensure_extra_schema():
+    """Create the extra tables and columns once, on the first request that needs them."""
+    global _EXTRA_SCHEMA_DONE
+    if _EXTRA_SCHEMA_DONE:
+        return
+    for fn in (_extra_schema_0, _extra_schema_1, _extra_schema_2, _extra_schema_3, _extra_schema_4):
+        fn()
+    _EXTRA_SCHEMA_DONE = True
 
 if __name__ == "__main__":
     from waitress import serve
