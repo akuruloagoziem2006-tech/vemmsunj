@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: vemmsunj
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --host=0.0.0.0 --port=$PORT app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: DATABASE_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ADMIN_USERNAMES
+        value: akurulo
+      - key: TRUST_PROXY
+        value: "1"
