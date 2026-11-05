@@ -9074,15 +9074,37 @@ app.jinja_env.loader.mapping.update(HEALTH_TEMPLATES)
 _globe_snapshot_raw = globe_snapshot
 _planet_rows_raw = planet_rows
 
+PRECOMPUTED_ONLY = os.environ.get("PRECOMPUTED_ONLY") == "1"
+
 def globe_snapshot(now=None):
     if now is not None:
         return _globe_snapshot_raw(now)
+    if PRECOMPUTED_ONLY:
+        # Web requests read the stored result from the scheduled job and never calculate.
+        body = cache_get("globe-snap-v1", 10**9)
+        if body:
+            return json.loads(body)
+        return {"satellites": [], "fetched_at": None,
+                "note": "Satellite positions are being calculated. Try again in a few minutes."}
     body = cache_get("globe-snap-v1", 60)
     if body:
         return json.loads(body)
     result = _globe_snapshot_raw()
     cache_put("globe-snap-v1", json.dumps(result))
     return result
+
+@app.route("/api/cron/precompute", methods=["GET", "POST"])
+def cron_precompute():
+    """Scheduled job: calculates the globe snapshot and stores it, so web requests only read it."""
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
+        abort(401)
+    started = time.time()
+    result = _globe_snapshot_raw()
+    cache_put("globe-snap-v1", json.dumps(result))
+    return jsonify({"stored": len(result["satellites"]),
+                    "seconds": round(time.time() - started, 1),
+                    "fetched_at": result.get("fetched_at")})
 
 def planet_rows(place, now):
     key = f"planets-v1:{place['id']}"
