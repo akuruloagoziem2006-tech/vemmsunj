@@ -1,0 +1,16 @@
+name: Precompute globe snapshot
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  precompute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculate and store the globe snapshot
+        run: |
+          curl -fsS --max-time 280 -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://vemmsunj.onrender.com/api/cron/precompute
