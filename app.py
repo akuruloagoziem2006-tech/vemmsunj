@@ -63,6 +63,14 @@ class DB:
         self.conn = conn
     def execute(self, sql, params=()):
         cur = self.conn.cursor()
+        import re as _re_alter
+        _m = _re_alter.match(r"\s*ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+)", sql, _re_alter.I)
+        if _m:
+            # Only alter when the column is missing: ALTER takes a lock that can wait on other sessions.
+            cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+                        (_m.group(1), _m.group(2)))
+            if cur.fetchone():
+                return None
         cur.execute(translate(sql), tuple(params))
         return Result(cur)
     def commit(self):
@@ -9055,6 +9063,29 @@ HEALTH_TEMPLATES = {"health.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(HEALTH_TEMPLATES)
+
+# ---------- Short caches for the heavy calculations (keeps free-tier pages responsive) ----------
+_globe_snapshot_raw = globe_snapshot
+_planet_rows_raw = planet_rows
+
+def globe_snapshot(now=None):
+    if now is not None:
+        return _globe_snapshot_raw(now)
+    body = cache_get("globe-snap-v1", 60)
+    if body:
+        return json.loads(body)
+    result = _globe_snapshot_raw()
+    cache_put("globe-snap-v1", json.dumps(result))
+    return result
+
+def planet_rows(place, now):
+    key = f"planets-v1:{place['id']}"
+    body = cache_get(key, 120)
+    if body:
+        return json.loads(body)
+    rows = _planet_rows_raw(place, now)
+    cache_put(key, json.dumps(rows))
+    return rows
 
 if __name__ == "__main__":
     from waitress import serve
