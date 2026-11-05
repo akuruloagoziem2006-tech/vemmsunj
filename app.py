@@ -9088,8 +9088,7 @@ def planet_rows(place, now):
     return rows
 
 
-@app.before_request
-def vm_schema_once():
+def vm_schema_once_disabled():
     """Create tables and seed on the first real request, so the server starts answering at once."""
     if request.path == "/healthz":
         return None
