@@ -207,7 +207,7 @@ def init_schema():
     db.commit()
     db.close()
 
-init_schema()
+# init_schema() now runs on the first request (see vm_schema_once), not at import
 
 # ---------- Secret key, cookies, CSRF ----------
 def load_secret():
@@ -9086,6 +9086,15 @@ def planet_rows(place, now):
     rows = _planet_rows_raw(place, now)
     cache_put(key, json.dumps(rows))
     return rows
+
+
+@app.before_request
+def vm_schema_once():
+    """Create tables and seed on the first real request, so the server starts answering at once."""
+    if request.path == "/healthz":
+        return None
+    init_schema()
+    return None
 
 if __name__ == "__main__":
     from waitress import serve
