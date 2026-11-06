@@ -8009,6 +8009,90 @@ def datacenter(db):
     }
 
 # ---------- Homepage redesign: sky tonight and the Near you card ----------
+PASS_SLICE_SIZE = 10
+
+def _stored_passes(place):
+    body = cache_get(f"passes-v1:{place['id']}", 10**9)
+    return json.loads(body) if body else []
+
+def _slice_count():
+    _, sats = get_satellites()
+    return max(1, -(-len(sats) // PASS_SLICE_SIZE))
+
+def find_passes_slice(lat, lon, k, hours=24, min_alt=10.0):
+    """Passes for one slice of satellites. The precompute job runs one slice per request."""
+    from skyfield.searchlib import find_discrete
+    ts, sats = get_satellites()
+    observer = wgs84.latlon(lat, lon)
+    start = datetime.now(timezone.utc)
+    t0 = ts.from_datetime(start)
+    t1 = ts.from_datetime(start + timedelta(hours=hours))
+    step_days = (5 if STARLINK else 1) / 1440.0
+    passes = []
+
+    def record(ta, tb, sat):
+        n = max(3, int((tb.tt - ta.tt) * 1440) + 1)
+        alt = (sat - observer).at(ts.linspace(ta, tb, n)).altaz()[0].degrees
+        passes.append({
+            "satellite": sat.name,
+            "start": ta.utc_datetime().isoformat(timespec="minutes"),
+            "end": tb.utc_datetime().isoformat(timespec="minutes"),
+            "max_altitude_deg": round(float(alt.max()), 1),
+        })
+
+    for sat in sats[k * PASS_SLICE_SIZE:(k + 1) * PASS_SLICE_SIZE]:
+        def above(t, sat=sat):
+            return (sat - observer).at(t).altaz()[0].degrees >= min_alt
+        above.step_days = step_days
+        times, flags = find_discrete(t0, t1, above)
+        cur = t0 if above(t0) else None
+        for tt, flag in zip(times, flags):
+            if flag:
+                cur = tt
+            elif cur is not None:
+                record(cur, tt, sat)
+                cur = None
+        if cur is not None:
+            record(cur, t1, sat)
+    passes.sort(key=lambda p: p["start"])
+    return passes
+
+def _post_stored_pass_summary(place, now):
+    """Posts a summary from stored passes. No satellite calculation happens here."""
+    db = connect()
+    try:
+        last = db.execute("SELECT created_at FROM posts WHERE author = ? AND listing_id = ? ORDER BY id DESC LIMIT 1",
+                          (BOT_NAME, place["id"])).fetchone()
+        if last:
+            t = _parse_created(last["created_at"])
+            if t and now - t < PASS_POST_GAP:
+                return "posted within six hours"
+        if sun_altitude_deg(place["latitude"], place["longitude"], now) > -6.0:
+            return "sun is up"
+        ahead = []
+        for u in _stored_passes(place):
+            st = datetime.fromisoformat(u["start"])
+            if st.tzinfo is None:
+                st = st.replace(tzinfo=timezone.utc)
+            if now <= st <= now + timedelta(hours=24):
+                ahead.append((st, u))
+        ahead = ahead[:3]
+        if not ahead:
+            return "no stored passes ahead"
+        at = cache_get(f"passes-at-v1:{place['id']}", 10**9)
+        stamp = datetime.fromisoformat(at).strftime("%H:%M") if at else now.strftime("%H:%M")
+        lines = [f"{u['satellite']} at {st.strftime('%H:%M')} UTC, peak {u['max_altitude_deg']} degrees"
+                 for st, u in ahead]
+        body = (f"{place['name']}, passes calculated at {stamp} UTC, upcoming from {now.strftime('%H:%M')} UTC: "
+                + "; ".join(lines) + ". Times are UTC.")
+        db.execute(
+            "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (BOT_NAME, body, place["id"], None, None, now.isoformat(timespec="minutes"), bot_chart(place["name"], ahead)))
+        db.commit()
+        return "posted"
+    finally:
+        db.close()
+
 def _sky_tonight_raw(place):
     key = f"sky-tonight:{place['id']}"
     cached = cache_get(key, 900)
@@ -8026,7 +8110,7 @@ def _sky_tonight_raw(place):
         print(f"sky tonight twilight error: {e}", flush=True)
     try:
         # The precompute job skips the heavy next-pass search; the web path only reads the stored card.
-        passes = [] if _PRE["on"] else cached_passes(place["id"], place)[0]
+        passes = _stored_passes(place) if (_PRE["on"] or _pre_only()) else cached_passes(place["id"], place)[0]
         for pz in passes:
             st = parse_when(pz["start"])
             if st >= now and pz["max_altitude_deg"] >= 30:
@@ -8229,7 +8313,7 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(HOME_NEW_TEMPLATES)
 
-HOME_CACHE_KEY = "home-data-v1"
+HOME_CACHE_KEY = "home-data-v2"
 
 def _home_data(db):
     """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
@@ -8249,7 +8333,7 @@ def _home_data(db):
     places = [dict(r) for r in db.execute(
         "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
     slides = [dict(r) for r in db.execute(
-        "SELECT id, body FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' "
+        "SELECT id, author, body, created_at FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' "
         "ORDER BY id DESC LIMIT 8").fetchall()]
     return {"recent": recent, "sky": sky, "places": places, "slides": slides}
 
@@ -8262,7 +8346,7 @@ def index():
         db = get_db()
         data = _home_data(db)
         cache_put(HOME_CACHE_KEY, json.dumps(data))
-    return render_template("home.html", recent=data["recent"], slides=data["slides"], sky=data["sky"],
+    return render_template("home.html", recent=fresh_posts(data["recent"]), slides=fresh_posts(data["slides"]), sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
 # ---------- Globe consistency check (read-only diagnostic) ----------
@@ -9127,9 +9211,8 @@ def globe_snapshot(now=None):
 
 @app.route("/api/cron/precompute", methods=["GET", "POST"])
 def cron_precompute():
-    """Scheduled job, one step per request.
-    step=ids returns every place id. step=planets and step=sky take ?place=<id> (default 1).
-    step=tracker computes every distance and window combination. step=globe takes no parameters."""
+    """Scheduled job, one short step per request. Steps: ids, globe, tracker, home, planets, sky, post,
+    passcount, pslice (place, slice), pmerge (place, n)."""
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
         abort(401)
@@ -9157,7 +9240,9 @@ def cron_precompute():
             cache_put(HOME_CACHE_KEY, json.dumps(data))
             db.close()
             result = {k: (len(v) if isinstance(v, list) else ("ok" if v else "none")) for k, v in data.items()}
-        elif step in ("planets", "sky"):
+        elif step == "passcount":
+            result = {"slices": _slice_count()}
+        elif step in ("planets", "sky", "post", "pslice", "pmerge"):
             pid = request.args.get("place", "1")
             if not pid.isdigit():
                 return jsonify({"step": step, "error": "bad place"}), 400
@@ -9170,8 +9255,28 @@ def cron_precompute():
             now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             if step == "planets":
                 result = len(planet_rows(place, now))
-            else:
+            elif step == "sky":
                 result = "ok" if sky_tonight(place) is not None else "none"
+            elif step == "pslice":
+                k = int(request.args.get("slice", "0"))
+                found = find_passes_slice(place["latitude"], place["longitude"], k)
+                cache_put(f"passes-slice-v1:{place['id']}:{k}", json.dumps(found))
+                result = len(found)
+            elif step == "pmerge":
+                n = int(request.args.get("n", "1"))
+                merged = []
+                for k in range(n):
+                    body = cache_get(f"passes-slice-v1:{place['id']}:{k}", 10**9)
+                    if body is None:
+                        raise RuntimeError(f"slice {k} missing for place {place['id']}")
+                    merged.extend(json.loads(body))
+                merged.sort(key=lambda x: x["start"])
+                merged = merged[:100]
+                cache_put(f"passes-v1:{place['id']}", json.dumps(merged))
+                cache_put(f"passes-at-v1:{place['id']}", now.isoformat(timespec="minutes"))
+                result = len(merged)
+            else:
+                result = _post_stored_pass_summary(place, now)
         else:
             return jsonify({"error": "unknown step"}), 400
     except Exception as e:
