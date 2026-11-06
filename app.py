@@ -8028,7 +8028,7 @@ def datacenter(db):
     }
 
 # ---------- Homepage redesign: sky tonight and the Near you card ----------
-PASS_SLICE_SIZE = 10
+PASS_SLICE_SIZE = 30
 PASS_MAX_SATS = 30  # the pass search covers the first 30 satellites, to fit the free instance
 
 def _stored_passes(place):
@@ -8039,42 +8039,45 @@ def _slice_count():
     _, sats = get_satellites()
     return max(1, -(-min(len(sats), PASS_MAX_SATS) // PASS_SLICE_SIZE))
 
-def find_passes_slice(lat, lon, k, hours=24, min_alt=10.0):
-    """Passes for one slice of satellites. The precompute job runs one slice per request."""
-    from skyfield.searchlib import find_discrete
+def find_passes_slice(lat, lon, k, hours=24, min_alt=10.0, step_min=2):
+    """Passes for one slice, from one vectorised altitude grid per satellite (times accurate to about a minute)."""
+    import numpy as np
     ts, sats = get_satellites()
     observer = wgs84.latlon(lat, lon)
-    start = datetime.now(timezone.utc)
-    t0 = ts.from_datetime(start)
-    t1 = ts.from_datetime(start + timedelta(hours=hours))
-    step_days = (5 if STARLINK else 1) / 1440.0
+    start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    n = int(hours * 60 / step_min) + 1
+    offsets = [step_min * i for i in range(n)]
+    times = ts.from_datetimes([start + timedelta(minutes=m) for m in offsets])
     passes = []
 
-    def record(ta, tb, sat):
-        n = max(3, int((tb.tt - ta.tt) * 1440) + 1)
-        alt = (sat - observer).at(ts.linspace(ta, tb, n)).altaz()[0].degrees
+    def emit(sat, alt, i0, f0, i1, f1):
+        t0 = start + timedelta(minutes=offsets[i0] + f0 * step_min)
+        t1 = start + timedelta(minutes=offsets[i1] + f1 * step_min)
         passes.append({
             "satellite": sat.name,
-            "start": ta.utc_datetime().isoformat(timespec="minutes"),
-            "end": tb.utc_datetime().isoformat(timespec="minutes"),
-            "max_altitude_deg": round(float(alt.max()), 1),
+            "start": t0.isoformat(timespec="minutes"),
+            "end": t1.isoformat(timespec="minutes"),
+            "max_altitude_deg": round(float(alt[i0:i1 + 1].max()), 1),
         })
 
     for sat in sats[:PASS_MAX_SATS][k * PASS_SLICE_SIZE:(k + 1) * PASS_SLICE_SIZE]:
-        def above(t, sat=sat):
-            return (sat - observer).at(t).altaz()[0].degrees >= min_alt
-        above.step_days = step_days
-        times, flags = find_discrete(t0, t1, above)
-        cur = t0 if above(t0) else None
-        for tt, flag in zip(times, flags):
-            if flag:
-                cur = tt
-            elif cur is not None:
-                record(cur, tt, sat)
-                cur = None
-        if cur is not None:
-            record(cur, t1, sat)
-    passes.sort(key=lambda p: p["start"])
+        alt = np.asarray((sat - observer).at(times).altaz()[0].degrees)
+        up = alt >= min_alt
+        if not up.any():
+            continue
+        i_start, f_start = (0, 0.0) if up[0] else (None, 0.0)
+        for i in range(n - 1):
+            if up[i] == up[i + 1]:
+                continue
+            frac = float((min_alt - alt[i]) / (alt[i + 1] - alt[i]))
+            if up[i + 1]:
+                i_start, f_start = i, frac
+            elif i_start is not None:
+                emit(sat, alt, i_start, f_start, i, frac)
+                i_start = None
+        if i_start is not None:
+            emit(sat, alt, i_start, f_start, n - 1, 0.0)
+    passes.sort(key=lambda x: x["start"])
     return passes
 
 def _post_stored_pass_summary(place, now):
