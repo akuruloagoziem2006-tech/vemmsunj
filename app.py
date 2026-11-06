@@ -7996,7 +7996,7 @@ def datacenter(db):
     }
 
 # ---------- Homepage redesign: sky tonight and the Near you card ----------
-def sky_tonight(place):
+def _sky_tonight_raw(place):
     key = f"sky-tonight:{place['id']}"
     cached = cache_get(key, 900)
     if cached:
@@ -8012,7 +8012,8 @@ def sky_tonight(place):
     except Exception as e:
         print(f"sky tonight twilight error: {e}", flush=True)
     try:
-        passes, _ = cached_passes(place["id"], place)
+        # The precompute job skips the heavy next-pass search; the web path only reads the stored card.
+        passes = [] if _PRE["on"] else cached_passes(place["id"], place)[0]
         for pz in passes:
             st = parse_when(pz["start"])
             if st >= now and pz["max_altitude_deg"] >= 30:
@@ -9075,6 +9076,11 @@ _globe_snapshot_raw = globe_snapshot
 _planet_rows_raw = planet_rows
 
 PRECOMPUTED_ONLY = os.environ.get("PRECOMPUTED_ONLY") == "1"
+_PRE = {"on": False}
+
+def _pre_only():
+    return PRECOMPUTED_ONLY and not _PRE["on"]
+
 
 def globe_snapshot(now=None):
     if now is not None:
@@ -9095,16 +9101,38 @@ def globe_snapshot(now=None):
 
 @app.route("/api/cron/precompute", methods=["GET", "POST"])
 def cron_precompute():
-    """Scheduled job: calculates the globe snapshot and stores it, so web requests only read it."""
+    """Scheduled job, one step per request so each call stays short: ?step=globe|planets|sky|tracker"""
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
         abort(401)
+    step = request.args.get("step", "globe")
     started = time.time()
-    result = _globe_snapshot_raw()
-    cache_put("globe-snap-v1", json.dumps(result))
-    return jsonify({"stored": len(result["satellites"]),
-                    "seconds": round(time.time() - started, 1),
-                    "fetched_at": result.get("fetched_at")})
+    _PRE["on"] = True
+    try:
+        if step == "globe":
+            snap = _globe_snapshot_raw()
+            cache_put("globe-snap-v1", json.dumps(snap))
+            result = len(snap["satellites"])
+        elif step == "tracker":
+            result = len(close_approaches(TRACKER_DISTANCES.get("0.1", TRACKER_MAX_AU), TRACKER_WINDOWS.get("60", 60)))
+        elif step in ("planets", "sky"):
+            db = connect()
+            place = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
+            db.close()
+            if place is None:
+                return jsonify({"step": step, "error": "no place"}), 404
+            now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            if step == "planets":
+                result = len(planet_rows(place, now))
+            else:
+                result = "ok" if sky_tonight(place) is not None else "none"
+        else:
+            return jsonify({"error": "unknown step"}), 400
+    except Exception as e:
+        return jsonify({"step": step, "error": e.__class__.__name__, "seconds": round(time.time() - started, 1)}), 500
+    finally:
+        _PRE["on"] = False
+    return jsonify({"step": step, "result": result, "seconds": round(time.time() - started, 1)})
 
 def planet_rows(place, now):
     key = f"planets-v1:{place['id']}"
@@ -9133,6 +9161,41 @@ def ensure_extra_schema():
     for fn in (_extra_schema_0, _extra_schema_1, _extra_schema_2, _extra_schema_3, _extra_schema_4):
         fn()
     _EXTRA_SCHEMA_DONE = True
+
+
+_planet_rows_wrapped = planet_rows
+
+def planet_rows(place, now):
+    key = f"planets-v1:{place['id']}"
+    if _pre_only():
+        body = cache_get(key, 10**9)
+        return json.loads(body) if body else []
+    if _PRE["on"]:
+        rows = _planet_rows_raw(place, now)
+        cache_put(key, json.dumps(rows))
+        return rows
+    return _planet_rows_wrapped(place, now)
+
+
+def sky_tonight(place):
+    key = f"sky-tonight-v1:{place['id']}"
+    if _pre_only():
+        body = cache_get(key, 10**9)
+        return json.loads(body) if body else None
+    if _PRE["on"]:
+        result = _sky_tonight_raw(place)
+        cache_put(key, json.dumps(result))
+        return result
+    return _sky_tonight_raw(place)
+
+
+_close_approaches_raw = close_approaches
+
+def close_approaches(dist_au=TRACKER_MAX_AU, days=60):
+    if _pre_only():
+        if cache_get(f"jpl-cad:{dist_au}:{days}", 10**9) is None:
+            return []
+    return _close_approaches_raw(dist_au, days)
 
 if __name__ == "__main__":
     from waitress import serve
