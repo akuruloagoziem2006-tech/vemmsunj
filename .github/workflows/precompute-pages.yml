@@ -1,9 +1,13 @@
-name: Precompute planets, sky card, home and tracker
+name: Precompute planets, sky card, posts, home and tracker
 
 on:
   schedule:
     - cron: "10,40 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: render-precompute
+  cancel-in-progress: false
 
 jobs:
   precompute:
@@ -24,9 +28,9 @@ jobs:
           IDS=$(curl -fsS --max-time 120 -X POST -H "$H" "$B?step=ids" | python3 -c "import json,sys; print(' '.join(str(i) for i in json.load(sys.stdin)['ids']))")
           echo "places: $IDS"
           for id in $IDS; do
-            for step in planets sky; do
+            for step in planets sky post; do
               call "step=$step&place=$id" || true
-              sleep 15
+              sleep 10
             done
           done
           call "step=home" || true

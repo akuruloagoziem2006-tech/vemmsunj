@@ -1,0 +1,39 @@
+name: Passes in slices (every six hours)
+
+on:
+  schedule:
+    - cron: "5 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: render-precompute
+  cancel-in-progress: false
+
+jobs:
+  passes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute pass slices and merge per place
+        run: |
+          H="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          B="https://vemmsunj.onrender.com/api/cron/precompute"
+          FAILED=""
+          call() {
+            for attempt in 1 2 3; do
+              if curl -fsS --max-time 280 -X POST -H "$H" "$B?$1"; then echo; return 0; fi
+              echo "attempt $attempt failed for $1"; sleep 45
+            done
+            FAILED="$FAILED [$1]"; return 1
+          }
+          IDS=$(curl -fsS --max-time 120 -X POST -H "$H" "$B?step=ids" | python3 -c "import json,sys; print(' '.join(str(i) for i in json.load(sys.stdin)['ids']))")
+          N=$(curl -fsS --max-time 120 -X POST -H "$H" "$B?step=passcount" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['slices'])")
+          echo "places: $IDS  slices: $N"
+          for id in $IDS; do
+            for k in $(seq 0 $((N-1))); do
+              call "step=pslice&place=$id&slice=$k" || true
+              sleep 5
+            done
+            call "step=pmerge&place=$id&n=$N" || true
+            sleep 5
+          done
+          if [ -n "$FAILED" ]; then echo "failed steps:$FAILED"; exit 1; fi
