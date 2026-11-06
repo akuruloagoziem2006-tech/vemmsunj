@@ -4149,6 +4149,36 @@ def _fmt(v, unit=""):
 
 _WX_LAST_ERROR = {}
 
+def wx_batch(places):
+    """One Open-Meteo request for all places, cached per place under the key weather_for reads."""
+    if not places:
+        return 0
+    lats = ",".join(str(p["latitude"]) for p in places)
+    lons = ",".join(str(p["longitude"]) for p in places)
+    body = None
+    for wait in (0, 20, 40):
+        if wait:
+            time.sleep(wait)
+        try:
+            r = requests.get(WX_URL.format(lat=lats, lon=lons), timeout=30)
+            if r.status_code == 429:
+                _WX_LAST_ERROR["batch"] = "HTTPError: 429 Too Many Requests (batch)"
+                continue
+            r.raise_for_status()
+            body = r.json()
+            break
+        except (requests.RequestException, ValueError) as e:
+            _WX_LAST_ERROR["batch"] = f"{e.__class__.__name__}: {str(e)[:120]}"
+    if body is None:
+        return 0
+    items = body if isinstance(body, list) else [body]
+    stored = 0
+    for place, item in zip(places, items):
+        if isinstance(item, dict) and "hourly" in item:
+            cache_put(f"wx:{place['id']}", json.dumps(item))
+            stored += 1
+    return stored
+
 def weather_for(place):
     """Next six hours of cloud cover, visibility, humidity and rain chance. None if unavailable."""
     key = f"wx:{place['id']}"
@@ -6090,11 +6120,11 @@ def cron_ingest():
     db = connect()
     places = db.execute("SELECT * FROM listings").fetchall()
     db.close()
+    wx_batch(places)
     ok = 0
     for place in places:
         if weather_for(place) is not None:
             ok += 1
-        time.sleep(3)  # space out requests so the free instance's shared IP isn't rate-limited
     report["weather"] = f"{ok} of {len(places)} places"
     report["weather_errors"] = sorted(set(_WX_LAST_ERROR.values()))[:3]
     report["ran_at"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
