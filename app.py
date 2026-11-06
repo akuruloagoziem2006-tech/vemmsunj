@@ -8229,16 +8229,16 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(HOME_NEW_TEMPLATES)
 
-@app.route("/")
-def index():
-    db = get_db()
-    recent = db.execute(
+HOME_CACHE_KEY = "home-data-v1"
+
+def _home_data(db):
+    """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
+    recent = [dict(r) for r in db.execute(
         "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
         "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
         "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
-        "ORDER BY p.id DESC LIMIT 6"
-    ).fetchall()
+        "ORDER BY p.id DESC LIMIT 6").fetchall()]
     first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
     sky = None
     if first is not None:
@@ -8248,9 +8248,22 @@ def index():
             print(f"sky tonight error: {e}", flush=True)
     places = [dict(r) for r in db.execute(
         "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
-    slides = db.execute("SELECT id, body FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' ORDER BY id DESC LIMIT 8").fetchall()
-    return render_template("home.html", recent=recent, slides=slides, sky=sky, places=places,
-                           title="VEMMSUNJ", section="home")
+    slides = [dict(r) for r in db.execute(
+        "SELECT id, body FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' "
+        "ORDER BY id DESC LIMIT 8").fetchall()]
+    return {"recent": recent, "sky": sky, "places": places, "slides": slides}
+
+@app.route("/")
+def index():
+    body = cache_get(HOME_CACHE_KEY, 300)
+    if body:
+        data = json.loads(body)
+    else:
+        db = get_db()
+        data = _home_data(db)
+        cache_put(HOME_CACHE_KEY, json.dumps(data))
+    return render_template("home.html", recent=data["recent"], slides=data["slides"], sky=data["sky"],
+                           places=data["places"], title="VEMMSUNJ", section="home")
 
 # ---------- Globe consistency check (read-only diagnostic) ----------
 @app.route("/api/globe-check")
@@ -9138,6 +9151,12 @@ def cron_precompute():
             for dk, dist in TRACKER_DISTANCES.items():
                 for wk, days in TRACKER_WINDOWS.items():
                     result[f"{dk}/{wk}"] = len(close_approaches(dist, days))
+        elif step == "home":
+            db = connect()
+            data = _home_data(db)
+            cache_put(HOME_CACHE_KEY, json.dumps(data))
+            db.close()
+            result = {k: (len(v) if isinstance(v, list) else ("ok" if v else "none")) for k, v in data.items()}
         elif step in ("planets", "sky"):
             pid = request.args.get("place", "1")
             if not pid.isdigit():

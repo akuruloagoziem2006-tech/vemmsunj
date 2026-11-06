@@ -1,4 +1,4 @@
-name: Precompute planets, sky card and tracker
+name: Precompute planets, sky card, home and tracker
 
 on:
   schedule:
@@ -9,7 +9,7 @@ jobs:
   precompute:
     runs-on: ubuntu-latest
     steps:
-      - name: Run every step for every place and filter
+      - name: Run every step for every place
         run: |
           H="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
           B="https://vemmsunj.onrender.com/api/cron/precompute"
@@ -21,4 +21,5 @@ jobs:
               sleep 10
             done
           done
+          curl -fsS --max-time 280 -X POST -H "$H" "$B?step=home"; echo
           curl -fsS --max-time 280 -X POST -H "$H" "$B?step=tracker"; echo
