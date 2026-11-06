@@ -4147,6 +4147,8 @@ def cache_put(key, body):
 def _fmt(v, unit=""):
     return "n/a" if v is None else f"{round(v)}{unit}"
 
+_WX_LAST_ERROR = {}
+
 def weather_for(place):
     """Next six hours of cloud cover, visibility, humidity and rain chance. None if unavailable."""
     key = f"wx:{place['id']}"
@@ -4160,6 +4162,7 @@ def weather_for(place):
         h = json.loads(body)["hourly"]
     except (requests.RequestException, KeyError, ValueError) as e:
         print(f"weather error: {e}", flush=True)
+        _WX_LAST_ERROR[place["id"]] = f"{e.__class__.__name__}: {str(e)[:120]}"
         return None
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     rows, clouds = [], []
@@ -6091,7 +6094,9 @@ def cron_ingest():
     for place in places:
         if weather_for(place) is not None:
             ok += 1
+        time.sleep(3)  # space out requests so the free instance's shared IP isn't rate-limited
     report["weather"] = f"{ok} of {len(places)} places"
+    report["weather_errors"] = sorted(set(_WX_LAST_ERROR.values()))[:3]
     report["ran_at"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     return jsonify(report)
 
