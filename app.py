@@ -8151,6 +8151,7 @@ def _sky_tonight_raw(place):
 
 HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 {% block content %}
+<p class="meta">{% if stored %}Stored results calculated {{ stored }}. Refreshed every 30 minutes.{% else %}Home data is being calculated. Try again in a few minutes.{% endif %}</p>
 <section class="hero">
   {% if slides %}
   <div class="hero-slides" aria-hidden="true">
@@ -8365,7 +8366,8 @@ def index():
         db = get_db()
         data = _home_data(db)
         cache_put(HOME_CACHE_KEY, json.dumps(data))
-    return render_template("home.html", recent=fresh_posts(data["recent"]), slides=fresh_posts(data["slides"]), sky=data["sky"],
+    stored = stored_label("home-data-v2")
+    return render_template("home.html", stored=stored, recent=fresh_posts(data["recent"]), slides=fresh_posts(data["slides"]), sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
 # ---------- Globe consistency check (read-only diagnostic) ----------
