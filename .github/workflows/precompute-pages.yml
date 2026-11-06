@@ -9,12 +9,16 @@ jobs:
   precompute:
     runs-on: ubuntu-latest
     steps:
-      - name: Run each precompute step in turn
+      - name: Run every step for every place and filter
         run: |
-          for step in planets sky tracker; do
-            curl -fsS --max-time 280 -X POST \
-              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-              "https://vemmsunj.onrender.com/api/cron/precompute?step=$step"
-            echo
-            sleep 20
+          H="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          B="https://vemmsunj.onrender.com/api/cron/precompute"
+          IDS=$(curl -fsS --max-time 120 -X POST -H "$H" "$B?step=ids" | python3 -c "import json,sys; print(' '.join(str(i) for i in json.load(sys.stdin)['ids']))")
+          echo "places: $IDS"
+          for id in $IDS; do
+            for step in planets sky; do
+              curl -fsS --max-time 280 -X POST -H "$H" "$B?step=$step&place=$id"; echo
+              sleep 10
+            done
           done
+          curl -fsS --max-time 280 -X POST -H "$H" "$B?step=tracker"; echo
