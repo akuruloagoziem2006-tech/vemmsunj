@@ -8010,6 +8010,7 @@ def datacenter(db):
 
 # ---------- Homepage redesign: sky tonight and the Near you card ----------
 PASS_SLICE_SIZE = 10
+PASS_MAX_SATS = 30  # the pass search covers the first 30 satellites, to fit the free instance
 
 def _stored_passes(place):
     body = cache_get(f"passes-v1:{place['id']}", 10**9)
@@ -8017,7 +8018,7 @@ def _stored_passes(place):
 
 def _slice_count():
     _, sats = get_satellites()
-    return max(1, -(-len(sats) // PASS_SLICE_SIZE))
+    return max(1, -(-min(len(sats), PASS_MAX_SATS) // PASS_SLICE_SIZE))
 
 def find_passes_slice(lat, lon, k, hours=24, min_alt=10.0):
     """Passes for one slice of satellites. The precompute job runs one slice per request."""
@@ -8040,7 +8041,7 @@ def find_passes_slice(lat, lon, k, hours=24, min_alt=10.0):
             "max_altitude_deg": round(float(alt.max()), 1),
         })
 
-    for sat in sats[k * PASS_SLICE_SIZE:(k + 1) * PASS_SLICE_SIZE]:
+    for sat in sats[:PASS_MAX_SATS][k * PASS_SLICE_SIZE:(k + 1) * PASS_SLICE_SIZE]:
         def above(t, sat=sat):
             return (sat - observer).at(t).altaz()[0].degrees >= min_alt
         above.step_days = step_days

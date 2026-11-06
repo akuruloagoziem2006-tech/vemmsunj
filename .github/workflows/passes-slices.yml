@@ -20,7 +20,7 @@ jobs:
           FAILED=""
           call() {
             for attempt in 1 2 3; do
-              if curl -fsS --max-time 280 -X POST -H "$H" "$B?$1"; then echo; return 0; fi
+              if curl -fsS --max-time 150 -X POST -H "$H" "$B?$1"; then echo; return 0; fi
               echo "attempt $attempt failed for $1"; sleep 45
             done
             FAILED="$FAILED [$1]"; return 1
