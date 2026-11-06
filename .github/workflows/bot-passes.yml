@@ -1,8 +1,6 @@
-name: Pass summaries every six hours
+name: Pass summaries (manual only)
 
 on:
-  schedule:
-    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 jobs:
