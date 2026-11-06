@@ -25,8 +25,16 @@ jobs:
             done
             return 1
           }
+          healthy() {
+            for i in 1 2 3 4 5 6; do
+              if curl -fsS --max-time 20 https://vemmsunj.onrender.com/healthz >/dev/null; then return 0; fi
+              echo "instance not healthy, waiting 60s"; sleep 60
+            done
+            return 1
+          }
           call() {
             for attempt in 1 2 3; do
+              healthy || { FAILED="$FAILED [$1]"; return 1; }
               healthy || { FAILED="$FAILED [$1]"; return 1; }
               if curl -fsS --max-time 150 -X POST -H "$H" "$B?$1"; then echo; return 0; fi
               echo "attempt $attempt failed for $1"; sleep 90
