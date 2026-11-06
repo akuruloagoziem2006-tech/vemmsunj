@@ -9114,7 +9114,9 @@ def globe_snapshot(now=None):
 
 @app.route("/api/cron/precompute", methods=["GET", "POST"])
 def cron_precompute():
-    """Scheduled job, one step per request so each call stays short: ?step=globe|planets|sky|tracker"""
+    """Scheduled job, one step per request.
+    step=ids returns every place id. step=planets and step=sky take ?place=<id> (default 1).
+    step=tracker computes every distance and window combination. step=globe takes no parameters."""
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
         abort(401)
@@ -9122,18 +9124,30 @@ def cron_precompute():
     started = time.time()
     _PRE["on"] = True
     try:
+        if step == "ids":
+            db = connect()
+            ids = [r["id"] for r in db.execute("SELECT id FROM listings ORDER BY id").fetchall()]
+            db.close()
+            return jsonify({"ids": ids})
         if step == "globe":
             snap = _globe_snapshot_raw()
             cache_put("globe-snap-v1", json.dumps(snap))
             result = len(snap["satellites"])
         elif step == "tracker":
-            result = len(close_approaches(TRACKER_DISTANCES.get("0.1", TRACKER_MAX_AU), TRACKER_WINDOWS.get("60", 60)))
+            result = {}
+            for dk, dist in TRACKER_DISTANCES.items():
+                for wk, days in TRACKER_WINDOWS.items():
+                    result[f"{dk}/{wk}"] = len(close_approaches(dist, days))
         elif step in ("planets", "sky"):
+            pid = request.args.get("place", "1")
+            if not pid.isdigit():
+                return jsonify({"step": step, "error": "bad place"}), 400
             db = connect()
-            place = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
+            place = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                               (int(pid),)).fetchone()
             db.close()
             if place is None:
-                return jsonify({"step": step, "error": "no place"}), 404
+                return jsonify({"step": step, "error": "no such place"}), 404
             now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             if step == "planets":
                 result = len(planet_rows(place, now))
@@ -9142,7 +9156,8 @@ def cron_precompute():
         else:
             return jsonify({"error": "unknown step"}), 400
     except Exception as e:
-        return jsonify({"step": step, "error": e.__class__.__name__, "seconds": round(time.time() - started, 1)}), 500
+        return jsonify({"step": step, "error": e.__class__.__name__,
+                        "seconds": round(time.time() - started, 1)}), 500
     finally:
         _PRE["on"] = False
     return jsonify({"step": step, "result": result, "seconds": round(time.time() - started, 1)})
