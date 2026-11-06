@@ -1691,7 +1691,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   {% for s in recent %}
   <article class="entry">
     <div class="meta">
-      <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
+      <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated, predicted passes not observations{% endif %}
       · {{ s['created_at'] }}{% if s['listing_name'] %} at {{ s['listing_name'] }}{% endif %}
     </div>
     <p>{{ s['body'] }}</p>
@@ -1849,7 +1849,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% for s in here %}
 <article class="entry">
   <div class="meta">
-    <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated{% endif %}
+    <strong>{{ s['author'] }}</strong>{% if s['author'] == 'VEMMSUNJ' %} · Example{% endif %}{% if s['author'] == 'VEMMSUNJ_BOT' %} · Automated, predicted passes not observations{% endif %}
     · {{ s['created_at']|nice_time }}
   </div>
   <p>{{ s['body'] }}</p>
@@ -2194,7 +2194,7 @@ fetch("/api/listings")
   <div class="meta">
     <strong>{{ p['author'] }}</strong>
     {% if p['author'] == 'VEMMSUNJ' %}<span class="meta">Example</span>{% endif %}
-    {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span>{% endif %}
+    {% if p['author'] == 'VEMMSUNJ_BOT' %}<span class="meta">Automated</span> <span class="meta">· predicted passes, not observations</span>{% endif %}
     <span class="meta">· posted {{ p['created_at']|age }}</span>
     {% if username and p['author'] != username and p['author'] not in ('VEMMSUNJ', 'VEMMSUNJ_BOT') %}
       {% if username and p['author'] != username %}<form class="inline" method="post" action="/posts/{{ p['id'] }}/report"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn quiet" type="submit">Report</button></form>{% endif %}
