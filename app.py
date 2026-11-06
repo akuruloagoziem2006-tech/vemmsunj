@@ -6737,9 +6737,9 @@ TRACKER_MAX_H = 16.0
 TRACKER_DISTANCES = {"0.05": 0.05, "0.1": 0.1, "0.2": 0.2}
 TRACKER_WINDOWS = {"30": 30, "60": 60, "120": 120}
 
-def close_approaches(dist_au=TRACKER_MAX_AU, days=60):
+def close_approaches(dist_au=TRACKER_MAX_AU, days=60, max_age=6 * 3600):
     key = f"jpl-cad:{dist_au}:{days}"
-    body = cache_get(key, 6 * 3600)
+    body = cache_get(key, max_age)
     if body is None:
         r = requests.get(JPL_CAD_URL, params={
             "date-min": "now",
@@ -9366,8 +9366,10 @@ _close_approaches_raw = close_approaches
 
 def close_approaches(dist_au=TRACKER_MAX_AU, days=60):
     if _pre_only():
+        # Web requests read whatever the scheduled job stored, however old, and never call JPL.
         if cache_get(f"jpl-cad:{dist_au}:{days}", 10**9) is None:
             return []
+        return _close_approaches_raw(dist_au, days, max_age=10**9)
     return _close_approaches_raw(dist_au, days)
 
 if __name__ == "__main__":
