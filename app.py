@@ -7453,6 +7453,7 @@ document.addEventListener('DOMContentLoaded', function () {
   <noscript><button class="btn quiet" type="submit">Apply</button></noscript>
 </form>
 <p class="meta">0.1 AU is about 15 million kilometres, roughly 39 times the Earth–Moon distance. A close approach is not a threat: most objects in this list pass by safely, and the table shows distance so you can judge the scale yourself.</p>
+{% if not items and not error %}<p class="meta">No objects brighter than magnitude {{ 16 }} come within {{ dist_key }} AU in the next {{ win_key }} days. Fainter objects are hidden from this list.</p>{% endif %}
 {% if error %}
 <p class="error">{{ error }}</p>
 {% else %}
