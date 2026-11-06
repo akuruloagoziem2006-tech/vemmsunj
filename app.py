@@ -4100,6 +4100,21 @@ def _release(db):
     if not has_request_context():
         db.close()
 
+def stored_label(key, max_minutes=45):
+    """Readable time a stored result was calculated, e.g. '06 Nov 16:40 UTC', or None if never stored."""
+    db = _shared_db()
+    try:
+        row = db.execute("SELECT fetched_at FROM cache_kv WHERE key = ?", (key,)).fetchone()
+    finally:
+        _release(db)
+    if not row:
+        return None
+    t = datetime.fromtimestamp(row["fetched_at"], tz=timezone.utc)
+    label = t.strftime("%d %b %H:%M") + " UTC"
+    if time.time() - row["fetched_at"] > max_minutes * 60:
+        label += " (may be out of date)"
+    return label
+
 def cache_get(key, max_age):
     db = _shared_db()
     try:
@@ -6203,7 +6218,8 @@ def planets_page():
         visible.append(r)
     candidates = [r for r in rows if not r.get("earth") and r["alt"] is not None and r["alt"] >= 0 and r["mag"] is not None]
     best = min(candidates, key=lambda r: r["mag"]) if candidates else None
-    return render_template("planets.html", place=place, rows=visible, best=best, view=view,
+    stored = stored_label(f"planets-v1:{place['id']}")
+    return render_template("planets.html", place=place, rows=visible, best=best, view=view, stored=stored,
                            error=error, now=now.strftime("%H:%M"), title="Planets", section="planets")
 
 PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
@@ -6211,6 +6227,7 @@ PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 <h1>Planets</h1>
 <p class="meta">Open a planet for its times, a calendar file, and a share link: {% for n in ['Venus','Mercury','Mars','Saturn','Uranus','Neptune','Jupiter'] %}<a href="/planet/{{ n }}?place={{ place['id'] }}">{{ n }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
 <p class="meta">Seen from {{ place['name'] }} at {{ now }} UTC. Times are UTC. Change place with <a href="/places/{{ place['id'] }}">the place page</a>.</p>
+<p class="meta">{% if stored %}Stored results calculated {{ stored }}. Refreshed every 30 minutes.{% else %}Planet data is being calculated. Try again in a few minutes.{% endif %}</p>
 {% if error %}
 <p class="error">{{ error }}</p>
 {% else %}
