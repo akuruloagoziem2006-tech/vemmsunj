@@ -9,17 +9,26 @@ jobs:
   precompute:
     runs-on: ubuntu-latest
     steps:
-      - name: Run every step for every place
+      - name: Run every step, retrying each call
         run: |
           H="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
           B="https://vemmsunj.onrender.com/api/cron/precompute"
+          FAILED=""
+          call() {
+            for attempt in 1 2 3; do
+              if curl -fsS --max-time 280 -X POST -H "$H" "$B?$1"; then echo; return 0; fi
+              echo "attempt $attempt failed for $1"; sleep 45
+            done
+            FAILED="$FAILED [$1]"; return 1
+          }
           IDS=$(curl -fsS --max-time 120 -X POST -H "$H" "$B?step=ids" | python3 -c "import json,sys; print(' '.join(str(i) for i in json.load(sys.stdin)['ids']))")
           echo "places: $IDS"
           for id in $IDS; do
             for step in planets sky; do
-              curl -fsS --max-time 280 -X POST -H "$H" "$B?step=$step&place=$id"; echo
-              sleep 10
+              call "step=$step&place=$id" || true
+              sleep 15
             done
           done
-          curl -fsS --max-time 280 -X POST -H "$H" "$B?step=home"; echo
-          curl -fsS --max-time 280 -X POST -H "$H" "$B?step=tracker"; echo
+          call "step=home" || true
+          call "step=tracker" || true
+          if [ -n "$FAILED" ]; then echo "failed steps:$FAILED"; exit 1; fi
