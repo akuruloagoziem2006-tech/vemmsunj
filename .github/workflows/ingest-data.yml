@@ -5,12 +5,23 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: render-precompute
+  cancel-in-progress: false
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
     steps:
-      - name: Warm the data caches
+      - name: Warm the data caches, retrying on a 502
         run: |
-          curl -fsS --max-time 240 -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://vemmsunj.onrender.com/api/cron/ingest
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 240 -X POST \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+              https://vemmsunj.onrender.com/api/cron/ingest; then
+              exit 0
+            fi
+            echo "attempt $attempt failed, retrying in 60 seconds"
+            sleep 60
+          done
+          exit 1
