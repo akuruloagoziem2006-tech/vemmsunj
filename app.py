@@ -4087,24 +4087,37 @@ WX_URL = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}
           "&forecast_days=2&timezone=UTC")
 KP_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
 
+def _shared_db():
+    """The request's shared connection when one exists, otherwise a new one."""
+    from flask import has_request_context
+    if has_request_context():
+        return get_db()
+    return connect()
+
+def _release(db):
+    """Close a connection only if it isn't the request's shared one."""
+    from flask import has_request_context
+    if not has_request_context():
+        db.close()
+
 def cache_get(key, max_age):
-    db = connect()
+    db = _shared_db()
     try:
         row = db.execute("SELECT body, fetched_at FROM cache_kv WHERE key = ?", (key,)).fetchone()
     finally:
-        db.close()
+        _release(db)
     if row and time.time() - row["fetched_at"] < max_age:
         return row["body"]
     return None
 
 def cache_put(key, body):
-    db = connect()
+    db = _shared_db()
     try:
         db.execute("DELETE FROM cache_kv WHERE key = ?", (key,))
         db.execute("INSERT INTO cache_kv (key, body, fetched_at) VALUES (?, ?, ?)", (key, body, time.time()))
         db.commit()
     finally:
-        db.close()
+        _release(db)
 
 def _fmt(v, unit=""):
     return "n/a" if v is None else f"{round(v)}{unit}"
