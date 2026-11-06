@@ -6973,7 +6973,8 @@ def tracker_page():
         except Exception as e:
             print(f"tracker tonight error: {e}", flush=True)
             tonight_error = "Satellites above the horizon aren't available right now."
-    return render_template("tracker.html", items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, dist_key=dist_key, win_key=win_key, place=place, places=places, tonight=tonight, tonight_error=tonight_error, upcoming=upcoming_passes(place),
+    stored = stored_label("globe-snap-v1")
+    return render_template("tracker.html", stored=stored, items=items[:40], error=error, comets=comets, comet_error=comet_error, live=live, live_error=live_error, calc_time=calc_time, dist_key=dist_key, win_key=win_key, place=place, places=places, tonight=tonight, tonight_error=tonight_error, upcoming=upcoming_passes(place),
                            title="Close-approach tracker", section="tracker")
 
 TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
@@ -7022,7 +7023,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 
 <h2 id="positions">Satellite positions</h2>
 <p class="meta">Positions in the stations group move every second, and the underlying orbital data refreshes every minute. Times are UTC.</p>
-<p class="meta">Positions calculated at <span id="calc-time">{{ calc_time }}</span> UTC. Orbital data from CelesTrak, refreshed at most every six hours.</p>
+<p class="meta">Positions calculated at <span id="calc-time">{{ calc_time }}</span> UTC. Orbital data from CelesTrak, refreshed at most every six hours. Stored satellite positions calculated {{ stored or 'not yet' }}.</p>
 <p class="meta">Several satellites share coordinates because they're docked together: modules attached to one station orbit within metres of each other. Tap a satellite to highlight its row; the Globe shows each one's orbit.</p>
 {% if live_error %}
 <p class="error">{{ live_error }}</p>
