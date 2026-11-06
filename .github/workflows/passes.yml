@@ -13,7 +13,7 @@ jobs:
   passes:
     runs-on: ubuntu-latest
     steps:
-      - name: Compute passes and merge per place
+      - name: Compute passes, merge, and post per place
         run: |
           H="Authorization: Bearer ${{ secrets.CRON_SECRET }}"
           B="https://vemmsunj.onrender.com/api/cron/precompute"
@@ -30,6 +30,8 @@ jobs:
             call "step=pslice&place=$id&slice=0" || true
             sleep 5
             call "step=pmerge&place=$id&n=1" || true
+            sleep 5
+            call "step=post&place=$id" || true
             sleep 5
           done
           if [ -n "$FAILED" ]; then echo "failed steps:$FAILED"; exit 1; fi
