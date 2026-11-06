@@ -4126,11 +4126,21 @@ def cache_get(key, max_age):
     return None
 
 def cache_put(key, body):
+    """Atomic upsert, so concurrent writers of the same key can't collide, and a failed write is rolled back."""
     db = _shared_db()
     try:
-        db.execute("DELETE FROM cache_kv WHERE key = ?", (key,))
-        db.execute("INSERT INTO cache_kv (key, body, fetched_at) VALUES (?, ?, ?)", (key, body, time.time()))
+        db.execute(
+            "INSERT INTO cache_kv (key, body, fetched_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET body = EXCLUDED.body, fetched_at = EXCLUDED.fetched_at",
+            (key, body, time.time()))
         db.commit()
+    except Exception as e:
+        print(f"cache write failed for {key}: {e.__class__.__name__}", flush=True)
+        if hasattr(db, "rollback"):
+            try:
+                db.rollback()
+            except Exception:
+                pass
     finally:
         _release(db)
 
