@@ -7420,7 +7420,7 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(function (d) {
         if (d.error) return;
         S.epoch = Date.now();
-        d.satellites.forEach(function (x) { S.period[x.name] = x.period_s; S.track[x.name] = x.ground; });
+        d.satellites.forEach(function (x) { S.period[x.name] = x.period_s; S.track[x.name] = x.ground; }); if (d.fetched_at && !isNaN(Date.parse(d.fetched_at))) { S.epoch = Date.parse(d.fetched_at); }
         tick();
       })
       .catch(function () {});
