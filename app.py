@@ -23,6 +23,21 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from sky import STARS, sky_svg, star_altaz
 
 app = Flask(__name__)
+
+# Error monitoring (Sentry). Runs only when SENTRY_DSN is set; the site behaves the same without it.
+_SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.0,
+            send_default_pii=False,
+        )
+    except Exception as e:
+        print(f"sentry not started: {e}", flush=True)
 if os.environ.get("TRUST_PROXY") == "1":
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
