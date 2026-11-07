@@ -9457,6 +9457,23 @@ def cron_wx_push():
             stored += 1
     return jsonify({"stored": stored})
 
+# ---------- Temporary notice for the two pages that time out on the free instance ----------
+@app.before_request
+def vm_heavy_off_notice():
+    if os.environ.get("HEAVY_OFF") != "1" or request.method != "GET":
+        return None
+    import re as _re
+    if _re.fullmatch(r"/places/\d+", request.path) or request.path == "/tracker" or request.path.startswith("/tracker/"):
+        body = ("<!doctype html><html lang='en'><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<title>VEMMSUNJ: temporarily unavailable</title>"
+                "<h1>Temporarily unavailable</h1>"
+                "<p>This page is paused while the site runs on a free server. The sky, planets, globe, "
+                "sightings, and weather pages are still available.</p>"
+                "<p><a href='/'>Go to the home page</a> · <a href='/listings'>Browse places</a></p></html>")
+        return Response(body, status=503, mimetype="text/html", headers={"Retry-After": "3600"})
+    return None
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
