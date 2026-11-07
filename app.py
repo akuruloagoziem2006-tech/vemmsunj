@@ -9277,17 +9277,7 @@ _globe_snapshot_raw = globe_snapshot
 _planet_rows_raw = planet_rows
 
 PRECOMPUTED_ONLY = os.environ.get("PRECOMPUTED_ONLY") == "1"
-import threading as _threading
-
-class _PreFlag:
-    """Per-thread flag: a scheduled job sets it on its own thread only, so web requests never see it."""
-    _tl = _threading.local()
-    def __getitem__(self, k):
-        return getattr(self._tl, k, False)
-    def __setitem__(self, k, v):
-        setattr(self._tl, k, v)
-
-_PRE = _PreFlag()
+_PRE = {"on": False}
 
 def _pre_only():
     return PRECOMPUTED_ONLY and not _PRE["on"]
