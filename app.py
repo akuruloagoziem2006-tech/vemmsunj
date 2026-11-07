@@ -7988,7 +7988,7 @@ FEATURE_PATHS = {
 }
 
 def record_event(name, item=""):
-    if not os.environ.get("VERCEL") or name not in EVENT_LABELS:
+    if not (os.environ.get("VERCEL") or os.environ.get("RENDER")) or name not in EVENT_LABELS:
         return
     if (session.get("username") or "").lower() in ADMIN_USERNAMES:
         return
@@ -8480,12 +8480,13 @@ VM_PUBLIC_PAGES = ["/", "/listings", "/map", "/posts", "/calendar", "/globe", "/
 
 @app.route("/robots.txt")
 def vm_robots():
-    body = "User-agent: *\nAllow: /\nSitemap: https://vemmsunj.vercel.app/sitemap.xml\n"
+    body = "User-agent: *\nAllow: /\nSitemap: " + request.host_url.rstrip("/") + "/sitemap.xml\n"
     return Response(body, mimetype="text/plain")
 
 @app.route("/sitemap.xml")
 def vm_sitemap():
-    urls = "".join(f"<url><loc>https://vemmsunj.vercel.app{page}</loc></url>" for page in VM_PUBLIC_PAGES)
+    base = request.host_url.rstrip("/")
+    urls = "".join(f"<url><loc>{base}{page}</loc></url>" for page in VM_PUBLIC_PAGES)
     body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>")
     return Response(body, mimetype="application/xml")
@@ -9218,7 +9219,7 @@ def run_health_checks():
         t0 = _t.time()
         row = {"name": name, "path": path, "status": None, "ms": None, "ok": False, "detail": ""}
         try:
-            r = client.get(path, headers={"Host": "vemmsunj.vercel.app", "Cache-Control": "no-cache"})
+            r = client.get(path, headers={"Host": "vemmsunj.onrender.com", "Cache-Control": "no-cache"})
             row["status"] = r.status_code
             row["ms"] = round((_t.time() - t0) * 1000)
             if r.status_code != 200:
