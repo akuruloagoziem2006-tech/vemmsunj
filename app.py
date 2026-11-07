@@ -392,15 +392,6 @@ def find_passes(lat, lon, hours=24, min_alt=10.0, start=None):
     return passes
 
 def cached_passes(listing_id, row):
-    """Web requests read the stored passes from the scheduled job and never run the search."""
-    if _pre_only():
-        body = cache_get(f"passes-v1:{listing_id}", 10**9)
-        if body is None:
-            return [], False
-        return json.loads(body)[:100], True
-    return _cached_passes_raw(listing_id, row)
-
-def _cached_passes_raw(listing_id, row):
     """Return (passes, was_cached). Results are capped at 100 and cached in Neon for an hour."""
     db = get_db()
     cached = db.execute("SELECT body, fetched_at FROM pass_cache WHERE listing_id = ?", (listing_id,)).fetchone()
