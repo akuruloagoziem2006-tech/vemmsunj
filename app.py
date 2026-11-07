@@ -1759,6 +1759,17 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
 {% endfor %}
 <p class="meta">{% if planets and planets[0]['exact'] %}Calculated from NASA's DE421 planetary data. Times are UTC.{% else %}Estimated from simplified orbits, accurate to about a degree. Times are UTC.{% endif %}</p>
 {% if weather %}
+<h2>Weather for the next six hours</h2>
+{% if weather %}
+<p class="meta">Average cloud cover {{ weather['avg_cloud'] }}. Forecast by Open-Meteo, updated every two hours.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Time (UTC)</th><th>Cloud</th><th>Visibility</th><th>Humidity</th><th>Rain chance</th></tr></thead>
+<tbody>
+{% for w in weather['rows'] %}<tr><td>{{ w['time'] }}</td><td>{{ w['cloud'] }}</td><td>{{ w['vis'] }}</td><td>{{ w['humidity'] }}</td><td>{{ w['rain'] }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="meta">Weather forecast isn't available for this place yet.</p>
+{% endif %}
 <h2>Sky conditions</h2>
 <p class="meta">Average cloud cover for the next 6 hours: {{ weather['avg_cloud'] }}. Forecast by Open-Meteo (CC BY 4.0).</p>
 <div class="table-wrap"><table class="data">
