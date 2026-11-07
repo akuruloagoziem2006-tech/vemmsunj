@@ -1,0 +1,20 @@
+name: Weather forecasts (from GitHub's network)
+
+on:
+  schedule:
+    - cron: "20 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: render-precompute
+  cancel-in-progress: false
+
+jobs:
+  weather:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch forecasts and push them to the site
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: python3 tools/push_weather.py

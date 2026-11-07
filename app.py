@@ -4183,7 +4183,9 @@ def weather_for(place):
     """Next six hours of cloud cover, visibility, humidity and rain chance. None if unavailable."""
     key = f"wx:{place['id']}"
     try:
-        body = cache_get(key, 1800)
+        body = cache_get(key, 10**9 if _pre_only() else 1800)
+        if body is None and _pre_only():
+            return None
         if body is None:
             r = requests.get(WX_URL.format(lat=place["latitude"], lon=place["longitude"]), timeout=15)
             r.raise_for_status()
@@ -6120,7 +6122,6 @@ def cron_ingest():
     db = connect()
     places = db.execute("SELECT * FROM listings").fetchall()
     db.close()
-    wx_batch(places)
     ok = 0
     for place in places:
         if weather_for(place) is not None:
@@ -9420,6 +9421,30 @@ def close_approaches(dist_au=TRACKER_MAX_AU, days=60):
             return []
         return _close_approaches_raw(dist_au, days, max_age=10**9)
     return _close_approaches_raw(dist_au, days)
+
+# ---------- Weather forecasts pushed from GitHub's network (Render never calls Open-Meteo) ----------
+def _cron_auth():
+    secret = os.environ.get("CRON_SECRET")
+    return bool(secret) and request.headers.get("Authorization") == f"Bearer {secret}"
+
+@app.route("/api/cron/wx-places")
+def cron_wx_places():
+    if not _cron_auth():
+        abort(401)
+    rows = get_db().execute("SELECT id, latitude, longitude FROM listings ORDER BY id").fetchall()
+    return jsonify([{"id": r["id"], "lat": r["latitude"], "lon": r["longitude"]} for r in rows])
+
+@app.route("/api/cron/wx-push", methods=["POST"])
+def cron_wx_push():
+    if not _cron_auth():
+        abort(401)
+    payload = request.get_json(silent=True) or {}
+    stored = 0
+    for pid, item in payload.items():
+        if str(pid).isdigit() and isinstance(item, dict) and "hourly" in item:
+            cache_put(f"wx:{int(pid)}", json.dumps(item))
+            stored += 1
+    return jsonify({"stored": stored})
 
 if __name__ == "__main__":
     from waitress import serve
