@@ -5288,6 +5288,7 @@ def satellite_entry(sat, ts, now, t_now):
     v = here.velocity.km_per_s
     return {
         "name": sat.name,
+        "fetched_at": now.isoformat(timespec="seconds"),
         "lat": round(sub.latitude.degrees, 3),
         "lon": round(sub.longitude.degrees, 3),
         "alt_km": round(sub.elevation.km, 1),
@@ -7293,6 +7294,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (S) {
       S.period[d.name] = d.period_s;
       S.track[d.name] = d.ground || [];
+      if (d.fetched_at && !isNaN(Date.parse(d.fetched_at))) { S.start[d.name] = Date.parse(d.fetched_at); }
     }
     var tr = document.createElement('tr');
     tr.className = 'live-row tracked-extra';
@@ -7385,7 +7387,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </style>
 <script>
 (function () {
-  var S = window.__vemmsunjTrackerState || (window.__vemmsunjTrackerState = { period: {}, track: {}, epoch: Date.now(), picked: null });
+  var S = window.__vemmsunjTrackerState || (window.__vemmsunjTrackerState = { period: {}, track: {}, epoch: Date.now(), picked: null, start: {} });
   function groundAt(name, elapsed) {
     var g = S.track[name], period = S.period[name];
     if (!g || !period || g.length < 2) return null;
@@ -7406,7 +7408,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.live-row').forEach(function (row) {
       var name = row.getAttribute('data-name');
       row.classList.toggle('picked', name === S.picked);
-      var pos = groundAt(name, elapsed);
+      var pos = groundAt(name, (Date.now() - (S.start[name] || S.epoch)) / 1000);
       if (!pos) return;
       var c = row.querySelector('.c-lat');
       if (c) c.textContent = pos[0].toFixed(2) + '°';
@@ -7420,7 +7422,7 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(function (d) {
         if (d.error) return;
         S.epoch = Date.now();
-        d.satellites.forEach(function (x) { S.period[x.name] = x.period_s; S.track[x.name] = x.ground; }); if (d.fetched_at && !isNaN(Date.parse(d.fetched_at))) { S.epoch = Date.parse(d.fetched_at); }
+        d.satellites.forEach(function (x) { S.period[x.name] = x.period_s; S.track[x.name] = x.ground; if (d.fetched_at && !isNaN(Date.parse(d.fetched_at))) { S.start[x.name] = Date.parse(d.fetched_at); } });
         tick();
       })
       .catch(function () {});
