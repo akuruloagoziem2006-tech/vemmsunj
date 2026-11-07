@@ -8479,13 +8479,18 @@ VM_PUBLIC_PAGES = ["/", "/listings", "/map", "/posts", "/calendar", "/globe", "/
                    "/planets", "/tracker", "/about", "/privacy", "/login", "/signup", "/space-weather", "/planets/orbits", "/places/1/sky", "/observe/1", "/api/pages"]
 
 @app.route("/robots.txt")
+def _public_base():
+    """The public address of this site, using https behind Render's proxy."""
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    return f"{scheme}://{request.host}"
+
 def vm_robots():
-    body = "User-agent: *\nAllow: /\nSitemap: " + request.host_url.rstrip("/") + "/sitemap.xml\n"
+    body = "User-agent: *\nAllow: /\nSitemap: " + _public_base() + "/sitemap.xml\n"
     return Response(body, mimetype="text/plain")
 
 @app.route("/sitemap.xml")
 def vm_sitemap():
-    base = request.host_url.rstrip("/")
+    base = _public_base()
     urls = "".join(f"<url><loc>{base}{page}</loc></url>" for page in VM_PUBLIC_PAGES)
     body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>")
