@@ -8478,12 +8478,12 @@ def vm_security_headers(resp):
 VM_PUBLIC_PAGES = ["/", "/listings", "/map", "/posts", "/calendar", "/globe", "/aurora",
                    "/planets", "/tracker", "/about", "/privacy", "/login", "/signup", "/space-weather", "/planets/orbits", "/places/1/sky", "/observe/1", "/api/pages"]
 
-@app.route("/robots.txt")
 def _public_base():
     """The public address of this site, using https behind Render's proxy."""
     scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
     return f"{scheme}://{request.host}"
 
+@app.route("/robots.txt")
 def vm_robots():
     body = "User-agent: *\nAllow: /\nSitemap: " + _public_base() + "/sitemap.xml\n"
     return Response(body, mimetype="text/plain")
