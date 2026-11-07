@@ -9464,15 +9464,18 @@ def vm_heavy_off_notice():
         return None
     import re as _re
     if _re.fullmatch(r"/places/\d+", request.path) or request.path == "/tracker" or request.path.startswith("/tracker/"):
-        body = ("<!doctype html><html lang='en'><meta charset='utf-8'>"
-                "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                "<title>VEMMSUNJ: temporarily unavailable</title>"
-                "<h1>Temporarily unavailable</h1>"
-                "<p>This page is paused while the site runs on a free server. The sky, planets, globe, "
-                "sightings, and weather pages are still available.</p>"
-                "<p><a href='/'>Go to the home page</a> · <a href='/listings'>Browse places</a></p></html>")
-        return Response(body, status=503, mimetype="text/html", headers={"Retry-After": "3600"})
+        return Response(render_template("notice.html", title="Temporarily unavailable", section=""),
+                        status=503, mimetype="text/html", headers={"Retry-After": "3600"})
     return None
+
+NOTICE_TEMPLATES = {"notice.html": """{% extends "base.html" %}
+{% block content %}
+<h1>Temporarily unavailable</h1>
+<p class="meta">This page is paused while the site runs on a free server. The sky, planets, globe, sightings, and weather pages are still available.</p>
+<p><a class="btn quiet" href="/">Go to the home page</a> <a class="btn quiet" href="/listings">Browse places</a></p>
+{% endblock %}
+"""}
+app.jinja_env.loader.mapping.update(NOTICE_TEMPLATES)
 
 if __name__ == "__main__":
     from waitress import serve
