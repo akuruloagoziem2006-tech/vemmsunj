@@ -4665,7 +4665,7 @@ def login():
             ).fetchone()
             if row and check_password_hash(row["password_hash"], password):
                 clear_failures(key)
-                if os.environ.get("VERCEL"):
+                if os.environ.get("VERCEL") or os.environ.get("RENDER"):
                     _db = get_db()
                     _db.execute("UPDATE users SET last_login = ? WHERE username = ?", (_now_iso(), row["username"]))
                     _db.commit()
@@ -5385,7 +5385,7 @@ def record_usage(resp):
     if request.headers.get('X-VM-Refresh'):
         return resp
     try:
-        if not os.environ.get("VERCEL"):
+        if not (os.environ.get("VERCEL") or os.environ.get("RENDER")):
             return resp
         if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
             return resp
@@ -7932,7 +7932,7 @@ PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
 <h2>Your location</h2>
 <p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. In the sky view, Use my location sends your coordinates to our server only to calculate the sky above you, and they aren't stored.</p>
 <h2>Services we use</h2>
-<p>Hosting on Vercel, the database on Neon, orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are NASA's.</p>
+<p>Hosting on Render, the database on Supabase, orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are NASA's.</p>
 <h2>Removing your account</h2>
 <p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a> to ask for your account to be removed. Removing an account deletes its sightings, likes, follows, and log entries.</p>
 <h2>Advertising and data sales</h2>
@@ -8015,7 +8015,7 @@ def record_place_view(resp):
     if request.headers.get('X-VM-Refresh'):
         return resp
     try:
-        if not os.environ.get("VERCEL"):
+        if not (os.environ.get("VERCEL") or os.environ.get("RENDER")):
             return resp
         if request.method != "GET" or resp.status_code != 200 or resp.mimetype != "text/html":
             return resp
