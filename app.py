@@ -8186,7 +8186,10 @@ def _post_stored_pass_summary(place, now):
         if not ahead:
             return "no stored passes ahead"
         at = cache_get(f"passes-at-v1:{place['id']}", 10**9)
-        stamp = datetime.fromisoformat(at).strftime("%H:%M") if at else now.strftime("%H:%M")
+        try:
+            stamp = datetime.fromisoformat(json.loads(at)).strftime("%H:%M") if at else now.strftime("%H:%M")
+        except (ValueError, TypeError):
+            stamp = now.strftime("%H:%M")
         lines = [f"{u['satellite']} at {st.strftime('%H:%M')} UTC, peak {u['max_altitude_deg']} degrees"
                  for st, u in ahead]
         body = (f"{place['name']}, passes calculated at {stamp} UTC, upcoming from {now.strftime('%H:%M')} UTC: "
