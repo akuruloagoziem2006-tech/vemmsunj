@@ -9505,10 +9505,14 @@ def cron_wx_push():
 # ---------- Temporary notice for the two pages that time out on the free instance ----------
 @app.before_request
 def vm_heavy_off_notice():
-    if os.environ.get("HEAVY_OFF") != "1" or request.method != "GET":
+    if request.method != "GET":
         return None
     import re as _re
-    if _re.fullmatch(r"/places/\d+", request.path) or request.path == "/tracker" or request.path.startswith("/tracker/"):
+    tracker_off = os.environ.get("TRACKER_OFF") == "1" or os.environ.get("HEAVY_OFF") == "1"
+    places_off = os.environ.get("PLACES_OFF") == "1" or os.environ.get("HEAVY_OFF") == "1"
+    is_place = bool(_re.fullmatch(r"/places/\d+", request.path))
+    is_tracker = request.path == "/tracker" or request.path.startswith("/tracker/")
+    if (is_place and places_off) or (is_tracker and tracker_off):
         return Response(render_template("notice.html", title="Temporarily unavailable", section=""),
                         status=503, mimetype="text/html", headers={"Retry-After": "3600"})
     return None
