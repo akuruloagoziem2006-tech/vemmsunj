@@ -4486,8 +4486,15 @@ def place_page(listing_id):
                 error = ("Choose a time from now up to 7 days ahead. Older dates can't be "
                          "predicted from current orbit data.")
                 origin = None
+    if origin is not None and _pre_only() and origin > datetime.now(timezone.utc) + timedelta(hours=24):
+        error = ("Times more than 24 hours ahead aren't available on this free server yet. "
+                 "Choose a time within the next 24 hours.")
+        origin = None
     try:
-        if origin is not None:
+        if origin is not None and _pre_only():
+            # Free server: serve the stored 24-hour passes; no live search.
+            passes, _ = cached_passes(listing_id, place)
+        elif origin is not None:
             passes = find_passes(place["latitude"], place["longitude"], start=origin)
         else:
             passes, _ = cached_passes(listing_id, place)
