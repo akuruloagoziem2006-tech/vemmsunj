@@ -6861,7 +6861,16 @@ def close_approaches(dist_au=TRACKER_MAX_AU, days=60, max_age=6 * 3600):
 COMET_MAX_M1 = 10.0
 
 def bright_comets():
-    body = cache_get("jpl-comets", 6 * 3600)
+    """Web requests read the stored comet list and never call JPL."""
+    if _pre_only():
+        body = cache_get("jpl-comets", 10**9)
+        if body is None:
+            return []
+        return _bright_comets_raw(max_age=10**9)
+    return _bright_comets_raw()
+
+def _bright_comets_raw(max_age=6 * 3600):
+    body = cache_get("jpl-comets", max_age)
     if body is None:
         r = requests.get("https://ssd-api.jpl.nasa.gov/sbdb_query.api", params={
             "fields": "full_name,M1,K1",
@@ -7010,6 +7019,16 @@ def upcoming_passes(place):
     out.sort(key=lambda x: x["iso"])
     return out[:6]
 
+def tonight_for(place, now):
+    """Satellites above the horizon for a place. Web requests read the stored list; the job computes it."""
+    if _pre_only():
+        body = cache_get(f"tonight-v1:{place['id']}", 10**9)
+        return json.loads(body) if body else []
+    return sorted(
+        [o for o in sky_objects(place["latitude"], place["longitude"], now)
+         if o["kind"] == "satellite" and o["alt"] > 0],
+        key=lambda o: o["alt"], reverse=True)
+
 @app.route("/tracker")
 def tracker_page():
     error, items = None, []
@@ -7043,10 +7062,7 @@ def tracker_page():
     if place is not None:
         try:
             now = datetime.now(timezone.utc)
-            tonight = sorted(
-                [o for o in sky_objects(place["latitude"], place["longitude"], now)
-                 if o["kind"] == "satellite" and o["alt"] > 0],
-                key=lambda o: o["alt"], reverse=True)
+            tonight = tonight_for(place, now)
         except Exception as e:
             print(f"tracker tonight error: {e}", flush=True)
             tonight_error = "Satellites above the horizon aren't available right now."
@@ -9362,6 +9378,23 @@ def cron_precompute():
             cache_put(HOME_CACHE_KEY, json.dumps(data))
             db.close()
             result = {k: (len(v) if isinstance(v, list) else ("ok" if v else "none")) for k, v in data.items()}
+        elif step == "tonight":
+            pid = request.args.get("place", "1")
+            if not pid.isdigit():
+                return jsonify({"step": step, "error": "bad place"}), 400
+            db = connect()
+            place = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                               (int(pid),)).fetchone()
+            db.close()
+            if place is None:
+                return jsonify({"step": step, "error": "no such place"}), 404
+            now = datetime.now(timezone.utc)
+            rows = sorted(
+                [o for o in sky_objects(place["latitude"], place["longitude"], now)
+                 if o["kind"] == "satellite" and o["alt"] > 0],
+                key=lambda o: o["alt"], reverse=True)
+            cache_put(f"tonight-v1:{place['id']}", json.dumps(rows))
+            result = len(rows)
         elif step == "passcount":
             result = {"slices": _slice_count()}
         elif step in ("planets", "sky", "post", "pslice", "pmerge"):
