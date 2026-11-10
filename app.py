@@ -7013,11 +7013,6 @@ def upcoming_passes(place):
 @app.route("/tracker")
 def tracker_page():
     error, items = None, []
-    try:
-        items = close_approaches()
-    except (requests.RequestException, ValueError) as e:
-        print(f"tracker error: {e}", flush=True)
-        error = "The close-approach data isn't available right now. Try again in a few minutes."
     dist_key = request.args.get("dist", "0.1")
     win_key = request.args.get("days", "60")
     dist_au = TRACKER_DISTANCES.get(dist_key, TRACKER_MAX_AU)
