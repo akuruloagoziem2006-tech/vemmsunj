@@ -7992,7 +7992,7 @@ PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
 <h2>Services we use</h2>
 <p>Hosting on Render, the database on Supabase, error reports from Sentry (which may include the page address where an error happened), orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are credited on their pages.</p>
 <h2>Removing your account</h2>
-<p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a> to ask for your account to be removed. Removing an account deletes its sightings, likes, follows, and log entries.</p>
+<p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a> to ask for your account to be removed. Removing an account deletes its sightings, likes, follows, and log entries. Reports and held posts awaiting review are kept as moderation records and aren't deleted with the account.</p>
 <h2>Advertising and data sales</h2>
 <p>VEMMSUNJ has no advertising, and it does not sell personal data.</p>
 <h2>Contact</h2>
