@@ -5461,7 +5461,7 @@ def admin_delete_user(username):
     db = get_db()
     if db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone() is None:
         abort(404)
-    # Dependent rows first: reports and likes that point at this user's posts must go before the posts do.
+    # Dependent rows first, so nothing points at posts that are about to be deleted.
     db.execute("DELETE FROM reports WHERE post_id IN (SELECT id FROM posts WHERE author = ?)", (username,))
     db.execute("DELETE FROM likes WHERE username = ? OR post_id IN (SELECT id FROM posts WHERE author = ?)", (username, username))
     db.execute("DELETE FROM reports WHERE reporter = ?", (username,))
