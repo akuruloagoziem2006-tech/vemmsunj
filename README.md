@@ -82,7 +82,7 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 
 ## How the calculations work
 
-**Satellites.** The app downloads orbit data (TLEs) from CelesTrak for the stations, visual, and weather groups, and for any satellite tracked by catalogue number. It checks whether the sun is more than 6 degrees below the horizon at the place, then keeps only satellites that are sunlit and above 10 degrees. Passes are calculated for the next 24 hours, or from the chosen time, and cached for an hour. Results are limited to the first 100.
+**Satellites.** The app downloads orbit data (TLEs) from CelesTrak for the stations, visual, and weather groups, and for any satellite tracked by catalogue number. It checks whether the sun is more than 6 degrees below the horizon at the place, then keeps only satellites that are sunlit and above 10 degrees. Passes are computed on GitHub's runners every six hours from the first 30 satellites of the stations, visual and weather groups, and stored. The place page reads the stored list. Time travel up to 7 days ahead reads a stored 7-day list. The 24-hour list is capped at 100.
 
 **Identification.** Gemini chooses the best match from the list of satellites above only. It never names a satellite outside the list. The app doesn't calculate brightness, so the AI is told not to describe how bright a satellite is.
 
@@ -90,7 +90,7 @@ VEMMSUNJ is a sky-watching map for observatories, satellite passes, and sighting
 
 **Moon phases and eclipses.** Moon phases use a simplified lunar model, accurate to a few degrees. Eclipse dates are approximate, within about an hour, and can miss an eclipse or list one that doesn't happen. Check a published eclipse table before planning.
 
-**Sky chart and star compass.** The chart and the compass use 85 bright stars, with positions and magnitudes typed from standard reference values. They may contain small errors of a few tenths of a degree. The app can also load the full Yale Bright Star Catalogue (BSC5), which is public domain, but the download from CDS fails from both the phone and the hosting server because of a certificate problem on CDS's side.
+**Sky chart and star compass.** The chart uses the Yale Bright Star Catalogue (BSC5, public domain), bundled with the app, to magnitude 6.5. The sky list shows stars to magnitude 5. Positions are precessed to the date and are accurate to about a quarter of a degree.
 
 **Compass sensors.** The compass uses the device's orientation sensors when they report direction. Without a magnetic compass, it uses the accelerometer for tilt only, and direction is set by aligning to a known object.
 
@@ -135,12 +135,12 @@ After the first deploy, load the planetary data once:
 
 ## Known limits
 
-- Passes are cached for an hour and limited to the first 100. The first calculation for a place can take close to a minute on a slow connection.
+- Passes are computed every six hours and stored. A place with no stored result shows no passes until the next run.
 - Starlink is off, because the full group makes the calculation too slow for a serverless request.
 - Time travel is limited to 7 days ahead, since predictions from current orbit data get less reliable further out.
 - The bot posts at most once a day per place, and skips places where the sun is up.
 - Bot charts are schematic. They show peak altitude and timing, not a real view of the sky.
-- The sky chart and compass show 85 bright stars. The full catalogue can't currently be downloaded.
+- The sky chart and compass show stars from the bundled Yale catalogue to magnitude 6.5, not the full catalogue.
 - Compass direction on phones without a magnetic compass must be set by tapping a known object, and it needs realigning after turning.
 - The compass with a magnetic sensor is not yet tested on a phone that has one.
 - Globe and Map country borders are coarse, and small countries may be missed.
