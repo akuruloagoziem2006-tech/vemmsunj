@@ -4486,12 +4486,21 @@ def place_page(listing_id):
                 error = ("Choose a time from now up to 7 days ahead. Older dates can't be "
                          "predicted from current orbit data.")
                 origin = None
+    week_passes = None
     if origin is not None and _pre_only() and origin > datetime.now(timezone.utc) + timedelta(hours=24):
-        error = ("Times more than 24 hours ahead aren't available on this free server yet. "
-                 "Choose a time within the next 24 hours.")
-        origin = None
+        # Beyond 24 hours: read the stored 7-day list and keep passes that overlap the 24 hours from origin.
+        week = cache_get(f"passes-7d-v1:{listing_id}", 10**9)
+        if week is None:
+            error = "Predictions for that time aren't stored yet. Try again after the next run."
+            origin = None
+        else:
+            horizon = origin + timedelta(hours=24)
+            week_passes = [pz for pz in json.loads(week)
+                           if parse_when(pz["end"]) >= origin and parse_when(pz["start"]) <= horizon]
     try:
-        if origin is not None and _pre_only():
+        if week_passes is not None:
+            passes = week_passes
+        elif origin is not None and _pre_only():
             # Free server: serve the stored 24-hour passes; no live search.
             passes, _ = cached_passes(listing_id, place)
         elif origin is not None:
