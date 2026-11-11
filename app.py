@@ -1491,7 +1491,7 @@ main h2[id], details[id] { scroll-margin-top: 1rem; }
 <main>{% block content %}{% endblock %}</main>
 <footer class="site-footer">
   <div class="inner">
-    <p><strong>VEMMSUNJ</strong> · Released under the MIT licence. <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a></p>
+    <p><strong>VEMMSUNJ</strong> · Released under the MIT licence. <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj">GitHub</a> · <a href="https://github.com/akuruloagoziem2006-tech/vemmsunj/issues/new">Report a bug</a></p>
     <p>Data from CelesTrak, NASA JPL, NASA EPIC, NOAA Space Weather Prediction Center, Open-Meteo, OpenStreetMap, and Natural Earth. Full credits are in the README.</p>
   </div>
 </footer>
@@ -9592,6 +9592,21 @@ NOTICE_TEMPLATES = {"notice.html": """{% extends "base.html" %}
 {% endblock %}
 """}
 app.jinja_env.loader.mapping.update(NOTICE_TEMPLATES)
+
+# ---------- Per-IP limits on signup and posting (login already has its own lockout) ----------
+VM_IP_LIMITS = {"/signup": ("signup-ip", 10), "/posts": ("post-ip", 60)}
+
+@app.before_request
+def vm_ip_rate_limit():
+    if request.method != "POST" or request.path not in VM_IP_LIMITS:
+        return None
+    prefix, max_hits = VM_IP_LIMITS[request.path]
+    key = f"{prefix}:{request.remote_addr or 'unknown'}"
+    if locked(key, max_fails=max_hits):
+        return Response("Too many requests from your network. Please wait 15 minutes and try again.",
+                        status=429, mimetype="text/plain", headers={"Retry-After": "900"})
+    record_failure(key)
+    return None
 
 if __name__ == "__main__":
     from waitress import serve
