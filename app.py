@@ -7939,28 +7939,28 @@ ABOUT_TEMPLATES = {"about.html": """{% extends "base.html" %}
 <h1>About VEMMSUNJ</h1>
 <p class="lede">VEMMSUNJ is a sky-watching map for observatories, dark-sky spots, and people who log what they see.</p>
 <h2>The name</h2>
-<p>VEMMSUNJ is named for the eight planets, in order from the Sun: Venus, Earth, Mercury, Mars, Saturn, Uranus, Neptune, Jupiter.</p>
+<p>VEMMSUNJ is named for eight planets: Venus, Earth, Mercury, Mars, Saturn, Uranus, Neptune and Jupiter.</p>
 <h2>What you can do</h2>
 <p>Find observatories and dark-sky spots, check tonight's satellite passes and planets, look at the sky in front of your phone, follow the aurora forecast, and log what you see.</p>
 <h2>How the data works</h2>
 <p>Satellite positions come from CelesTrak's orbit data. Planet positions come from NASA's DE421 ephemeris. Space weather and the aurora forecast come from NOAA. Seeing comes from 7Timer!. Weather comes from Open-Meteo. Times are approximate, and they're shown in your time zone with UTC beside them.</p>
 <h2>What it can't do yet</h2>
-<p>Star charts use 85 bright stars, not a full catalogue. Eclipse dates are approximate. Pass and aurora alerts only run while a page is open.</p>
+<p>Star charts use the Yale Bright Star Catalogue to magnitude 6.5, and the sky list shows stars to magnitude 5. Pass searches cover 30 satellites from the stations, visual and weather groups. Time travel predicts up to 7 days ahead. Eclipse dates are approximate. Pass and aurora alerts only run while a page is open.</p>
 <h2>Privacy</h2>
-<p>Your location stays in your browser when you use Near me or the sky view. We store your account, your sightings, your likes and follows, and your log entries. See the <a href="/privacy">privacy page</a>.</p>
+<p>Near me and the star compass use your location only on your device. Sky view's Use my location sends your coordinates to our server to calculate the sky above you, and they aren't stored. We store your account, your sightings, your likes and follows, and your log entries. See the <a href="/privacy">privacy page</a>.</p>
 <h2>Contact</h2>
 <p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a>.</p>
 <h2>Data sources and how they're calculated</h2>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Data</th><th>Source</th><th>Updated</th><th>Method and limits</th></tr></thead>
 <tbody>
-<tr><td>Satellite positions</td><td>CelesTrak orbit data (TLE)</td><td>Orbit data at most every 6 hours; positions every second</td><td>SGP4 propagation from the orbit data. Accuracy degrades as the orbit data ages.</td></tr>
-<tr><td>Planet positions</td><td>NASA JPL DE421 ephemeris</td><td>Fixed ephemeris file</td><td>Geometric positions, apparent for the observer. Accurate for observing, not for spacecraft navigation.</td></tr>
-<tr><td>Bright stars</td><td>Yale Bright Star Catalogue (Hoffleit and Warren, 1991)</td><td>Static</td><td>Positions precessed to the date. Accurate to about a quarter of a degree. Stars to magnitude 6.5 on charts.</td></tr>
-<tr><td>Pass times</td><td>Calculated from CelesTrak orbits</td><td>Pass summaries every six hours</td><td>Predicted, not observed. Times are the 10 degree crossings, so they are close to but not exactly when a satellite clears the horizon.</td></tr>
+<tr><td>Satellite positions</td><td>CelesTrak orbit data (TLE)</td><td>Orbit samples refreshed every 15 minutes; the browser moves satellites every second between samples</td><td>SGP4 propagation from the orbit data. Positions can be up to 15 minutes old, and accuracy degrades as the orbit data ages.</td></tr>
+<tr><td>Planet positions</td><td>NASA JPL DE421 ephemeris</td><td>Stored results refreshed hourly</td><td>Geometric positions, apparent for the observer. Accurate for observing, not for spacecraft navigation.</td></tr>
+<tr><td>Bright stars</td><td>Yale Bright Star Catalogue (Hoffleit and Warren, 1991)</td><td>Static</td><td>Positions precessed to the date. Accurate to about a quarter of a degree. Charts show stars to magnitude 6.5.</td></tr>
+<tr><td>Pass times</td><td>Calculated from CelesTrak orbits, for 30 satellites</td><td>Computed on GitHub's runners every six hours</td><td>Predicted, not observed. Times are the 10 degree crossings, so they are close to but not exactly when a satellite clears the horizon.</td></tr>
 <tr><td>Aurora and space weather</td><td>NOAA Space Weather Prediction Center</td><td>About every 15 to 30 minutes</td><td>Forecast and reported values. Reality can differ, especially in short-term storms.</td></tr>
-<tr><td>Seeing and weather</td><td>7Timer! and Open-Meteo</td><td>Cached for an hour</td><td>Model forecasts. Local conditions can differ.</td></tr>
-<tr><td>Asteroids and comets</td><td>NASA JPL Small-Body Database</td><td>Cached for six hours</td><td>Orbit-derived. Comet brightness is hard to predict.</td></tr>
+<tr><td>Seeing and weather</td><td>7Timer! and Open-Meteo</td><td>Refreshed every two hours</td><td>Model forecasts. Local conditions can differ.</td></tr>
+<tr><td>Asteroids and comets</td><td>NASA JPL Small-Body Database</td><td>Refreshed hourly for close approaches; cached for six hours on the page</td><td>Close approaches within the chosen distance, for objects brighter than magnitude 16 only. Comet brightness is hard to predict.</td></tr>
 </tbody></table></div>
 <p class="meta">Automated sightings are predictions, not observations. Each one shows when it was posted, and pass summaries older than six hours are hidden.</p>
 
@@ -7977,15 +7977,16 @@ def about_page():
 PRIVACY_TEMPLATES = {"privacy.html": """{% extends "base.html" %}
 {% block content %}
 <h1>Privacy</h1>
-<p class="meta">Last updated 25 October 2026.</p>
+<p class="meta">Last updated 10 November 2026.</p>
 <h2>What we store</h2>
 <p>An account needs a username and a password. The password is stored only as a salted hash. We store the sightings, likes, follows, and log entries you create, and the times you joined, logged in, and were last active.</p>
+<p>We use your IP address briefly to limit repeated logins, signups and posts. It's kept for 15 minutes and isn't linked to your account.</p>
 <h2>What we count</h2>
-<p>We count page views and feature uses per page and per day, plus which places, satellites, and settings are chosen across all visitors. We don't record IP addresses, device details, or what any one person did.</p>
+<p>We count page views and feature uses per page and per day, plus which places, satellites, and settings are chosen across all visitors. We don't record device details, or what any one person did.</p>
 <h2>Your location</h2>
-<p>When you tap Near me or use the star compass or sky view, your location and sensor readings are used on your device to sort places or aim the sky view. In the sky view, Use my location sends your coordinates to our server only to calculate the sky above you, and they aren't stored.</p>
+<p>Near me and the star compass use your location only on your device, to sort places or aim the star compass. In the sky view, Use my location sends your coordinates to our server only to calculate the sky above you, and they aren't stored.</p>
 <h2>Services we use</h2>
-<p>Hosting on Render, the database on Supabase, orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are NASA's.</p>
+<p>Hosting on Render, the database on Supabase, error reports from Sentry (which may include the page address where an error happened), orbit and space-weather data from CelesTrak, NASA, and NOAA, forecasts from Open-Meteo and 7Timer!, and maps from OpenStreetMap. Photos are credited on their pages.</p>
 <h2>Removing your account</h2>
 <p>Email <a href="mailto:vemmsunj@gmail.com">vemmsunj@gmail.com</a> to ask for your account to be removed. Removing an account deletes its sightings, likes, follows, and log entries.</p>
 <h2>Advertising and data sales</h2>
