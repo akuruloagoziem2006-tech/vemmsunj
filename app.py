@@ -4555,7 +4555,8 @@ def api_identify(listing_id):
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except requests.RequestException as e:
-        return jsonify({"error": f"upstream request failed: {e}"}), 502
+        print(f"gemini upstream error: {e}", flush=True)
+        return jsonify({"error": "The sighting explanation is busy right now. Your sighting is not affected. Try again in a few minutes."}), 502
     return jsonify({
         "listing": row["name"],
         "time": when.isoformat(),
