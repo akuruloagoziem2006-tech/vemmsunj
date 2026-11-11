@@ -8787,12 +8787,8 @@ PLANET_PROFILE_TEMPLATES = {"planet.html": """{% extends "base.html" %}
 app.jinja_env.loader.mapping.update(PLANET_PROFILE_TEMPLATES)
 
 # ---------- Observation calendar: the next 14 nights at a place ----------
-@app.route("/observe/<int:listing_id>")
-def observe_page(listing_id):
-    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
-                             (listing_id,)).fetchone()
-    if place is None:
-        abort(404)
+def observe_rows(place):
+    """The next 14 nights: Moon phase and illumination, and civil dusk and dawn. Computed by the hourly job."""
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     nights = []
     for k in range(14):
@@ -8814,6 +8810,20 @@ def observe_page(listing_id):
             "dusk": civil.get("dusk"),
             "dawn": civil.get("dawn"),
         })
+    return nights
+
+@app.route("/observe/<int:listing_id>")
+def observe_page(listing_id):
+    place = get_db().execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                             (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    if _pre_only():
+        # Free server: read the table the hourly job stored; never calculate on the request.
+        body = cache_get(f"observe-v1:{listing_id}", 10**9)
+        nights = json.loads(body) if body else []
+    else:
+        nights = observe_rows(place)
     return render_template("observe.html", place=place, nights=nights,
                            title="Observation calendar", section="places")
 
@@ -9411,6 +9421,19 @@ def cron_precompute():
                 key=lambda o: o["alt"], reverse=True)
             cache_put(f"tonight-v1:{place['id']}", json.dumps(rows))
             result = len(rows)
+        elif step == "observe":
+            pid = request.args.get("place", "1")
+            if not pid.isdigit():
+                return jsonify({"step": step, "error": "bad place"}), 400
+            db = connect()
+            place = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = ?",
+                               (int(pid),)).fetchone()
+            db.close()
+            if place is None:
+                return jsonify({"step": step, "error": "no such place"}), 404
+            nights = observe_rows(place)
+            cache_put(f"observe-v1:{place['id']}", json.dumps(nights))
+            result = len(nights)
         elif step == "passcount":
             result = {"slices": _slice_count()}
         elif step in ("planets", "sky", "post", "pslice", "pmerge"):
