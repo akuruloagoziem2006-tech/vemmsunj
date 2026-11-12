@@ -1,0 +1,37 @@
+name: Daily encrypted database backup
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pg8000
+      - name: Dump and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE secret is missing"; exit 1; }
+          python3 tools/backup_export.py backup.json
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in backup.json -out backup.json.enc -pass env:BACKUP_PASSPHRASE
+          rm -f backup.json
+          ls -l backup.json.enc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vemmsunj-backup-${{ github.run_id }}
+          path: backup.json.enc
+          retention-days: 30
