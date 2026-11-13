@@ -332,7 +332,7 @@ def _build_satellites():
 # positions are computed from the requested time on every call, so they stay live.
 SAT_CACHE_SECONDS = 300
 _SAT_CACHE = {"at": 0.0, "ts": None, "sats": None}
-_SAT_LOCK = _threading_for_sats = None
+_SAT_LOCK = None
 
 def get_satellites():
     global _SAT_LOCK
