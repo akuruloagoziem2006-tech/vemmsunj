@@ -316,7 +316,7 @@ def parse_tle(text):
             out.append((lines[i - 1], lines[i], lines[i + 1]))
     return out
 
-def get_satellites():
+def _build_satellites():
     ts = load.timescale()
     sats, seen = [], set()
     for group in TLE_GROUPS:
@@ -327,6 +327,24 @@ def get_satellites():
             seen.add(key)
             sats.append(EarthSatellite(l1, l2, name, ts))
     return ts, sats
+
+# Cache the built satellite objects for a few minutes. They hold orbital elements only;
+# positions are computed from the requested time on every call, so they stay live.
+SAT_CACHE_SECONDS = 300
+_SAT_CACHE = {"at": 0.0, "ts": None, "sats": None}
+_SAT_LOCK = _threading_for_sats = None
+
+def get_satellites():
+    global _SAT_LOCK
+    import threading
+    if _SAT_LOCK is None:
+        _SAT_LOCK = threading.Lock()
+    with _SAT_LOCK:
+        if _SAT_CACHE["sats"] is not None and time.time() - _SAT_CACHE["at"] < SAT_CACHE_SECONDS:
+            return _SAT_CACHE["ts"], _SAT_CACHE["sats"]
+        ts, sats = _build_satellites()
+        _SAT_CACHE.update(at=time.time(), ts=ts, sats=sats)
+        return ts, sats
 
 def sun_unit_vector(when):
     # Low-precision solar position (Astronomical Almanac), accurate to about 0.01 degrees.
