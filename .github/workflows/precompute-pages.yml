@@ -38,7 +38,7 @@ jobs:
           for id in $IDS; do
             for step in planets sky tonight observe; do
               call "step=$step&place=$id" || true
-              sleep 15
+              sleep 5
             done
           done
           call "step=home" || true
