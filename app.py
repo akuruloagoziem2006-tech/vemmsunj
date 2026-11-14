@@ -7534,7 +7534,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (row) { e.preventDefault(); S.picked = row.getAttribute('data-name'); if (window.vmTrack) window.vmTrack('satellite_pick', S.picked); tick(); }
     });
     setInterval(tick, 1000);
-    setInterval(resync, 60000);
+    setInterval(resync, 300000);  // the globe snapshot changes every 15 minutes
   }
   resync();
 })();
