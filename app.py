@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import tempfile
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -4048,9 +4049,17 @@ PLANET_KERNEL_NAMES = [
     ("Neptune", "neptune barycenter"),
 ]
 
+_PLANET_KERNEL_LOCK = threading.Lock()
+
 def get_planet_kernel():
+    """One shared DE421 kernel per process. The file is written to a temporary name and renamed into place,
+    so no thread ever maps a half-written file. A lock stops concurrent requests rebuilding it at once."""
     global _PLANET_KERNEL
-    if _PLANET_KERNEL is None:
+    if _PLANET_KERNEL is not None:
+        return _PLANET_KERNEL
+    with _PLANET_KERNEL_LOCK:
+        if _PLANET_KERNEL is not None:
+            return _PLANET_KERNEL
         from skyfield.jpllib import SpiceKernel
         if not EPH_PATH.exists() or EPH_PATH.stat().st_size < 1000000:
             db = connect()
@@ -4058,9 +4067,11 @@ def get_planet_kernel():
             db.close()
             if row is None:
                 raise RuntimeError("planetary data is not stored yet")
-            EPH_PATH.write_bytes(bytes(row["body"]))
+            tmp = EPH_PATH.with_name(f"de421.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_bytes(bytes(row["body"]))
+            os.replace(tmp, EPH_PATH)
         _PLANET_KERNEL = SpiceKernel(str(EPH_PATH))
-    return _PLANET_KERNEL
+        return _PLANET_KERNEL
 
 def planets_at(place, when):
     """Exact planet positions from DE421. Falls back to the simplified calculation if the data isn't available."""
