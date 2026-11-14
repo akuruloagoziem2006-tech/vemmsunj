@@ -4360,6 +4360,22 @@ def sky_objects(lat, lon, when):
         pass
     return out
 
+# Sky results per location, shared by all visitors for 60 seconds (the sky page itself refreshes once a minute).
+_SKY_API_CACHE = {}
+SKY_API_CACHE_SECONDS = 60
+
+def _sky_api_objects(lat, lon, now):
+    """Return (computed_at, objects). Positions are recalculated whenever the cached entry expires."""
+    key = (round(lat, 2), round(lon, 2))
+    hit = _SKY_API_CACHE.get(key)
+    if hit and time.time() - hit[0] < SKY_API_CACHE_SECONDS:
+        return hit[1], hit[2]
+    objs = sky_objects(lat, lon, now)
+    if len(_SKY_API_CACHE) > 200:
+        _SKY_API_CACHE.clear()
+    _SKY_API_CACHE[key] = (time.time(), now, objs)
+    return now, objs
+
 @app.route("/api/sky")
 def api_sky():
     try:
@@ -4371,7 +4387,7 @@ def api_sky():
         return jsonify({"error": "Give a valid latitude and longitude."}), 400
     now = datetime.now(timezone.utc)
     try:
-        objs = sky_objects(lat, lon, now)
+        computed_at, objs = _sky_api_objects(lat, lon, now)
     except Exception as e:
         print(f"sky error: {e}", flush=True)
         return jsonify({"error": "Sky data isn't available right now. Try again in a few minutes."}), 502
@@ -4379,7 +4395,7 @@ def api_sky():
         sun_up = sun_altitude_deg(lat, lon, now) > -6.0
     except Exception:
         sun_up = False
-    return jsonify({"time": now.isoformat(timespec="minutes"), "objects": objs, "sun_up": sun_up})
+    return jsonify({"time": computed_at.isoformat(timespec="minutes"), "objects": objs, "sun_up": sun_up})
 
 @app.route("/compass")
 def compass_page():
@@ -7518,7 +7534,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (row) { e.preventDefault(); S.picked = row.getAttribute('data-name'); if (window.vmTrack) window.vmTrack('satellite_pick', S.picked); tick(); }
     });
     setInterval(tick, 1000);
-    setInterval(resync, 60000);
+    setInterval(resync, 300000);  // the globe snapshot changes every 15 minutes
   }
   resync();
 })();
