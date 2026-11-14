@@ -1886,6 +1886,7 @@ if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); 
   {% if items %}
     <p>Next pass at {{ items[0]['start'] }} UTC, peak {{ items[0]['peak'] }} degrees.</p>
   {% endif %}
+  <p class="meta">{{ pass_freshness(place) }}</p>
   <div class="strip" aria-label="Passes in the next 24 hours">
     <div class="now"></div>
     {% for t in ticks %}<div class="tick" style="left: {{ t['left'] }}%"><span>{{ t['label'] }}</span></div>{% endfor %}
@@ -4485,6 +4486,25 @@ def place_posts(place):
         "FROM posts p WHERE p.listing_id = ? ORDER BY p.id DESC LIMIT 20",
         (place["id"],),
     ).fetchall()
+
+def pass_freshness(place):
+    """Note for the place page: when its pass predictions were computed, and whether they're stale."""
+    if not _pre_only():
+        return ""
+    body = cache_get(f"passes-at-v1:{place['id']}", 10**9)
+    if not body:
+        return "Pass predictions haven't been computed for this place yet."
+    try:
+        at = datetime.fromisoformat(json.loads(body)).replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return ""
+    age_h = (datetime.now(timezone.utc) - at).total_seconds() / 3600
+    stamp = at.strftime("%d %b %H:%M UTC")
+    if age_h > 6:
+        return f"Pass predictions were last computed {stamp}, more than six hours ago. They may be out of date."
+    return f"Pass predictions computed {stamp}."
+
+app.jinja_env.globals["pass_freshness"] = pass_freshness
 
 @app.route("/places/<int:listing_id>")
 def place_page(listing_id):
