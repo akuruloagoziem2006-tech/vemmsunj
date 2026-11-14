@@ -3084,7 +3084,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     updateInfo();
   });
   load();
-  setInterval(load, 60000);
+  setInterval(load, 300000);  // the globe snapshot changes every 15 minutes
   requestAnimationFrame(frame);
 })();
 </script>
