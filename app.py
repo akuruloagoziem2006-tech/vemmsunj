@@ -6787,12 +6787,18 @@ def moon_events(place, now):
         print(f"moon events error: {e}", flush=True)
     return res
 
-@app.route("/places/<int:listing_id>/tonight")
-def tonight_page(listing_id):
-    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
-    if place is None:
-        abort(404)
-    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+# What's up tonight: the calculations are shared by all visitors for five minutes, per place.
+# Only the calculated values are cached, never the HTML, because the page includes each visitor's session.
+TONIGHT_CACHE_SECONDS = 300
+_TONIGHT_CACHE = {}
+_TONIGHT_LOCKS = {}
+_TONIGHT_LOCKS_GUARD = threading.Lock()
+
+def _tonight_lock(place_id):
+    with _TONIGHT_LOCKS_GUARD:
+        return _TONIGHT_LOCKS.setdefault(place_id, threading.Lock())
+
+def _tonight_values(place, now):
     twilight = twilight_times(place["latitude"], place["longitude"], now)
     moon = moon_events(place, now)
     phase, illum = moon_phase(now)
@@ -6803,6 +6809,29 @@ def tonight_page(listing_id):
         print(f"tonight planets error: {e}", flush=True)
         planets = []
     planets.sort(key=lambda r: r["mag"])
+    return {"twilight": twilight, "moon": moon, "phase": phase, "illum": illum, "planets": planets[:4]}
+
+def tonight_cached(place):
+    """Return (computed_at, values). One request computes; concurrent requests for the same place wait and reuse it."""
+    key = place["id"]
+    hit = _TONIGHT_CACHE.get(key)
+    if hit and time.time() - hit[0] < TONIGHT_CACHE_SECONDS:
+        return hit[1], hit[2]
+    with _tonight_lock(key):
+        hit = _TONIGHT_CACHE.get(key)
+        if hit and time.time() - hit[0] < TONIGHT_CACHE_SECONDS:
+            return hit[1], hit[2]
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        vals = _tonight_values(place, now)
+        _TONIGHT_CACHE[key] = (time.time(), now, vals)
+        return now, vals
+
+@app.route("/places/<int:listing_id>/tonight")
+def tonight_page(listing_id):
+    place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if place is None:
+        abort(404)
+    now, vals = tonight_cached(place)
     try:
         passes, _ = cached_passes(listing_id, place)
     except requests.RequestException:
@@ -6817,8 +6846,8 @@ def tonight_page(listing_id):
                          "peak": p["max_altitude_deg"]})
     soon.sort(key=lambda p: p["peak"], reverse=True)
     return render_template("tonight.html", place=place, now=now.strftime("%Y-%m-%d %H:%M"),
-                           twilight=twilight, moon=moon, phase=phase, illum=illum,
-                           planets=planets[:4], passes=soon[:5], title="What's up tonight",
+                           twilight=vals["twilight"], moon=vals["moon"], phase=vals["phase"], illum=vals["illum"],
+                           planets=vals["planets"], passes=soon[:5], title="What's up tonight",
                            section="places")
 
 TONIGHT_TEMPLATES = {"tonight.html": r"""{% extends "base.html" %}
