@@ -4533,6 +4533,30 @@ def pass_freshness(place):
 
 app.jinja_env.globals["pass_freshness"] = pass_freshness
 
+# Planet positions for the live "now" view are shared by all visitors for five minutes, per place.
+# Only the calculated values are cached, never the HTML, because the page includes each visitor's session.
+PLANET_CACHE_SECONDS = 300
+_PLANET_CACHE = {}
+_PLANET_LOCKS = {}
+_PLANET_LOCKS_GUARD = threading.Lock()
+
+def _planet_lock(place_id):
+    with _PLANET_LOCKS_GUARD:
+        return _PLANET_LOCKS.setdefault(place_id, threading.Lock())
+
+def planets_cached(place):
+    key = place["id"]
+    hit = _PLANET_CACHE.get(key)
+    if hit and time.time() - hit[0] < PLANET_CACHE_SECONDS:
+        return hit[1]
+    with _planet_lock(key):
+        hit = _PLANET_CACHE.get(key)
+        if hit and time.time() - hit[0] < PLANET_CACHE_SECONDS:
+            return hit[1]
+        result = planets_at(place, datetime.now(timezone.utc))
+        _PLANET_CACHE[key] = (time.time(), result)
+        return result
+
 @app.route("/places/<int:listing_id>")
 def place_page(listing_id):
     place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
@@ -4579,7 +4603,7 @@ def place_page(listing_id):
     if origin is None:
         tonight = tonight_summary(place, passes)
     when_now = origin or datetime.now(timezone.utc)
-    planets_dark, planets = planets_at(place, when_now)
+    planets_dark, planets = planets_cached(place) if origin is None else planets_at(place, when_now)
     return render_template("place.html", here=place_posts(place), place=place, items=items, ticks=ticks, error=error,
                            planets=planets, planets_dark=planets_dark, eclipse=eclipse_for_place(place), weather=weather_for(place), alarm_passes=alarm_list(passes),
                            tonight=tonight, custom=origin is not None,
