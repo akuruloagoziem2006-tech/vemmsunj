@@ -4203,7 +4203,30 @@ def stored_label(key, max_minutes=45):
         label += " (may be out of date)"
     return label
 
+def cache_prefetch(keys):
+    """Read several stored keys in one query for the current request. Later cache_get calls use them."""
+    from flask import g, has_request_context
+    if not has_request_context() or not keys:
+        return
+    keys = list(keys)
+    db = _shared_db()
+    try:
+        rows = db.execute(
+            "SELECT key, body, fetched_at FROM cache_kv WHERE key IN (" + ",".join("?" * len(keys)) + ")",
+            tuple(keys)).fetchall()
+    finally:
+        _release(db)
+    found = {r["key"]: (r["body"], r["fetched_at"]) for r in rows}
+    g.kv_prefetched = {k: found.get(k) for k in keys}
+
 def cache_get(key, max_age):
+    from flask import g, has_request_context
+    if has_request_context() and key in getattr(g, "kv_prefetched", {}):
+        hit = g.kv_prefetched[key]
+        if hit is None:
+            return None
+        body, fetched_at = hit
+        return body if time.time() - fetched_at < max_age else None
     db = _shared_db()
     try:
         row = db.execute("SELECT body, fetched_at FROM cache_kv WHERE key = ?", (key,)).fetchone()
@@ -4585,6 +4608,7 @@ def place_page(listing_id):
     place = get_db().execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if place is None:
         abort(404)
+    cache_prefetch([f"passes-v1:{listing_id}", f"passes-at-v1:{listing_id}", f"wx:{listing_id}"])
     at_value = request.args.get("at", "").strip()
     error, items, ticks, passes, tonight, origin = None, [], [], [], None, None
     if at_value:
