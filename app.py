@@ -548,6 +548,14 @@ TEMPLATES = {
 <meta property="og:title" content="VEMMSUNJ: sky-watching map">
 <meta property="og:description" content="Find dark-sky places, check tonight's satellite passes and planets, and log what you saw.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://vemmsunj.onrender.com/">
+<meta property="og:image" content="https://vemmsunj.onrender.com/static/share.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VEMMSUNJ: sky-watching map">
+<meta name="twitter:description" content="Find dark-sky places, check tonight's satellite passes and planets, and log what you saw.">
+<meta name="twitter:image" content="https://vemmsunj.onrender.com/static/share.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0A0D12">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
