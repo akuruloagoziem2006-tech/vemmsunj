@@ -3874,13 +3874,36 @@ def dark_intervals(lat, lon, now, hours=24, step_min=30):
         intervals.append((start, now + timedelta(hours=hours)))
     return intervals
 
+# Dark-sky intervals per place change slowly, so they're shared by all visitors for five minutes.
+DARK_CACHE_SECONDS = 300
+_DARK_CACHE = {}
+_DARK_LOCKS = {}
+_DARK_LOCKS_GUARD = threading.Lock()
+
+def _dark_lock(place_id):
+    with _DARK_LOCKS_GUARD:
+        return _DARK_LOCKS.setdefault(place_id, threading.Lock())
+
+def dark_intervals_cached(place, now):
+    key = place["id"]
+    hit = _DARK_CACHE.get(key)
+    if hit and time.time() - hit[0] < DARK_CACHE_SECONDS:
+        return hit[1]
+    with _dark_lock(key):
+        hit = _DARK_CACHE.get(key)
+        if hit and time.time() - hit[0] < DARK_CACHE_SECONDS:
+            return hit[1]
+        result = dark_intervals(place["latitude"], place["longitude"], now)
+        _DARK_CACHE[key] = (time.time(), result)
+        return result
+
 def tonight_summary(place, passes):
     now = datetime.now(timezone.utc)
     end = now + timedelta(hours=24)
     phase, illum = moon_phase(now)
     try:
         dark = [(a.strftime("%H:%M"), b.strftime("%H:%M"))
-                for a, b in dark_intervals(place["latitude"], place["longitude"], now)]
+                for a, b in dark_intervals_cached(place, now)]
     except Exception:
         dark = None  # shown as unavailable on the page
     upcoming = []
