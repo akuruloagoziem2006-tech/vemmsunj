@@ -4962,6 +4962,9 @@ def run_daily_bot(now=None):
     places = db.execute("SELECT * FROM listings ORDER BY id").fetchall()
     posted, skipped = [], []
     for place in places:
+        # Pass summaries are posted only by passes.yml (every six hours), so this daily job skips them.
+        skipped.append({"place": place["name"], "reason": "summaries posted by passes.yml"})
+        continue
         if time.time() - started > BOT_TIME_BUDGET:
             skipped.append({"place": place["name"], "reason": "time budget used up, try again tomorrow"})
             continue
@@ -8688,7 +8691,10 @@ def index():
         data = _home_data(db)
         cache_put(HOME_CACHE_KEY, json.dumps(data))
     stored = stored_label("home-data-v2")
-    return render_template("home.html", stored=stored, recent=fresh_posts(data["recent"]), slides=fresh_posts(data["slides"]), sky=data["sky"],
+    feed = fresh_posts(data["recent"])
+    feed_ids = {r["id"] for r in feed}
+    slides = [sl for sl in fresh_posts(data["slides"]) if sl["id"] not in feed_ids]
+    return render_template("home.html", stored=stored, recent=feed, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
 # ---------- Globe consistency check (read-only diagnostic) ----------
