@@ -5022,7 +5022,7 @@ def post_satellite_image(now=None):
         latest = max(frames, key=lambda f: f["date"])
         y, m, d = latest["date"][:10].split("-")
         url = f"https://epic.gsfc.nasa.gov/archive/natural/{y}/{m}/{d}/png/{latest['image']}.png"
-        body = (f"Earth from space, captured {latest['date'][:16]} UTC by NASA's EPIC camera "
+        body = (f"Daily image · NASA EPIC (satellite). Earth from space, captured {latest['date'][:16]} UTC by NASA's EPIC camera "
                 "on the DSCOVR satellite. Image: NASA, public domain.")
         db.execute(
             "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -6281,6 +6281,31 @@ def _post_nasa_library(db, now, day):
         return "posted"
     return "no new image found today"
 
+APOD_API = "https://api.nasa.gov/planetary/apod"
+
+def _post_apod(db, now, day):
+    """NASA's Astronomy Picture of the Day. Skips videos and third-party-credited images."""
+    r = requests.get(APOD_API, params={"api_key": os.environ.get("NASA_API_KEY", "DEMO_KEY")}, timeout=20)
+    r.raise_for_status()
+    item = r.json()
+    if item.get("media_type") != "image":
+        return "today's item is a video, skipped"
+    if item.get("copyright"):
+        return "credited to a third party, skipped"
+    date = item.get("date", day)
+    if _image_already_used(db, "apod", date):
+        return "already posted"
+    url = item.get("hdurl") or item.get("url") or ""
+    if not url.startswith("https://"):
+        return "no usable image URL"
+    title = item.get("title", "Astronomy picture")
+    text = item.get("explanation") or ""
+    if len(text) > 400:
+        text = text[:400].rsplit(" ", 1)[0] + "…"
+    body = f"Daily image · NASA APOD ({date}): {title}. {text} Image: NASA, public domain."
+    _mark_image(db, "apod", date, body, url, now)
+    return "posted"
+
 def post_extra_images(now=None):
     now = now or datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
@@ -6288,7 +6313,7 @@ def post_extra_images(now=None):
     results = {}
     try:
         db.execute("CREATE TABLE IF NOT EXISTS image_used (source TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY (source, ref))")
-        for label, fn in (("enhanced_earth", _post_enhanced_earth), ("nasa_library", _post_nasa_library)):
+        for label, fn in (("enhanced_earth", _post_enhanced_earth), ("nasa_library", _post_nasa_library), ("apod", _post_apod)):
             try:
                 results[label] = fn(db, now, day)
             except requests.RequestException as e:
