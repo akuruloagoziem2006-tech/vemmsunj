@@ -4993,7 +4993,7 @@ def run_daily_bot(now=None):
     db.close()
     return {"day": day, "posted": posted, "skipped": skipped}
 
-@app.route("/api/cron/daily")
+@app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
     if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
