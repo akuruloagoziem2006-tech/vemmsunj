@@ -8552,10 +8552,10 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   <h2 id="feed-title">Astronomy feed</h2>
   <p class="meta">Images from NASA. Dates in captions are from NASA's records.</p>
   <div class="feed-grid">
-  {% for s in recent[:4] %}
+  {% for s in recent[:8] %}
   <figure class="feed-photo">
     <img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%">
-    <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
+    <figcaption class="meta">{{ s['body'][:160] }} <a href="{{ s['source'] }}" target="_blank" rel="noopener">Open details</a></figcaption>
   </figure>
   {% else %}
   <p>No astronomy images yet.</p>
@@ -8657,16 +8657,41 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 """}
 app.jinja_env.loader.mapping.update(HOME_NEW_TEMPLATES)
 
-HOME_CACHE_KEY = "home-data-v2"
+HOME_CACHE_KEY = "home-data-v3"
+
+def _unique_images(rows):
+    """One entry per image address, keeping the newest."""
+    seen, out = set(), []
+    for r in rows:
+        key = r.get("image_svg") or r.get("body")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+def _details_link(body, image_url):
+    """A page where a visitor can read about the image."""
+    import re as _re
+    m = _re.search(r"NASA APOD \((\d{4})-(\d{2})-(\d{2})\)", body)
+    if m:
+        y, mo, d = m.group(1), m.group(2), m.group(3)
+        return f"https://apod.nasa.gov/apod/ap{y[2:]}{mo}{d}.html"
+    if "NASA EPIC" in body or "epic.gsfc.nasa.gov" in image_url:
+        return "https://epic.gsfc.nasa.gov/"
+    return image_url or "https://www.nasa.gov/"
 
 def _home_data(db):
     """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
     recent = [dict(r) for r in db.execute(
-        "SELECT p.id, p.author, p.body, p.created_at, (p.image_svg IS NOT NULL) AS has_image, "
+        "SELECT p.id, p.author, p.body, p.created_at, p.image_svg AS image_url, (p.image_svg IS NOT NULL) AS has_image, "
         "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
         "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
-        "ORDER BY p.id DESC LIMIT 6").fetchall()]
+        "ORDER BY p.created_at DESC, p.id DESC LIMIT 24").fetchall()]
+    recent = _unique_images(recent)[:8]
+    for r in recent:
+        r["source"] = _details_link(r.get("body") or "", r.get("is_photo") and r.get("image_url") or "")
     first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
     sky = None
     if first is not None:
@@ -8690,7 +8715,7 @@ def index():
         db = get_db()
         data = _home_data(db)
         cache_put(HOME_CACHE_KEY, json.dumps(data))
-    stored = stored_label("home-data-v2")
+    stored = stored_label("home-data-v3")
     feed = fresh_posts(data["recent"])
     feed_ids = {r["id"] for r in feed}
     slides = [sl for sl in fresh_posts(data["slides"]) if sl["id"] not in feed_ids]
