@@ -5118,32 +5118,42 @@ def _nasa_image_of_day():
     day = dm.group(1) if dm else datetime.now(timezone.utc).date().isoformat()
     return {"url": img, "title": title, "page": article, "day": day}, None
 
+APOD_CURRENT = "https://science.nasa.gov/apod/"
+
+def _apod_current():
+    """NASA's current Astronomy Picture of the Day page: its picture, title and page link."""
+    r = requests.get(APOD_CURRENT, timeout=30)
+    r.raise_for_status()
+    img = _page_meta(r.text, "og:image")
+    if not img.startswith("https://"):
+        return None, "no picture on NASA's APOD page"
+    title = _page_meta(r.text, "og:title") or "Astronomy Picture of the Day"
+    title = title.replace("APOD - NASA Science", "").strip(" -") or "Astronomy Picture of the Day"
+    return {"url": img, "title": title, "page": APOD_CURRENT}, None
+
 def backfill_nasa_pages(now=None):
-    """Stores NASA's own Astronomy Picture of the Day for each of the last seven days, and the latest Image of the Day."""
+    """Stores NASA's current Astronomy Picture of the Day (only when it changes) and the latest Image of the Day."""
     now = now or datetime.now(timezone.utc)
-    start = now.date() - timedelta(days=DAILY_BACKFILL_DAYS - 1)
     db = connect()
     out = {"apod": 0, "image_of_day": 0, "skipped": [], "errors": []}
     try:
-        for n in range(DAILY_BACKFILL_DAYS):
-            day = (start + timedelta(days=n)).isoformat()
-            try:
-                info, reason = _apod_for_day(day)
-                if info is None:
-                    out["skipped"].append(f"apod {day}: {reason}")
-                    continue
-                if _has_image_url(db, info["url"]):
-                    out["skipped"].append(f"apod {day}: already stored")
-                    continue
+        try:
+            info, reason = _apod_current()
+            if info is None:
+                out["skipped"].append(f"apod: {reason}")
+            elif _has_image_url(db, info["url"]):
+                out["skipped"].append("apod: already stored")
+            else:
+                day = now.date().isoformat()
                 body = (f"Astronomy Picture of the Day · NASA APOD ({day}): {info['title']}. "
                         "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
                 db.execute(
                     "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (BOT_NAME, body, None, None, info["page"], f"{day}T12:00", info["url"]))
+                    (BOT_NAME, body, None, None, info["page"], now.isoformat(timespec="minutes"), info["url"]))
                 out["apod"] += 1
-            except (requests.RequestException, ValueError) as e:
-                out["errors"].append(f"apod {day}: {e.__class__.__name__}")
+        except (requests.RequestException, ValueError) as e:
+            out["errors"].append(f"apod: {e.__class__.__name__}")
         try:
             info, reason = _nasa_image_of_day()
             if info is None:
