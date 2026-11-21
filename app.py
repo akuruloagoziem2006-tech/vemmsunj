@@ -5036,19 +5036,6 @@ def backfill_daily_images(now=None):
         db.close()
     return added
 
-@app.route("/api/cron/apod-raw")
-def cron_apod_raw():
-    secret = os.environ.get("CRON_SECRET")
-    if not secret or request.headers.get("Authorization") != f"Bearer {secret}":
-        abort(401)
-    day = request.args.get("day", datetime.now(timezone.utc).date().isoformat())
-    key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-    r = requests.get(APOD_API, params={"api_key": key, "date": day}, timeout=45)
-    item = r.json() if r.status_code == 200 else {}
-    return jsonify({"status": r.status_code, "date": item.get("date"), "title": item.get("title"),
-                    "media_type": item.get("media_type"), "copyright": item.get("copyright"),
-                    "hdurl": item.get("hdurl"), "url": item.get("url")})
-
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
