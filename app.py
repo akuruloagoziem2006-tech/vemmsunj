@@ -5036,6 +5036,42 @@ def backfill_daily_images(now=None):
         db.close()
     return added
 
+def backfill_library_images(now=None):
+    """Adds up to three NASA Image Library pictures a day, on topics that rotate by day. Skips any already stored."""
+    now = now or datetime.now(timezone.utc)
+    day_index = now.timetuple().tm_yday
+    topics = [IMAGE_TOPICS[(day_index + i) % len(IMAGE_TOPICS)] for i in range(3)]
+    db = connect()
+    added = {"library": 0, "skipped": [], "errors": []}
+    try:
+        for topic in topics:
+            try:
+                pick = _nasa_library_pick(topic)
+                if not pick:
+                    added["skipped"].append(f"{topic}: no NASA-credited item")
+                    continue
+                url = _nasa_asset_url(pick["nasa_id"])
+                if not url:
+                    added["skipped"].append(f"{topic}: no downloadable image")
+                    continue
+                if _has_image_url(db, url):
+                    added["skipped"].append(f"{topic}: already stored")
+                    continue
+                date = pick.get("date") or now.date().isoformat()
+                body = (f"Astronomy image · NASA Image Library ({date}): {pick.get('title') or topic}. "
+                        "Image: NASA. Tap to open the full record on NASA's site.")
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (BOT_NAME, body, None, None, None, f"{date}T13:00", url))
+                added["library"] += 1
+            except requests.RequestException as e:
+                added["errors"].append(f"{topic}: {e.__class__.__name__}")
+        db.commit()
+    finally:
+        db.close()
+    return added
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
@@ -5045,6 +5081,7 @@ def cron_daily():
     result["satellite_image"] = post_satellite_image()
     result["more_images"] = post_extra_images()
     result["backfill"] = backfill_daily_images()
+    result["library"] = backfill_library_images()
     return jsonify(result)
 
 # ---------- Daily NASA EPIC image (public domain) ----------
@@ -8785,7 +8822,7 @@ def index():
     feed = fresh_posts(data["recent"])
     slides = fresh_posts(data["slides"])
     daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "")][:6]
-    apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")][:6]
+    apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "") or "NASA Image Library" in (r.get("body") or "")][:6]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
