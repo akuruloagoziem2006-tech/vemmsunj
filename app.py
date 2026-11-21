@@ -5063,7 +5063,7 @@ def backfill_library_images(now=None):
                 db.execute(
                     "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (BOT_NAME, body, None, None, None, f"{date}T13:00", url))
+                    (BOT_NAME, body, None, None, None, now.isoformat(timespec="minutes"), url))
                 added["library"] += 1
             except requests.RequestException as e:
                 added["errors"].append(f"{topic}: {e.__class__.__name__}")
