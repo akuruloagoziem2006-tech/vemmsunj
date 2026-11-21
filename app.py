@@ -8916,7 +8916,7 @@ def _home_data(db):
         "SELECT id, name, latitude, longitude FROM listings ORDER BY name").fetchall()]
     slides = [dict(r) for r in db.execute(
         "SELECT id, author, body, created_at FROM posts WHERE author = 'VEMMSUNJ_BOT' AND substr(image_svg, 1, 4) = 'http' "
-        "ORDER BY id DESC LIMIT 8").fetchall()]
+        "ORDER BY id DESC LIMIT 60").fetchall()]
     return {"recent": recent, "sky": sky, "places": places, "slides": slides}
 
 @app.route("/")
@@ -8931,6 +8931,12 @@ def index():
     stored = stored_label("home-data-v3")
     feed = sorted(fresh_posts(data["recent"]), key=_feed_date, reverse=True)
     slides = fresh_posts(data["slides"])
+    daily = sorted(
+        [r for r in slides if (r.get("body") or "").startswith(("Image of the Day", "Astronomy Picture of the Day"))],
+        key=_feed_date, reverse=True)
+    iotd = [r for r in daily if r["body"].startswith("Image of the Day")][:2]
+    apod = [r for r in daily if r["body"].startswith("Astronomy Picture of the Day")][:2]
+    slides = sorted(iotd + apod, key=_feed_date, reverse=True)
     daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "") or "Image of the Day" in (r.get("body") or "")][:8]
     apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")][:8]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
