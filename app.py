@@ -5072,6 +5072,99 @@ def backfill_library_images(now=None):
         db.close()
     return added
 
+APOD_PAGE = "https://apod.nasa.gov/apod/ap{yy}{mm}{dd}.html"
+
+def _page_meta(text, prop):
+    import html as _h
+    for pat in (r'<meta[^>]+property="%s"[^>]+content="([^"]*)"', r'<meta[^>]+content="([^"]*)"[^>]+property="%s"'):
+        m = re.search(pat % re.escape(prop), text, re.I)
+        if m:
+            return _h.unescape(m.group(1)).strip()
+    return ""
+
+def _apod_for_day(day):
+    """The Astronomy Picture of the Day page on apod.nasa.gov for one date: its picture, title and page."""
+    y, m, d = day.split("-")
+    page = APOD_PAGE.format(yy=y[2:], mm=m, dd=d)
+    r = requests.get(page, timeout=30)
+    if r.status_code != 200:
+        return None, f"HTTP {r.status_code}"
+    t = r.text
+    if re.search(r"<(iframe|video)", t, re.I):
+        return None, "video"
+    m_img = re.search(r'<a href="(image/[^"]+)"', t, re.I) or re.search(r'<img src="(image/[^"]+)"', t, re.I)
+    if not m_img:
+        return None, "no picture on page"
+    tm = re.search(r"<b>\s*(.*?)\s*</b>", t, re.I | re.S)
+    title = re.sub(r"\s+", " ", tm.group(1)).strip() if tm else "Astronomy picture"
+    return {"url": "https://apod.nasa.gov/apod/" + m_img.group(1), "title": title, "page": page}, None
+
+def _nasa_image_of_day():
+    """The latest article on NASA's Image of the Day page: its picture, title and article link."""
+    idx = requests.get("https://www.nasa.gov/image-of-the-day/", timeout=30)
+    idx.raise_for_status()
+    m = re.search(r"https://www\.nasa\.gov/image-article/[a-z0-9-]+/?", idx.text)
+    if not m:
+        return None, "no article on NASA's Image of the Day page"
+    article = m.group(0)
+    art = requests.get(article, timeout=30)
+    art.raise_for_status()
+    t = art.text
+    img = _page_meta(t, "og:image")
+    if not img or "nasa-logo" in img:
+        return None, "no picture on article"
+    title = _page_meta(t, "og:title") or "Image of the Day"
+    dm = re.search(r'datetime="(\d{4}-\d{2}-\d{2})', t)
+    day = dm.group(1) if dm else datetime.now(timezone.utc).date().isoformat()
+    return {"url": img, "title": title, "page": article, "day": day}, None
+
+def backfill_nasa_pages(now=None):
+    """Stores NASA's own Astronomy Picture of the Day for each of the last seven days, and the latest Image of the Day."""
+    now = now or datetime.now(timezone.utc)
+    start = now.date() - timedelta(days=DAILY_BACKFILL_DAYS - 1)
+    db = connect()
+    out = {"apod": 0, "image_of_day": 0, "skipped": [], "errors": []}
+    try:
+        for n in range(DAILY_BACKFILL_DAYS):
+            day = (start + timedelta(days=n)).isoformat()
+            try:
+                info, reason = _apod_for_day(day)
+                if info is None:
+                    out["skipped"].append(f"apod {day}: {reason}")
+                    continue
+                if _has_image_url(db, info["url"]):
+                    out["skipped"].append(f"apod {day}: already stored")
+                    continue
+                body = (f"Astronomy Picture of the Day · NASA APOD ({day}): {info['title']}. "
+                        "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (BOT_NAME, body, None, None, info["page"], f"{day}T12:00", info["url"]))
+                out["apod"] += 1
+            except (requests.RequestException, ValueError) as e:
+                out["errors"].append(f"apod {day}: {e.__class__.__name__}")
+        try:
+            info, reason = _nasa_image_of_day()
+            if info is None:
+                out["skipped"].append(f"image of the day: {reason}")
+            elif _has_image_url(db, info["url"]):
+                out["skipped"].append("image of the day: already stored")
+            else:
+                body = (f"Image of the Day · NASA ({info['day']}): {info['title']}. "
+                        "Tap to open the article on NASA's site.")
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (BOT_NAME, body, None, None, info["page"], f"{info['day']}T12:00", info["url"]))
+                out["image_of_day"] += 1
+        except (requests.RequestException, ValueError) as e:
+            out["errors"].append(f"image of the day: {e.__class__.__name__}")
+        db.commit()
+    finally:
+        db.close()
+    return out
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
@@ -5081,7 +5174,7 @@ def cron_daily():
     result["satellite_image"] = post_satellite_image()
     result["more_images"] = post_extra_images()
     result["backfill"] = backfill_daily_images()
-    result["library"] = backfill_library_images()
+    result["nasa_pages"] = backfill_nasa_pages()
     return jsonify(result)
 
 # ---------- Daily NASA EPIC image (public domain) ----------
@@ -8794,14 +8887,14 @@ def _feed_date(row):
 def _home_data(db):
     """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
     recent = [dict(r) for r in db.execute(
-        "SELECT p.id, p.author, p.body, p.created_at, p.image_svg AS image_url, (p.image_svg IS NOT NULL) AS has_image, "
+        "SELECT p.id, p.author, p.body, p.created_at, p.image_svg AS image_url, p.ai_explanation AS page_url, (p.image_svg IS NOT NULL) AS has_image, "
         "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
         "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
         "ORDER BY p.created_at DESC, p.id DESC LIMIT 60").fetchall()]
     recent = _unique_images(recent)[:30]
     for r in recent:
-        r["source"] = _details_link(r.get("body") or "", r.get("image_url") or "")
+        r["source"] = r["page_url"] if str(r.get("page_url") or "").startswith("https://") else _details_link(r.get("body") or "", r.get("image_url") or "")
     first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
     sky = None
     if first is not None:
@@ -8828,8 +8921,8 @@ def index():
     stored = stored_label("home-data-v3")
     feed = sorted(fresh_posts(data["recent"]), key=_feed_date, reverse=True)
     slides = fresh_posts(data["slides"])
-    daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "")][:6]
-    apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "") or "NASA Image Library" in (r.get("body") or "")][:6]
+    daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "") or "Image of the Day" in (r.get("body") or "")][:8]
+    apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")][:8]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
