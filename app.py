@@ -8439,26 +8439,27 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 {% block content %}
 <p class="meta">{% if stored %}Stored results calculated {{ stored }}. Refreshed every 30 minutes.{% else %}Home data is being calculated. Try again in a few minutes.{% endif %}</p>
 <style>
-.hero-slide { animation: hero-fade 32s linear infinite; opacity: 0; }
-@keyframes hero-fade {
-  0% { opacity: 0; }
-  3% { opacity: .55; }
-  22% { opacity: .55; }
-  28% { opacity: 0; }
-  100% { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) { .hero-slide { animation: none; } .hero-slide:first-child { opacity: .55; } }
+.hero-slide { opacity: 0; }
+@keyframes hero-fade-1 { 0% { opacity: 0; } 6.25% { opacity: .55; } 87.5% { opacity: .55; } 100.0% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-2 { 0% { opacity: 0; } 3.125% { opacity: .55; } 43.75% { opacity: .55; } 50.0% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-3 { 0% { opacity: 0; } 2.083% { opacity: .55; } 29.167% { opacity: .55; } 33.333% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-4 { 0% { opacity: 0; } 1.562% { opacity: .55; } 21.875% { opacity: .55; } 25.0% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-5 { 0% { opacity: 0; } 1.25% { opacity: .55; } 17.5% { opacity: .55; } 20.0% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-6 { 0% { opacity: 0; } 1.042% { opacity: .55; } 14.583% { opacity: .55; } 16.667% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-7 { 0% { opacity: 0; } 0.893% { opacity: .55; } 12.5% { opacity: .55; } 14.286% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes hero-fade-8 { 0% { opacity: 0; } 0.781% { opacity: .55; } 10.938% { opacity: .55; } 12.5% { opacity: 0; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hero-slide { animation: none !important; } .hero-slide:first-child { opacity: .55; } }
 </style>
 <section class="hero">
   {% if slides %}
   <div class="hero-slides" aria-hidden="true">
-    {% for sl in slides[:4] %}<img class="hero-slide" style="animation-delay:-{{ loop.index0 * 8 }}s" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
+    {% set shown = slides[:8] %}{% for sl in shown %}<img class="hero-slide" style="animation: hero-fade-{{ shown|length }} {{ shown|length * 8 }}s linear infinite; animation-delay:-{{ loop.index0 * 8 }}s" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
   </div>
   <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
   {% if slides %}
   <div class="hero-slides" aria-hidden="true">
-    {% for sl in slides[:4] %}<img class="hero-slide" style="animation-delay:-{{ loop.index0 * 8 }}s" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
+    {% set shown = slides[:8] %}{% for sl in shown %}<img class="hero-slide" style="animation: hero-fade-{{ shown|length }} {{ shown|length * 8 }}s linear infinite; animation-delay:-{{ loop.index0 * 8 }}s" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
   </div>
   <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
