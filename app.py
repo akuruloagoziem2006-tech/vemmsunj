@@ -8784,6 +8784,13 @@ def _details_link(body, image_url):
         return image_url
     return "https://www.nasa.gov/"
 
+def _feed_date(row):
+    """The date a picture was taken or published, read from its caption. Falls back to when it was added."""
+    import re as _re
+    body = row.get("body") or ""
+    m = _re.search(r"captured (\d{4}-\d{2}-\d{2})", body) or _re.search(r"\((\d{4}-\d{2}-\d{2})\)", body)
+    return m.group(1) if m else str(row.get("created_at") or "")[:10]
+
 def _home_data(db):
     """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
     recent = [dict(r) for r in db.execute(
@@ -8819,7 +8826,7 @@ def index():
         data = _home_data(db)
         cache_put(HOME_CACHE_KEY, json.dumps(data))
     stored = stored_label("home-data-v3")
-    feed = fresh_posts(data["recent"])
+    feed = sorted(fresh_posts(data["recent"]), key=_feed_date, reverse=True)
     slides = fresh_posts(data["slides"])
     daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "")][:6]
     apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "") or "NASA Image Library" in (r.get("body") or "")][:6]
