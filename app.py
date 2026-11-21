@@ -8484,10 +8484,6 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
   {% if slides %}
-  <div class="hero-slides" aria-hidden="true">
-    {% for sl in slides %}<img class="hero-slide{% if loop.first %} is-on{% endif %}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
-  </div>
-  <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
   <h1 class="hero-title">VEMMSUNJ</h1>
   <p class="hero-lede">Explore the night sky. Track satellites. Discover the universe.</p>
