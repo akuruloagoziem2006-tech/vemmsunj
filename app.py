@@ -4985,7 +4985,11 @@ def backfill_daily_images(now=None):
                 if item.get("copyright"):
                     added["skipped"].append(f"apod {day}: third-party credit")
                     continue
+                raw = f"hdurl={item.get('hdurl')} url={item.get('url')}"
                 url = next((u for u in (item.get("hdurl"), item.get("url")) if u and u.startswith("http")), "")
+                if "nasa-logo" in url or "/assets/images/" in url:
+                    added["skipped"].append(f"apod {day}: page logo returned, not an image ({raw})")
+                    continue
                 if url.startswith("http://"):
                     url = "https://" + url[len("http://"):]
                 if not url:
