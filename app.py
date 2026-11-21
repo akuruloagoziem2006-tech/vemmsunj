@@ -4969,31 +4969,43 @@ def backfill_daily_images(now=None):
     start = now.date() - timedelta(days=DAILY_BACKFILL_DAYS - 1)
     key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
     db = connect()
-    added = {"apod": 0, "epic": 0, "errors": []}
+    added = {"apod": 0, "epic": 0, "errors": [], "skipped": []}
     try:
-        try:
-            r = requests.get(APOD_API, params={"api_key": key, "start_date": start.isoformat(),
-                                               "end_date": now.date().isoformat()}, timeout=30)
-            r.raise_for_status()
-            for item in r.json():
-                if item.get("media_type") != "image" or item.get("copyright"):
+        for n in range(DAILY_BACKFILL_DAYS):
+            day = (start + timedelta(days=n)).isoformat()
+            try:
+                r = requests.get(APOD_API, params={"api_key": key, "date": day}, timeout=45)
+                if r.status_code != 200:
+                    added["skipped"].append(f"apod {day}: HTTP {r.status_code}")
                     continue
-                url = item.get("hdurl") or item.get("url") or ""
-                if not url.startswith("https://") or _has_image_url(db, url):
+                item = r.json()
+                if item.get("media_type") != "image":
+                    added["skipped"].append(f"apod {day}: video")
                     continue
-                date = item.get("date", "")
+                if item.get("copyright"):
+                    added["skipped"].append(f"apod {day}: third-party credit")
+                    continue
+                url = next((u for u in (item.get("hdurl"), item.get("url")) if u and u.startswith("http")), "")
+                if url.startswith("http://"):
+                    url = "https://" + url[len("http://"):]
+                if not url:
+                    added["skipped"].append(f"apod {day}: no image address")
+                    continue
+                if _has_image_url(db, url):
+                    added["skipped"].append(f"apod {day}: already stored")
+                    continue
                 text = item.get("explanation") or ""
                 if len(text) > 400:
                     text = text[:400].rsplit(" ", 1)[0] + "…"
-                body = (f"Daily image · NASA APOD ({date}): {item.get('title', 'Astronomy picture')}. "
+                body = (f"Daily image · NASA APOD ({day}): {item.get('title', 'Astronomy picture')}. "
                         f"{text} Image: NASA, public domain.")
                 db.execute(
                     "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (BOT_NAME, body, None, None, None, f"{date}T12:00", url))
+                    (BOT_NAME, body, None, None, None, f"{day}T12:00", url))
                 added["apod"] += 1
-        except requests.RequestException as e:
-            added["errors"].append(f"apod: {e.__class__.__name__}")
+            except requests.RequestException as e:
+                added["errors"].append(f"apod {day}: {e.__class__.__name__}")
         for n in range(DAILY_BACKFILL_DAYS):
             day = (start + timedelta(days=n)).isoformat()
             try:
