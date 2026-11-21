@@ -5090,10 +5090,10 @@ def _apod_for_day(day):
     if r.status_code != 200:
         return None, f"HTTP {r.status_code}"
     t = r.text
-    if re.search(r"<(iframe|video)", t, re.I):
-        return None, "video"
     m_img = re.search(r'<a href="(image/[^"]+)"', t, re.I) or re.search(r'<img src="(image/[^"]+)"', t, re.I)
     if not m_img:
+        if re.search(r"<(iframe|video)", t, re.I):
+            return None, "video"
         return None, "no picture on page"
     tm = re.search(r"<b>\s*(.*?)\s*</b>", t, re.I | re.S)
     title = re.sub(r"\s+", " ", tm.group(1)).strip() if tm else "Astronomy picture"
