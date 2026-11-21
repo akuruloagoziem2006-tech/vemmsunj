@@ -8717,8 +8717,7 @@ def index():
         cache_put(HOME_CACHE_KEY, json.dumps(data))
     stored = stored_label("home-data-v3")
     feed = fresh_posts(data["recent"])
-    feed_ids = {r["id"] for r in feed}
-    slides = [sl for sl in fresh_posts(data["slides"]) if sl["id"] not in feed_ids]
+    slides = fresh_posts(data["slides"])
     return render_template("home.html", stored=stored, recent=feed, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
