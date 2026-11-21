@@ -4992,7 +4992,7 @@ def backfill_daily_images(now=None):
                     added["skipped"].append(f"apod {day}: no image address")
                     continue
                 if _has_image_url(db, url):
-                    added["skipped"].append(f"apod {day}: already stored")
+                    added["skipped"].append(f"apod {day}: already stored (NASA returned date {item.get('date')}, {url[-40:]})")
                     continue
                 text = item.get("explanation") or ""
                 if len(text) > 400:
