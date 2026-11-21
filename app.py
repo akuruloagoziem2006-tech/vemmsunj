@@ -1296,15 +1296,21 @@ header.site { width: 100%; }
 </style>
 <script>
 (function () {
+  if (window.__heroRotating) return;
+  window.__heroRotating = true;
   function start() {
-    var slides = document.querySelectorAll('.hero-slide');
-    if (slides.length < 2) return;
+    var sets = Array.prototype.map.call(document.querySelectorAll('.hero-slides'), function (c) {
+      return c.querySelectorAll('.hero-slide');
+    });
+    var n = sets.length ? sets[0].length : 0;
+    if (n < 2) return;
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var i = 0;
     setInterval(function () {
-      for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
-      i = (i + 1) % slides.length;
-      slides[i].classList.add('is-on');
+      i = (i + 1) % n;
+      sets.forEach(function (set) {
+        for (var k = 0; k < set.length; k++) set[k].classList.toggle('is-on', k === i);
+      });
     }, 30000);
   }
   if (document.readyState === 'loading') {
@@ -1402,15 +1408,21 @@ main {
 </style>
 <script>
 (function () {
+  if (window.__heroRotating) return;
+  window.__heroRotating = true;
   function start() {
-    var slides = document.querySelectorAll('.hero-slide');
-    if (slides.length < 2) return;
+    var sets = Array.prototype.map.call(document.querySelectorAll('.hero-slides'), function (c) {
+      return c.querySelectorAll('.hero-slide');
+    });
+    var n = sets.length ? sets[0].length : 0;
+    if (n < 2) return;
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var i = 0;
     setInterval(function () {
-      for (var k = 0; k < slides.length; k++) slides[k].classList.remove('is-on');
-      i = (i + 1) % slides.length;
-      slides[i].classList.add('is-on');
+      i = (i + 1) % n;
+      sets.forEach(function (set) {
+        for (var k = 0; k < set.length; k++) set[k].classList.toggle('is-on', k === i);
+      });
     }, 30000);
   }
   if (document.readyState === 'loading') {
