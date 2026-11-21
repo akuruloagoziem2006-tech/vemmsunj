@@ -8554,8 +8554,8 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   <div class="feed-grid">
   {% for s in recent[:8] %}
   <figure class="feed-photo">
-    <img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%">
-    <figcaption class="meta">{{ s['body'][:160] }} <a href="{{ s['source'] }}" target="_blank" rel="noopener">Open details</a></figcaption>
+    <a href="{{ s['source'] }}" target="_blank" rel="noopener" aria-label="Open this image on NASA's site"><img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%"></a>
+    <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
   </figure>
   {% else %}
   <p>No astronomy images yet.</p>
@@ -8671,15 +8671,20 @@ def _unique_images(rows):
     return out
 
 def _details_link(body, image_url):
-    """A page where a visitor can read about the image."""
+    """The NASA page for this image: APOD entry, EPIC archive, NASA Image Library item, or the image's own page."""
     import re as _re
     m = _re.search(r"NASA APOD \((\d{4})-(\d{2})-(\d{2})\)", body)
     if m:
         y, mo, d = m.group(1), m.group(2), m.group(3)
         return f"https://apod.nasa.gov/apod/ap{y[2:]}{mo}{d}.html"
-    if "NASA EPIC" in body or "epic.gsfc.nasa.gov" in image_url:
+    if "epic.gsfc.nasa.gov" in image_url:
         return "https://epic.gsfc.nasa.gov/"
-    return image_url or "https://www.nasa.gov/"
+    m = _re.search(r"images-assets\.nasa\.gov/image/([^/]+)/", image_url)
+    if m:
+        return f"https://images.nasa.gov/details/{m.group(1)}"
+    if image_url.startswith("https://"):
+        return image_url
+    return "https://www.nasa.gov/"
 
 def _home_data(db):
     """The home page's stored data: recent bot photos, slides, the sky card, and the place list."""
@@ -8691,7 +8696,7 @@ def _home_data(db):
         "ORDER BY p.created_at DESC, p.id DESC LIMIT 24").fetchall()]
     recent = _unique_images(recent)[:8]
     for r in recent:
-        r["source"] = _details_link(r.get("body") or "", r.get("is_photo") and r.get("image_url") or "")
+        r["source"] = _details_link(r.get("body") or "", r.get("image_url") or "")
     first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
     sky = None
     if first is not None:
