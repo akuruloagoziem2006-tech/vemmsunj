@@ -5145,7 +5145,7 @@ def backfill_nasa_pages(now=None):
                 out["skipped"].append("apod: already stored")
             else:
                 day = now.date().isoformat()
-                body = (f"Astronomy Picture of the Day · NASA APOD ({day}): {info['title']}. "
+                body = (f"Astronomy Picture of the Day · NASA APOD. "
                         "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
                 db.execute(
                     "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
@@ -8677,10 +8677,6 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
   {% if slides %}
-  <div class="hero-slides" aria-hidden="true">
-    {% set shown = slides[:8] %}{% for sl in shown %}<img class="hero-slide" style="animation: hero-fade-{{ shown|length }} {{ shown|length * 8 }}s linear infinite; animation-delay:-{{ loop.index0 * 8 }}s" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" src="/posts/{{ sl['id'] }}/image.svg" alt="">{% endfor %}
-  </div>
-  <div class="hero-shade" aria-hidden="true"></div>
   {% endif %}
   <h1 class="hero-title">VEMMSUNJ</h1>
   <p class="hero-lede">Explore the night sky. Track satellites. Discover the universe.</p>
