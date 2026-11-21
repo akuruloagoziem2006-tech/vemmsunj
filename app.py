@@ -4958,6 +4958,68 @@ def run_daily_bot(now=None):
     db.close()
     return {"day": day, "posted": posted, "skipped": skipped}
 
+DAILY_BACKFILL_DAYS = 7
+
+def _has_image_url(db, url):
+    return db.execute("SELECT 1 FROM posts WHERE image_svg = ?", (url,)).fetchone() is not None
+
+def backfill_daily_images(now=None):
+    """Fill the last seven days of NASA APOD and EPIC images. Skips any image whose URL is already stored."""
+    now = now or datetime.now(timezone.utc)
+    start = now.date() - timedelta(days=DAILY_BACKFILL_DAYS - 1)
+    key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
+    db = connect()
+    added = {"apod": 0, "epic": 0, "errors": []}
+    try:
+        try:
+            r = requests.get(APOD_API, params={"api_key": key, "start_date": start.isoformat(),
+                                               "end_date": now.date().isoformat()}, timeout=30)
+            r.raise_for_status()
+            for item in r.json():
+                if item.get("media_type") != "image" or item.get("copyright"):
+                    continue
+                url = item.get("hdurl") or item.get("url") or ""
+                if not url.startswith("https://") or _has_image_url(db, url):
+                    continue
+                date = item.get("date", "")
+                text = item.get("explanation") or ""
+                if len(text) > 400:
+                    text = text[:400].rsplit(" ", 1)[0] + "…"
+                body = (f"Daily image · NASA APOD ({date}): {item.get('title', 'Astronomy picture')}. "
+                        f"{text} Image: NASA, public domain.")
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (BOT_NAME, body, None, None, None, f"{date}T12:00", url))
+                added["apod"] += 1
+        except requests.RequestException as e:
+            added["errors"].append(f"apod: {e.__class__.__name__}")
+        for n in range(DAILY_BACKFILL_DAYS):
+            day = (start + timedelta(days=n)).isoformat()
+            try:
+                r = requests.get(f"https://epic.gsfc.nasa.gov/api/natural/date/{day}", timeout=20)
+                if r.status_code != 200 or not r.json():
+                    continue
+                latest = max(r.json(), key=lambda f: f["date"])
+                y, m, d = latest["date"][:10].split("-")
+                url = f"https://epic.gsfc.nasa.gov/archive/natural/{y}/{m}/{d}/png/{latest['image']}.png"
+                if _has_image_url(db, url):
+                    continue
+                body = (f"Daily image · NASA EPIC (satellite) ({day}): Earth from space, captured "
+                        f"{latest['date'][:16]} UTC by NASA's EPIC camera on the DSCOVR satellite. "
+                        "Image: NASA, public domain.")
+                db.execute(
+                    "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (BOT_NAME, body, None, None, None, f"{day}T12:30", url))
+                added["epic"] += 1
+            except requests.RequestException as e:
+                added["errors"].append(f"epic {day}: {e.__class__.__name__}")
+        db.commit()
+    finally:
+        db.close()
+    return added
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
@@ -4966,6 +5028,7 @@ def cron_daily():
     result = run_daily_bot()
     result["satellite_image"] = post_satellite_image()
     result["more_images"] = post_extra_images()
+    result["backfill"] = backfill_daily_images()
     return jsonify(result)
 
 # ---------- Daily NASA EPIC image (public domain) ----------
@@ -8524,18 +8587,26 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 
 <section class="recent home-wide" aria-labelledby="feed-title">
   <h2 id="feed-title">Astronomy feed</h2>
-  <p class="meta">Images from NASA. Dates in captions are from NASA's records.</p>
+  <p class="meta">Images from NASA, the last seven days. Tap an image to open it on NASA's site.</p>
+  <h3>Image of the Day</h3>
   <div class="feed-grid">
-  {% for s in recent[:8] %}
+  {% for s in daily_items %}
   <figure class="feed-photo">
     <a href="{{ s['source'] }}" target="_blank" rel="noopener" aria-label="Open this image on NASA's site"><img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%"></a>
     <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
   </figure>
-  {% else %}
-  <p>No astronomy images yet.</p>
-  {% endfor %}
+  {% else %}<p>No Earth images yet.</p>{% endfor %}
   </div>
-  <p><a class="btn quiet" href="/posts">All sightings</a></p>
+  <h3>Astronomy Picture of the Day</h3>
+  <div class="feed-grid">
+  {% for s in apod_items %}
+  <figure class="feed-photo">
+    <a href="{{ s['source'] }}" target="_blank" rel="noopener" aria-label="Open this image on NASA's site"><img loading="lazy" decoding="async" src="/posts/{{ s['id'] }}/image.svg" alt="{{ s['body'][:200] }}" width="100%"></a>
+    <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
+  </figure>
+  {% else %}<p>No astronomy pictures yet.</p>{% endfor %}
+  </div>
+  <p><a class="btn quiet" href="/posts">See all sightings</a></p>
 </section>
 {% endblock %}
 {% block scripts %}
@@ -8667,8 +8738,8 @@ def _home_data(db):
         "(substr(p.image_svg, 1, 4) = 'http') AS is_photo, l.name AS listing_name "
         "FROM posts p LEFT JOIN listings l ON l.id = p.listing_id "
         "WHERE p.author = 'VEMMSUNJ_BOT' AND substr(p.image_svg, 1, 4) = 'http' "
-        "ORDER BY p.created_at DESC, p.id DESC LIMIT 24").fetchall()]
-    recent = _unique_images(recent)[:8]
+        "ORDER BY p.created_at DESC, p.id DESC LIMIT 60").fetchall()]
+    recent = _unique_images(recent)[:30]
     for r in recent:
         r["source"] = _details_link(r.get("body") or "", r.get("image_url") or "")
     first = db.execute("SELECT id, name, latitude, longitude FROM listings WHERE id = 1").fetchone()
@@ -8697,7 +8768,9 @@ def index():
     stored = stored_label("home-data-v3")
     feed = fresh_posts(data["recent"])
     slides = fresh_posts(data["slides"])
-    return render_template("home.html", stored=stored, recent=feed, slides=slides, sky=data["sky"],
+    daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "")][:6]
+    apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")][:6]
+    return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
 # ---------- Globe consistency check (read-only diagnostic) ----------
