@@ -8933,7 +8933,10 @@ def index():
     iotd = [r for r in daily if r["body"].startswith("Image of the Day")][:2]
     apod = [r for r in daily if r["body"].startswith("Astronomy Picture of the Day")][:2]
     slides = sorted(iotd + apod, key=_feed_date, reverse=True)
-    daily_items = [r for r in feed if "NASA EPIC" in (r.get("body") or "") or "Image of the Day" in (r.get("body") or "")][:8]
+    # One Earth image (the newest EPIC frame) plus NASA's Image of the Day; older frames stay stored
+    epic_newest = [r for r in feed if "NASA EPIC" in (r.get("body") or "")][:1]
+    iotd_newest = [r for r in feed if "Image of the Day" in (r.get("body") or "")][:1]
+    daily_items = iotd_newest + epic_newest
     apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")][:8]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
