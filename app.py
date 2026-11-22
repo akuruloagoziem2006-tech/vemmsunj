@@ -5183,7 +5183,6 @@ def cron_daily():
     result = run_daily_bot()
     result["satellite_image"] = post_satellite_image()
     result["more_images"] = post_extra_images()
-    result["backfill"] = backfill_daily_images()
     result["nasa_pages"] = backfill_nasa_pages()
     return jsonify(result)
 
