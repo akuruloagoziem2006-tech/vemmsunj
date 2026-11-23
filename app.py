@@ -10061,6 +10061,12 @@ def vm_ip_rate_limit():
     record_failure(key)
     return None
 
+# ---------- Satellite view: globe and tracker panels in one page ----------
+@app.route("/skyscope")
+def skyscope_view():
+    from skyscope_page import SKYSCOPE_HTML
+    return Response(SKYSCOPE_HTML, mimetype="text/html")
+
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
