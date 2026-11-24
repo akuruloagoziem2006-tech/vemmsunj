@@ -5562,7 +5562,7 @@ def forgot():
 # ---------- Globe: satellite snapshot ----------
 GLOBE_SAMPLES = 144
 GLOBE_GROUPS = ["stations", "visual", "weather"]
-GLOBE_MAX_SATS = 80
+GLOBE_MAX_SATS = 240
 
 def globe_snapshot(now=None):
     now = now or datetime.now(timezone.utc)
@@ -5593,6 +5593,7 @@ def globe_snapshot(now=None):
         v = here.velocity.km_per_s
         out.append({
             "name": sat.name,
+            "norad": int(l1[2:7]),
             "lat": round(sub.latitude.degrees, 3),
             "lon": round(sub.longitude.degrees, 3),
             "alt_km": round(sub.elevation.km, 1),
