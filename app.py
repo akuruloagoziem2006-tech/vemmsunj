@@ -2774,7 +2774,8 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       var b = document.createElement("button");
       b.type = "button";
       b.className = "btn quiet sat-btn";
-      b.textContent = s.data.name;
+      b.textContent = s.data.name + (s.data.norad ? " · " + s.data.norad : "");
+      b.title = "NORAD " + (s.data.norad || "unknown");
       b.setAttribute("aria-pressed", selectedName === s.data.name ? "true" : "false");
       b.addEventListener("click", function () {
         selectedName = s.data.name;
