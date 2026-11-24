@@ -35,7 +35,6 @@ if _SENTRY_DSN:
             dsn=_SENTRY_DSN,
             integrations=[FlaskIntegration()],
             traces_sample_rate=0.0,
-            send_default_pii=False,
         )
     except Exception as e:
         print(f"sentry not started: {e}", flush=True)
