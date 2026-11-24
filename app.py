@@ -5156,12 +5156,52 @@ def _apod_current():
     title = title.replace("APOD - NASA Science", "").strip(" -") or "Astronomy Picture of the Day"
     return {"url": img, "title": title, "page": APOD_CURRENT}, None
 
+def _apod_api_items(days=7):
+    """NASA's official APOD API for the last seven days, in one request."""
+    key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=days - 1)
+    r = requests.get(APOD_API, params={"api_key": key, "start_date": start.isoformat(),
+                                       "end_date": end.isoformat()}, timeout=60)
+    r.raise_for_status()
+    items = r.json()
+    return items if isinstance(items, list) else []
+
 def backfill_nasa_pages(now=None):
     """Stores NASA's current Astronomy Picture of the Day (only when it changes) and the latest Image of the Day."""
     now = now or datetime.now(timezone.utc)
     db = connect()
     out = {"apod": 0, "image_of_day": 0, "skipped": [], "errors": []}
     try:
+        try:
+            items = _apod_api_items()
+        except (requests.RequestException, ValueError) as e:
+            items = []
+            out["errors"].append(f"apod api: {e.__class__.__name__}")
+        for item in sorted(items, key=lambda i: i.get("date", ""), reverse=True):
+            day = item.get("date", "")
+            if item.get("media_type") != "image":
+                out["skipped"].append(f"{day}: video")
+                continue
+            if item.get("copyright"):
+                out["skipped"].append(f"{day}: third-party credit")
+                continue
+            url = item.get("hdurl") or item.get("url") or ""
+            if not url.startswith("https://") or "nasa-logo" in url or "/assets/images/" in url:
+                out["skipped"].append(f"{day}: placeholder returned, not a picture")
+                continue
+            if _has_image_url(db, url):
+                out["skipped"].append(f"{day}: already stored")
+                continue
+            title = item.get("title") or "Astronomy picture"
+            page = "https://apod.nasa.gov/apod/ap" + day[2:4] + day[5:7] + day[8:10] + ".html"
+            body = (f"Astronomy Picture of the Day · NASA APOD: {title}. "
+                    "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
+            db.execute(
+                "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (BOT_NAME, body, None, None, page, day + "T12:00", url))
+            out["apod"] += 1
         try:
             info, reason = _apod_current()
             if info is None:
