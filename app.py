@@ -10067,17 +10067,6 @@ def skyscope_view():
     from skyscope_page import SKYSCOPE_HTML
     return Response(SKYSCOPE_HTML, mimetype="text/html")
 
-# ---------- Satellite pages styled like the globe and tracker screenshots ----------
-@app.route("/sat/globe")
-def sat_globe_page():
-    from sat_views import render_sat_page
-    return Response(render_sat_page("globe"), mimetype="text/html")
-
-@app.route("/sat/tracker")
-def sat_tracker_page():
-    from sat_views import render_sat_page
-    return Response(render_sat_page("tracker"), mimetype="text/html")
-
 if __name__ == "__main__":
     from waitress import serve
     serve(app,
