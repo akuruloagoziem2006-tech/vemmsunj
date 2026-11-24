@@ -7559,7 +7559,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <p class="error">{{ live_error }}</p>
 {% else %}
 <div class="sky-map-wrap" style="margin:.6rem 0 1rem">
-  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;border:1px solid var(--rule);border-radius:12px"></canvas>
+  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;border:0;border-radius:0"></canvas>
   <p class="meta">Tracked satellites now, on a world map. Tap a satellite to select its row. The ISS is highlighted in orange.</p>
 </div>
 <p class="meta"><strong>Data status:</strong> orbital data from CelesTrak. Positions calculated at {{ calc_time }} UTC. {% if live_error %}Live positions are unavailable right now.{% else %}Current positions are available.{% endif %}</p>
@@ -7650,7 +7650,6 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     ctx.restore();
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.2;
-    ctx.strokeRect(B.x0, B.y0, B.w, B.h);
   }
   function points() {
     var out = [];
@@ -7667,8 +7666,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   function draw() {
     var B = box();
     if (!B.W || !B.H) return;
-    ctx.fillStyle = PAPER;
-    ctx.fillRect(0, 0, B.W, B.H);
+    ctx.clearRect(0, 0, B.W, B.H);
     var g = ctx.createLinearGradient(0, B.y0, 0, B.y0 + B.h);
     g.addColorStop(0, OCEAN_A);
     g.addColorStop(1, OCEAN_B);
