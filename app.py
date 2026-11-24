@@ -7559,7 +7559,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
 <p class="error">{{ live_error }}</p>
 {% else %}
 <div class="sky-map-wrap" style="margin:.6rem 0 1rem">
-  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;border:0;border-radius:0"></canvas>
+  <canvas id="sky-map" style="width:100%;aspect-ratio:2/1;display:block;border:0;border-radius:0;touch-action:none;cursor:grab"></canvas>
   <p class="meta">Tracked satellites now, on a world map. Tap a satellite to select its row. The ISS is highlighted in orange.</p>
 </div>
 <p class="meta"><strong>Data status:</strong> orbital data from CelesTrak. Positions calculated at {{ calc_time }} UTC. {% if live_error %}Live positions are unavailable right now.{% else %}Current positions are available.{% endif %}</p>
@@ -7574,6 +7574,7 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
   var OCEAN_A = '#1d4670', OCEAN_B = '#0f2a47', LAND = '#5a7a45';
   var COUNTRIES = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson';
   var land = [];
+  var mapView = { z: 1, x: 0, y: 0 };
 
   function size() {
     var w = canvas.clientWidth, h = canvas.clientHeight || Math.round(w / 2);
@@ -7586,12 +7587,92 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     return { W: W, H: H, x0: M.l, y0: M.t, w: W - M.l - M.r, h: H - M.t - M.b };
   }
   function xy(lat, lon, B) {
-    return [B.x0 + (lon + 180) / 360 * B.w, B.y0 + (90 - lat) / 180 * B.h];
+    var x = B.x0 + (lon + 180) / 360 * B.w;
+    var y = B.y0 + (90 - lat) / 180 * B.h;
+    return [B.x0 + (x - B.x0) * mapView.z + mapView.x, B.y0 + (y - B.y0) * mapView.z + mapView.y];
+  }
+  function clampView(B) {
+    mapView.z = Math.max(1, Math.min(8, mapView.z));
+    mapView.x = Math.max(B.w * (1 - mapView.z), Math.min(0, mapView.x));
+    mapView.y = Math.max(B.h * (1 - mapView.z), Math.min(0, mapView.y));
   }
   function degLabel(v, pos, neg) {
     var suffix = v > 0 ? pos : (v < 0 ? neg : '');
     return Math.abs(v) + '\u00b0' + suffix;
   }
+  var mapPointers = {}, mapGesture = null, mapMoved = 0;
+  function localXY(e) {
+    var r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+  function pinchDist() {
+    var k = Object.keys(mapPointers).map(function (i) { return mapPointers[i]; });
+    return Math.hypot(k[0][0] - k[1][0], k[0][1] - k[1][1]);
+  }
+  function pinchMid() {
+    var k = Object.keys(mapPointers).map(function (i) { return mapPointers[i]; });
+    return [(k[0][0] + k[1][0]) / 2, (k[0][1] + k[1][1]) / 2];
+  }
+  function zoomAt(px, py, nz) {
+    var B = box();
+    var u = (px - B.x0 - mapView.x) / mapView.z;
+    var v = (py - B.y0 - mapView.y) / mapView.z;
+    mapView.z = nz;
+    mapView.x = px - B.x0 - u * nz;
+    mapView.y = py - B.y0 - v * nz;
+    clampView(B);
+    draw();
+  }
+  function tapAt(p) {
+    var B = box(), best = null, bd = 14;
+    points().forEach(function (pt) {
+      var q = xy(pt.lat, pt.lon, B);
+      var d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d < bd) { bd = d; best = pt; }
+    });
+    if (best) { best.row.click(); setTimeout(draw, 0); }
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    mapPointers[e.pointerId] = localXY(e);
+    canvas.setPointerCapture(e.pointerId);
+    mapMoved = 0;
+    if (Object.keys(mapPointers).length === 2) mapGesture = { d: pinchDist(), z: mapView.z };
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!mapPointers[e.pointerId]) return;
+    var prev = mapPointers[e.pointerId];
+    var p = localXY(e);
+    mapPointers[e.pointerId] = p;
+    var n = Object.keys(mapPointers).length;
+    if (n === 2 && mapGesture) {
+      var m = pinchMid();
+      zoomAt(m[0], m[1], Math.max(1, Math.min(8, mapGesture.z * pinchDist() / mapGesture.d)));
+      mapMoved += 5;
+    } else if (n === 1) {
+      var dx = p[0] - prev[0], dy = p[1] - prev[1];
+      mapMoved += Math.abs(dx) + Math.abs(dy);
+      mapView.x += dx; mapView.y += dy;
+      clampView(box());
+      draw();
+    }
+  });
+  function endPointer(e) {
+    if (!mapPointers[e.pointerId]) return;
+    var p = mapPointers[e.pointerId];
+    var wasTap = Object.keys(mapPointers).length === 1 && mapMoved < 6;
+    delete mapPointers[e.pointerId];
+    if (Object.keys(mapPointers).length < 2) mapGesture = null;
+    if (wasTap) tapAt(p);
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var p = localXY(e);
+    zoomAt(p[0], p[1], Math.max(1, Math.min(8, mapView.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+  }, { passive: false });
+  canvas.addEventListener('dblclick', function () { mapView = { z: 1, x: 0, y: 0 }; draw(); });
+
   function loadLand() {
     fetch(COUNTRIES).then(function (r) { return r.json(); }).then(function (gj) {
       gj.features.forEach(function (f) {
@@ -7619,37 +7700,41 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     });
   }
   function drawGrid(B) {
+    var lonStep = B.W < 560 ? 60 : 30;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(B.x0, B.y0, B.w, B.h); ctx.clip();
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     ctx.lineWidth = 0.8;
-    ctx.fillStyle = INK;
-    ctx.font = '10px sans-serif';
-    var lonStep = B.W < 560 ? 60 : 30;
     for (var lon = -180; lon <= 180; lon += lonStep) {
-      var x = B.x0 + (lon + 180) / 360 * B.w;
+      var x = xy(0, lon, B)[0];
       ctx.beginPath(); ctx.moveTo(x, B.y0); ctx.lineTo(x, B.y0 + B.h); ctx.stroke();
-      ctx.textAlign = 'center';
-      ctx.fillText(degLabel(lon, 'E', 'W'), x, B.y0 - 8);
-      ctx.fillText(degLabel(lon, 'E', 'W'), x, B.y0 + B.h + 16);
     }
     for (var lat = -60; lat <= 60; lat += 30) {
-      var y = B.y0 + (90 - lat) / 180 * B.h;
+      var y = xy(lat, 0, B)[1];
       ctx.beginPath(); ctx.moveTo(B.x0, y); ctx.lineTo(B.x0 + B.w, y); ctx.stroke();
-      ctx.textAlign = 'right';
-      ctx.fillText(degLabel(lat, 'N', 'S'), B.x0 - 5, y + 3);
     }
-    ctx.save();
-    ctx.setLineDash([6, 4]);
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.2;
-    var ey = B.y0 + B.h / 2;
+    var ey = xy(0, 0, B)[1];
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(B.x0, ey); ctx.lineTo(B.x0 + B.w, ey); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = INK;
-    ctx.fillText('Equator', B.x0 + 6, ey - 4);
+    ctx.fillStyle = INK; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    if (ey > B.y0 && ey < B.y0 + B.h) ctx.fillText('Equator', B.x0 + 6, ey - 4);
     ctx.restore();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.2;
+    ctx.fillStyle = INK; ctx.font = '10px sans-serif';
+    for (var lo = -180; lo <= 180; lo += lonStep) {
+      var lx = xy(0, lo, B)[0];
+      if (lx < B.x0 - 2 || lx > B.x0 + B.w + 2) continue;
+      var cx = Math.max(B.x0 + 10, Math.min(B.x0 + B.w - 10, lx));
+      ctx.textAlign = 'center';
+      ctx.fillText(degLabel(lo, 'E', 'W'), cx, B.y0 - 8);
+      ctx.fillText(degLabel(lo, 'E', 'W'), cx, B.y0 + B.h + 16);
+    }
+    for (var la = -60; la <= 60; la += 30) {
+      var ly = xy(la, 0, B)[1];
+      if (ly < B.y0 - 2 || ly > B.y0 + B.h + 2) continue;
+      ctx.textAlign = 'right';
+      ctx.fillText(degLabel(la, 'N', 'S'), B.x0 - 5, ly + 3);
+    }
   }
   function points() {
     var out = [];
@@ -7664,6 +7749,16 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     return out;
   }
   function draw() {
+    var B = box();
+    if (!B.W || !B.H) return;
+    clampView(B);
+    ctx.clearRect(0, 0, B.W, B.H);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(B.x0, B.y0, B.w, B.h); ctx.clip();
+    drawInner();
+    ctx.restore();
+  }
+  function drawInner() {
     var B = box();
     if (!B.W || !B.H) return;
     ctx.clearRect(0, 0, B.W, B.H);
