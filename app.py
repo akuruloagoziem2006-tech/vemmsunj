@@ -2769,22 +2769,46 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   }
 
   function renderList() {
+    if (!document.getElementById("sat-filter")) {
+      var f = document.createElement("input");
+      f.type = "search";
+      f.id = "sat-filter";
+      f.placeholder = "Filter by name or NORAD number";
+      f.style.cssText = "width:100%;margin:.5rem 0;padding:.45rem .6rem;border-radius:8px;border:1px solid var(--rule);background:var(--surface);color:var(--text)";
+      f.addEventListener("input", renderList);
+      listEl.parentNode.insertBefore(f, listEl);
+    }
+    var q = (document.getElementById("sat-filter").value || "").trim().toLowerCase();
+    var labels = { stations: "Space stations", visual: "Bright satellites", weather: "Weather satellites" };
     listEl.textContent = "";
-    sats.slice().sort(function (a, b) { return a.data.name.localeCompare(b.data.name); }).forEach(function (s) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.className = "btn quiet sat-btn";
-      b.textContent = s.data.name + (s.data.norad ? " · " + s.data.norad : "");
-      b.title = "NORAD " + (s.data.norad || "unknown");
-      b.setAttribute("aria-pressed", selectedName === s.data.name ? "true" : "false");
-      b.addEventListener("click", function () {
-        selectedName = s.data.name;
-        if (window.vmTrack) window.vmTrack('satellite_pick', selectedName);
-        renderList();
-        updateInfo();
-        updateHighlights();
+    ["stations", "visual", "weather"].forEach(function (g) {
+      var items = sats.filter(function (s) {
+        if ((s.data.group || "stations") !== g) return false;
+        if (!q) return true;
+        return s.data.name.toLowerCase().indexOf(q) >= 0 || String(s.data.norad || "").indexOf(q) >= 0;
+      }).sort(function (x, y) { return x.data.name.localeCompare(y.data.name); });
+      if (!items.length) return;
+      var h = document.createElement("div");
+      h.className = "muted";
+      h.style.cssText = "width:100%;margin-top:.6rem;font-weight:600";
+      h.textContent = labels[g] + " (" + items.length + ")";
+      listEl.appendChild(h);
+      items.forEach(function (s) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn quiet sat-btn";
+        b.textContent = s.data.name + (s.data.norad ? " · " + s.data.norad : "");
+        b.title = "NORAD " + (s.data.norad || "unknown");
+        b.setAttribute("aria-pressed", selectedName === s.data.name ? "true" : "false");
+        b.addEventListener("click", function () {
+          selectedName = s.data.name;
+          if (window.vmTrack) window.vmTrack('satellite_pick', selectedName);
+          renderList();
+          updateInfo();
+          updateHighlights();
+        });
+        listEl.appendChild(b);
       });
-      listEl.appendChild(b);
     });
   }
 
@@ -5576,8 +5600,8 @@ def globe_snapshot(now=None):
             if l1[2:7] in seen_ids:
                 continue
             seen_ids.add(l1[2:7])
-            rows.append((name, l1, l2))
-    for name, l1, l2 in rows[:GLOBE_MAX_SATS]:
+            rows.append((name, l1, l2, grp))
+    for name, l1, l2, grp in rows[:GLOBE_MAX_SATS]:
         sat = EarthSatellite(l1, l2, name, ts)
         period_s = 2 * math.pi / sat.model.no_kozai * 60.0
         times = ts.from_datetimes([now + timedelta(seconds=period_s * k / (GLOBE_SAMPLES - 1))
@@ -5595,6 +5619,7 @@ def globe_snapshot(now=None):
         out.append({
             "name": sat.name,
             "norad": int(l1[2:7]),
+            "group": grp,
             "lat": round(sub.latitude.degrees, 3),
             "lon": round(sub.longitude.degrees, 3),
             "alt_km": round(sub.elevation.km, 1),
