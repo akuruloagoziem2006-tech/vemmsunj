@@ -5156,29 +5156,39 @@ def _apod_current():
     return {"url": img, "title": title, "page": APOD_CURRENT}, None
 
 def _apod_api_items(days=7):
-    """NASA's APOD Basic feed (the source NASA's own APOD pages use). Keeps the newest entries that have a real picture."""
+    """NASA's APOD Basic feed. Reads the picture from apod:hdurl and logs a reason for every item it drops."""
     import html as _h
     from email.utils import parsedate_to_datetime
     r = requests.get("https://science.nasa.gov/feed/apod-basic/", timeout=60)
     r.raise_for_status()
+
+    def tag(block, name):
+        m = re.search(r"<%s>(.*?)</%s>" % (re.escape(name), re.escape(name)), block, re.S)
+        if not m:
+            return ""
+        v = m.group(1).replace("<![CDATA[", "").replace("]]>", "")
+        return _h.unescape(v).strip()
+
     out = []
     for block in re.findall(r"<item>(.*?)</item>", r.text, re.S)[:14]:
-        def tag(name):
-            m = re.search(r"<%s>(.*?)</%s>" % (name, name), block, re.S)
-            if not m:
-                return ""
-            return _h.unescape(m.group(1).replace("<![CDATA[", "").replace("]]>", "")).strip()
-        pic = re.search(r'src="(https://assets\.science\.nasa\.gov/[^"]+)"', tag("description"))
-        if not pic:
-            continue
+        title = tag(block, "title")
+        hd = tag(block, "apod:hdurl")
+        day = ""
         try:
-            day = parsedate_to_datetime(tag("pubDate")).date().isoformat()
+            day = parsedate_to_datetime(tag(block, "pubDate")).date().isoformat()
         except (TypeError, ValueError):
+            print(f"apod feed: bad date for {title!r}", flush=True)
+            continue
+        if not hd.startswith("https://"):
+            print(f"apod feed: no picture address for {day} {title!r}", flush=True)
+            continue
+        if tag(block, "apod:media_type") not in ("", "image") and "image" not in tag(block, "apod:media_type"):
+            print(f"apod feed: not an image for {day}", flush=True)
             continue
         out.append({"date": day, "media_type": "image", "copyright": None,
-                    "hdurl": pic.group(1), "url": pic.group(1),
-                    "title": tag("title").split(" - ", 1)[-1] or "Astronomy picture",
-                    "link": tag("link")})
+                    "hdurl": hd, "url": hd,
+                    "title": title.split(" - ", 1)[-1] if " - " in title else title,
+                    "link": tag(block, "link")})
     return out
 
 def backfill_nasa_pages(now=None):
