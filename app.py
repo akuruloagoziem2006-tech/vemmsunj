@@ -5155,6 +5155,8 @@ def _apod_current():
     title = title.replace("APOD - NASA Science", "").strip(" -") or "Astronomy Picture of the Day"
     return {"url": img, "title": title, "page": APOD_CURRENT}, None
 
+APOD_AGENCY_CREDIT = re.compile(r"NASA|ESA|CSA|JWST|STScI|JPL|SwRI|Hubble|Chandra|Spitzer|Kepler|Cassini|Voyager|Juno|Swift|Apollo|DLR|ESO|NOIRLab|Planetary Data System|Heritage|Processing", re.I)
+
 def _apod_api_items(days=7):
     """NASA's APOD Basic feed. Reads the picture from apod:hdurl and logs a reason for every item it drops."""
     import html as _h
@@ -5181,6 +5183,10 @@ def _apod_api_items(days=7):
             continue
         if not hd.startswith("https://"):
             print(f"apod feed: no picture address for {day} {title!r}", flush=True)
+            continue
+        credit = tag(block, "apod:copyright")
+        if credit and not APOD_AGENCY_CREDIT.search(credit):
+            print(f"apod feed: skipped, personal credit: {day} {title!r}", flush=True)
             continue
         if tag(block, "apod:media_type") not in ("", "image") and "image" not in tag(block, "apod:media_type"):
             print(f"apod feed: not an image for {day}", flush=True)
