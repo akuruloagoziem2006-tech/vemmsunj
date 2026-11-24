@@ -5200,6 +5200,36 @@ def backfill_nasa_pages(now=None):
         db.close()
     return out
 
+@app.route("/daily/<kind>")
+def daily_archive(kind):
+    kinds = {"iotd": ("Image of the Day", "Image of the Day"),
+             "apod": ("Astronomy Picture of the Day", "Astronomy Picture of the Day")}
+    if kind not in kinds:
+        abort(404)
+    prefix, title = kinds[kind]
+    rows = [dict(r) for r in get_db().execute(
+        "SELECT id, body, created_at, image_svg, ai_explanation FROM posts "
+        "WHERE author = 'VEMMSUNJ_BOT' AND body LIKE ? AND substr(image_svg, 1, 4) = 'http' "
+        "ORDER BY id DESC LIMIT 120", (prefix + "%",)).fetchall()]
+    rows.sort(key=_feed_date, reverse=True)
+    cards = []
+    for r in rows[:60]:
+        page = r.get("ai_explanation") or ""
+        href = page if page.startswith("https://") else r["image_svg"]
+        cards.append(
+            '<figure class="feed-photo"><a href="' + escape(href) + '" target="_blank" rel="noopener">'
+            '<img loading="lazy" src="/posts/' + str(r["id"]) + '/image.svg" '
+            'alt="' + escape(r["body"][:200]) + '" width="100%"></a>'
+            '<figcaption class="meta">' + escape(r["body"][:200]) + '</figcaption></figure>')
+    grid = "".join(cards) if cards else "<p>No pictures stored yet.</p>"
+    html = ('{% extends "base.html" %}{% block content %}'
+            '<p><a href="/">Back to home</a></p>'
+            '<h1>' + escape(title) + ' · earlier pictures</h1>'
+            '<p class="meta">Newest first. Tap a picture to open it on NASA\'s site.</p>'
+            '<div class="feed-grid">' + grid + '</div>'
+            '{% endblock %}')
+    return render_template_string(html, title=title, section="home")
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
@@ -8867,7 +8897,10 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
 <section class="recent home-wide" aria-labelledby="feed-title">
   <h2 id="feed-title">Astronomy feed</h2>
   <p class="meta">Images from NASA, the last seven days. Tap an image to open it on NASA's site.</p>
-  <h3>Image of the Day</h3>
+<style>.feed-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}.feed-col .feed-grid{display:grid !important;grid-template-columns:1fr !important;gap:10px}.feed-split h3{font-size:.95rem}.feed-split h3 a{color:inherit;text-decoration:underline}</style>
+  <div class="feed-split">
+  <div class="feed-col">
+  <h3><a href="/daily/iotd">Image of the Day</a></h3>
   <div class="feed-grid">
   {% for s in daily_items %}
   <figure class="feed-photo">
@@ -8876,7 +8909,9 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
   </figure>
   {% else %}<p>No Earth images yet.</p>{% endfor %}
   </div>
-  <h3>Astronomy Picture of the Day</h3>
+  </div>
+  <div class="feed-col">
+  <h3><a href="/daily/apod">Astronomy Picture of the Day</a></h3>
   <div class="feed-grid">
   {% for s in apod_items %}
   <figure class="feed-photo">
@@ -8884,6 +8919,8 @@ HOME_NEW_TEMPLATES = {"home.html": """{% extends "base.html" %}
     <figcaption class="meta">{{ s['body'][:160] }}</figcaption>
   </figure>
   {% else %}<p>No astronomy pictures yet.</p>{% endfor %}
+  </div>
+  </div>
   </div>
   <p><a class="btn quiet" href="/posts">See all sightings</a></p>
 </section>
