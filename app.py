@@ -9167,7 +9167,7 @@ def index():
     # Newest first; placeholder logos from the old NASA API path are never shown
     apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")
                   and "nasa-logo" not in (r.get("image_url") or "")
-                  and "/assets/images/" not in (r.get("image_url") or "")][:8]
+                  and "/assets/images/" not in (r.get("image_url") or "")][:1]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
