@@ -5561,14 +5561,22 @@ def forgot():
 
 # ---------- Globe: satellite snapshot ----------
 GLOBE_SAMPLES = 144
-GLOBE_MAX_SATS = 40
+GLOBE_GROUPS = ["stations", "visual", "weather"]
+GLOBE_MAX_SATS = 80
 
 def globe_snapshot(now=None):
     now = now or datetime.now(timezone.utc)
     ts = load.timescale()
     t_now = ts.from_datetime(now)
     out = []
-    for name, l1, l2 in parse_tle(get_group_text("stations"))[:GLOBE_MAX_SATS]:
+    seen_ids, rows = set(), []
+    for grp in GLOBE_GROUPS:
+        for name, l1, l2 in parse_tle(get_group_text(grp)):
+            if l1[2:7] in seen_ids:
+                continue
+            seen_ids.add(l1[2:7])
+            rows.append((name, l1, l2))
+    for name, l1, l2 in rows[:GLOBE_MAX_SATS]:
         sat = EarthSatellite(l1, l2, name, ts)
         period_s = 2 * math.pi / sat.model.no_kozai * 60.0
         times = ts.from_datetimes([now + timedelta(seconds=period_s * k / (GLOBE_SAMPLES - 1))
