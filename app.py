@@ -5157,15 +5157,30 @@ def _apod_current():
     return {"url": img, "title": title, "page": APOD_CURRENT}, None
 
 def _apod_api_items(days=7):
-    """NASA's official APOD API for the last seven days, in one request."""
-    key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-    end = datetime.now(timezone.utc).date()
-    start = end - timedelta(days=days - 1)
-    r = requests.get(APOD_API, params={"api_key": key, "start_date": start.isoformat(),
-                                       "end_date": end.isoformat()}, timeout=60)
+    """NASA's APOD Basic feed (the source NASA's own APOD pages use). Keeps the newest entries that have a real picture."""
+    import html as _h
+    from email.utils import parsedate_to_datetime
+    r = requests.get("https://science.nasa.gov/feed/apod-basic/", timeout=60)
     r.raise_for_status()
-    items = r.json()
-    return items if isinstance(items, list) else []
+    out = []
+    for block in re.findall(r"<item>(.*?)</item>", r.text, re.S)[:14]:
+        def tag(name):
+            m = re.search(r"<%s>(.*?)</%s>" % (name, name), block, re.S)
+            if not m:
+                return ""
+            return _h.unescape(m.group(1).replace("<![CDATA[", "").replace("]]>", "")).strip()
+        pic = re.search(r'src="(https://assets\.science\.nasa\.gov/[^"]+)"', tag("description"))
+        if not pic:
+            continue
+        try:
+            day = parsedate_to_datetime(tag("pubDate")).date().isoformat()
+        except (TypeError, ValueError):
+            continue
+        out.append({"date": day, "media_type": "image", "copyright": None,
+                    "hdurl": pic.group(1), "url": pic.group(1),
+                    "title": tag("title").split(" - ", 1)[-1] or "Astronomy picture",
+                    "link": tag("link")})
+    return out
 
 def backfill_nasa_pages(now=None):
     """Stores NASA's current Astronomy Picture of the Day (only when it changes) and the latest Image of the Day."""
@@ -5194,7 +5209,7 @@ def backfill_nasa_pages(now=None):
                 out["skipped"].append(f"{day}: already stored")
                 continue
             title = item.get("title") or "Astronomy picture"
-            page = "https://apod.nasa.gov/apod/ap" + day[2:4] + day[5:7] + day[8:10] + ".html"
+            page = item.get("link") or "https://science.nasa.gov/apod/"
             body = (f"Astronomy Picture of the Day · NASA APOD: {title}. "
                     "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
             db.execute(
