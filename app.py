@@ -5182,6 +5182,9 @@ def _apod_api_items(days=7):
         if not hd.startswith("https://"):
             print(f"apod feed: no picture address for {day} {title!r}", flush=True)
             continue
+        if tag(block, "apod:copyright"):
+            print(f"apod feed: skipped, credited to a third party: {day} {title!r}", flush=True)
+            continue
         if tag(block, "apod:media_type") not in ("", "image") and "image" not in tag(block, "apod:media_type"):
             print(f"apod feed: not an image for {day}", flush=True)
             continue
