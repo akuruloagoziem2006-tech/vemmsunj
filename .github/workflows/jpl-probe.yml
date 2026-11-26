@@ -1,0 +1,16 @@
+name: JPL source probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check JPL sources
+        run: |
+          for u in "https://ssd.jpl.nasa.gov/sat_elem.html" \
+                   "https://ssd.jpl.nasa.gov/planets/phys_par.html" \
+                   "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='501'&OBJ_DATA='NO'&MAKE_EPHEM='NO'"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$u")
+            echo "$code $u"
+          done
