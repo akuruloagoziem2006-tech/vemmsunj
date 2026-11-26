@@ -1,0 +1,16 @@
+name: Horizons probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read Horizons major bodies and one moon
+        run: |
+          curl -s --max-time 60 "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='MB'" -o mb.txt
+          echo "major bodies file bytes: $(wc -c < mb.txt)"
+          grep -E "^ *[0-9]{3} " mb.txt | head -n 60
+          curl -s --max-time 60 "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='601'&OBJ_DATA='YES'&MAKE_EPHEM='NO'" -o mimas.txt
+          echo "mimas file bytes: $(wc -c < mimas.txt)"
+          grep -iE "GM|radius|rot|mass|name" mimas.txt | head -n 15
