@@ -1,0 +1,32 @@
+name: Moons data (MPC names and JPL Horizons orbits)
+on:
+  schedule:
+    - cron: "15 4 * * 0"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: moons-data
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install requests
+      - name: Build moon data (fails closed)
+        run: python3 tools/build_moons.py
+      - name: Commit if changed
+        run: |
+          git config user.name "vemmsunj-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/moons.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update moon data"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
