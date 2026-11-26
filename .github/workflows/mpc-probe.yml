@@ -1,0 +1,17 @@
+name: MPC natural satellites probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List the MPC natural satellites directory
+        run: |
+          curl -s -o dir.html -w "dir: %{http_code} %{size_download} bytes\n" --max-time 60 "https://minorplanetcenter.net/iau/NaturalSatellites/"
+          grep -oE 'href="[^"]+"' dir.html | sort -u | head -n 40
+          for f in $(grep -oE 'href="[^"]+\.(txt|dat|csv)"' dir.html | sed 's/href="//;s/"$//' | head -n 3); do
+            url="https://minorplanetcenter.net/iau/NaturalSatellites/$f"
+            curl -s -o sample.txt -w "file $f: %{http_code} %{size_download} bytes\n" --max-time 60 "$url"
+            head -n 12 sample.txt
+          done
