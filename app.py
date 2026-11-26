@@ -6986,7 +6986,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   <button class="btn quiet" type="button" data-scale="month" aria-pressed="false">1 month per second</button>
   <button class="btn quiet" type="button" data-scale="year" aria-pressed="false">1 year per second</button>
 </div>
-<p><label><input id="spin" type="checkbox" checked> Show each planet's spin</label></p>
+<p><label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer"><input id="spin" type="checkbox" checked style="width:auto;margin:0"> Show each planet's spin</label></p>
 <canvas id="orrery" style="width:100%;aspect-ratio:1/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:8px"></canvas>
 <p class="meta" id="orrery-status" role="status" aria-live="polite"></p>
 <h2>Real speeds</h2>
@@ -7026,39 +7026,114 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  var TAU = Math.PI * 2;
+  var ORB = {
+    Mercury: { a: 0.387, e: 0.2056 }, Venus: { a: 0.723, e: 0.0068 },
+    Earth: { a: 1.0, e: 0.0167 }, Mars: { a: 1.524, e: 0.0934 },
+    Jupiter: { a: 5.203, e: 0.0484 }, Saturn: { a: 9.537, e: 0.0542 },
+    Uranus: { a: 19.19, e: 0.0472 }, Neptune: { a: 30.07, e: 0.0086 }
+  };
+  var trueScale = false;
+
+  function solveE(M, e) {
+    var E = M;
+    for (var i = 0; i < 10; i++) { E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E)); }
+    return E;
+  }
+  function keplerAt(name, M) {
+    var o = ORB[name] || { a: 1, e: 0 };
+    var m = ((M % TAU) + TAU) % TAU;
+    var E = solveE(m, o.e);
+    var r = o.a * (1 - o.e * Math.cos(E));
+    var nu = 2 * Math.atan2(Math.sqrt(1 + o.e) * Math.sin(E / 2), Math.sqrt(1 - o.e) * Math.cos(E / 2));
+    return { r: r, nu: nu };
+  }
+  function rFor(r, half) {
+    return trueScale ? half * r / 31 : half * radialPos(r);
+  }
+  function drawOrbitLine(name, cx, cy, half) {
+    var o = ORB[name];
+    if (!o) return;
+    ctx.strokeStyle = "#1C2330";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var k = 0; k <= 240; k++) {
+      var ang = k / 240 * TAU;
+      var r = o.a * (1 - o.e * o.e) / (1 + o.e * Math.cos(ang));
+      var d = rFor(r, half);
+      var x = cx + d * Math.cos(ang), y = cy - d * Math.sin(ang);
+      if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+  function drawSun(cx, cy) {
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 34);
+    g.addColorStop(0, "rgba(255,244,194,0.9)");
+    g.addColorStop(0.25, "rgba(255,200,80,0.45)");
+    g.addColorStop(1, "rgba(255,200,80,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, 34, 0, TAU); ctx.fill();
+    ctx.fillStyle = "#FFF1C4";
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, TAU); ctx.fill();
+  }
+  function drawBody(name, x, y, size) {
+    ctx.save();
+    ctx.fillStyle = COLORS[name] || "#E9E6DC";
+    ctx.beginPath(); ctx.arc(x, y, size, 0, TAU); ctx.fill();
+    ctx.clip();
+    if (name === "Jupiter") {
+      [-0.55, -0.25, 0.05, 0.35].forEach(function (f, i) {
+        ctx.fillStyle = i % 2 ? "rgba(150,90,55,0.45)" : "rgba(245,230,200,0.35)";
+        ctx.fillRect(x - size, y + f * size, 2 * size, size * 0.14);
+      });
+    }
+    var shade = ctx.createRadialGradient(x - size * 0.4, y - size * 0.4, size * 0.1, x, y, size);
+    shade.addColorStop(0, "rgba(255,255,255,0.35)");
+    shade.addColorStop(0.55, "rgba(0,0,0,0)");
+    shade.addColorStop(1, "rgba(0,0,0,0.65)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(x - size, y - size, 2 * size, 2 * size);
+    ctx.restore();
+    if (name === "Saturn") {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-0.35);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, size * 2.1, size * 0.7, 0, 0, TAU);
+      ctx.lineWidth = Math.max(1.5, size * 0.35);
+      ctx.strokeStyle = "rgba(227,204,147,0.55)";
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function drawMoon(x, y, size, elapsed) {
+    var a = TAU * elapsed / (27.32 * 86400);
+    var d = size + 9;
+    ctx.fillStyle = "#C8C8C8";
+    ctx.beginPath(); ctx.arc(x + d * Math.cos(a), y + d * Math.sin(a), 1.8, 0, TAU); ctx.fill();
+  }
+
   function draw() {
     var W = canvas.clientWidth;
     var H = canvas.clientHeight || W;
     var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 18;
     ctx.fillStyle = "#05070B";
     ctx.fillRect(0, 0, W, H);
-    planets.forEach(function (p) {
-      ctx.strokeStyle = "#1C2330";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(cx, cy, half * radialPos(p.r), 0, Math.PI * 2);
-      ctx.stroke();
-    });
-    var glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
-    glow.addColorStop(0, "#FFF4C2");
-    glow.addColorStop(0.4, "rgba(255,200,80,0.6)");
-    glow.addColorStop(1, "rgba(255,200,80,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#FFE08A";
-    ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
-
+    planets.forEach(function (p) { drawOrbitLine(p.name, cx, cy, half); });
+    drawSun(cx, cy);
     var elapsed = simSec - t0;
     planets.forEach(function (p) {
-      var a = p.a0 + 2 * Math.PI * elapsed / p.period;
-      var rad = half * radialPos(p.r);
-      var x = cx + rad * Math.cos(a);
-      var y = cy - rad * Math.sin(a);
-      var size = 2.5 + 7 * Math.sqrt(p.km / 69911);
-      ctx.fillStyle = COLORS[p.name] || "#E9E6DC";
-      ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+      var M = p.a0 + TAU * elapsed / p.period;
+      var pos = keplerAt(p.name, M);
+      var rad = rFor(pos.r, half);
+      var x = cx + rad * Math.cos(pos.nu);
+      var y = cy - rad * Math.sin(pos.nu);
+      var size = Math.max(2.5, 11 * Math.sqrt(p.km / 69911));
+      drawBody(p.name, x, y, size);
+      if (p.name === "Earth") drawMoon(x, y, size, elapsed);
       if (spinEl.checked) {
-        var sa = p.dir * 2 * Math.PI * elapsed / p.spinSec;
+        var sa = p.dir * TAU * elapsed / p.spinSec;
         ctx.strokeStyle = "rgba(233,230,220,0.85)";
         ctx.lineWidth = 1.2;
         ctx.beginPath();
@@ -7070,6 +7145,21 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       ctx.font = "11px sans-serif";
       ctx.fillText(p.name, x + size + 4, y + 4);
     });
+  }
+
+  var scaleBox = document.querySelector(".orb-controls");
+  if (scaleBox) {
+    var trueBtn = document.createElement("button");
+    trueBtn.type = "button";
+    trueBtn.className = "btn quiet";
+    trueBtn.setAttribute("aria-pressed", "false");
+    trueBtn.textContent = "True scale";
+    trueBtn.addEventListener("click", function () {
+      trueScale = !trueScale;
+      trueBtn.setAttribute("aria-pressed", trueScale ? "true" : "false");
+      draw();
+    });
+    scaleBox.appendChild(trueBtn);
   }
 
   function rows(list) {
