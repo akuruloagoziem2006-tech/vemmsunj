@@ -7108,11 +7108,43 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       ctx.restore();
     }
   }
-  function drawMoon(x, y, size, elapsed) {
-    var a = TAU * elapsed / (27.32 * 86400);
-    var d = size + 9;
-    ctx.fillStyle = "#C8C8C8";
-    ctx.beginPath(); ctx.arc(x + d * Math.cos(a), y + d * Math.sin(a), 1.8, 0, TAU); ctx.fill();
+  // name, orbit radius (km), orbital period (days), body radius (km), retrograde
+  var MOONS = {
+    Earth: [["Moon", 384400, 27.32, 1737, false]],
+    Mars: [["Phobos", 9376, 0.319, 11, false], ["Deimos", 23463, 1.263, 6, false]],
+    Jupiter: [["Io", 421700, 1.769, 1822, false], ["Europa", 671034, 3.551, 1561, false],
+              ["Ganymede", 1070412, 7.155, 2634, false], ["Callisto", 1882709, 16.689, 2410, false]],
+    Saturn: [["Mimas", 185540, 0.942, 198, false], ["Enceladus", 238020, 1.370, 252, false],
+             ["Tethys", 294619, 1.888, 531, false], ["Dione", 377396, 2.737, 561, false],
+             ["Rhea", 527108, 4.518, 764, false], ["Titan", 1221870, 15.945, 2575, false],
+             ["Iapetus", 3560820, 79.33, 734, false]],
+    Uranus: [["Miranda", 129900, 1.413, 236, false], ["Ariel", 191020, 2.520, 579, false],
+             ["Umbriel", 266000, 4.144, 585, false], ["Titania", 435910, 8.706, 789, false],
+             ["Oberon", 583520, 13.463, 761, false]],
+    Neptune: [["Proteus", 117647, 1.122, 210, false], ["Triton", 354759, 5.877, 1353, true]]
+  };
+
+  function drawMoons(name, x, y, size, elapsed) {
+    var list = MOONS[name];
+    if (!list) return;
+    var R = KM[name] || 1;
+    list.forEach(function (m, i) {
+      var rr = (size * 0.9 + 5 + 5 * Math.log10(m[1] / R)) * view.z;
+      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke();
+      var dir = m[4] ? -1 : 1;
+      var ang = i * 2.399 + dir * TAU * elapsed / (m[2] * 86400);
+      var mx = x + rr * Math.cos(ang), my = y + rr * Math.sin(ang);
+      var bs = Math.max(1.2, 3.0 * Math.sqrt(m[3] / 2634));
+      ctx.fillStyle = "#C8C8C8";
+      ctx.beginPath(); ctx.arc(mx, my, bs, 0, TAU); ctx.fill();
+      if (view.z >= 2.5) {
+        ctx.fillStyle = "#9AA3B2";
+        ctx.font = "9px sans-serif";
+        ctx.fillText(m[0], mx + bs + 3, my + 3);
+      }
+    });
   }
 
   function draw() {
@@ -7132,7 +7164,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       var y = cy - rad * Math.sin(pos.nu);
       var size = Math.max(2.5, 11 * Math.sqrt(p.km / 69911));
       drawBody(p.name, x, y, size);
-      if (p.name === "Earth") drawMoon(x, y, size, elapsed);
+      drawMoons(p.name, x, y, size, elapsed);
       if (spinEl.checked) {
         var sa = p.dir * TAU * elapsed / p.spinSec;
         ctx.strokeStyle = "rgba(233,230,220,0.85)";
