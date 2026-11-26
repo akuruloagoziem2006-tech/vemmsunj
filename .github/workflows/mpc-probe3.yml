@@ -1,0 +1,18 @@
+name: MPC natural satellites data probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List satellite data files and sample them
+        run: |
+          B="https://www.minorplanetcenter.net"
+          curl -sL --max-time 60 -o sat.html -w "page: %{http_code} %{size_download} bytes\n" "$B/iau/NatSats/NaturalSatellites.html"
+          grep -oiE 'href="[^"]+"' sat.html | sort -u | head -n 60
+          for f in $(grep -oiE 'href="[^"]+\.(txt|dat|csv|json|html)"' sat.html | sed 's/href="//;s/"$//' | sort -u | head -n 4); do
+            case "$f" in http*) url="$f";; /*) url="$B$f";; *) url="$B/iau/NatSats/$f";; esac
+            curl -sL --max-time 60 -o sample.dat -w "file $f: %{http_code} %{size_download} bytes\n" "$url"
+            head -n 8 sample.dat
+          done
