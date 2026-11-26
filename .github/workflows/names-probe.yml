@@ -1,0 +1,26 @@
+name: Full moon name probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Count MPC names per planet and test Horizons on a few
+        run: |
+          curl -sL --max-time 60 -o sat.html "https://www.minorplanetcenter.net/iau/NatSats/NaturalSatellites.html"
+          sed -e 's/<[^>]*>/\n/g' sat.html | grep -oE '(Jupiter|Saturn|Uranus|Neptune|Mars) [0-9]+ \([^)]+\)' | sort -u > names.txt
+          for p in Jupiter Saturn Uranus Neptune Mars; do
+            echo "$p MPC names: $(grep -c "^$p " names.txt)"
+          done
+          echo "--- Saturn names, sample:"
+          grep "^Saturn " names.txt | head -n 8
+          echo "--- Horizons test by name:"
+          for n in "Mimas" "Pan" "S/2004 S 12"; do
+            code=$(curl -s --max-time 60 -G "https://ssd.jpl.nasa.gov/api/horizons.api" \
+              --data-urlencode "format=text" --data-urlencode "COMMAND=$n" \
+              --data-urlencode "OBJ_DATA=NO" --data-urlencode "MAKE_EPHEM=NO" \
+              -o "h_$n.txt" -w "%{http_code}")
+            echo "$n: http $code, $(grep -m1 -E 'Target body name' "h_$n.txt" | sed 's/  */ /g')"
+            grep -m1 -E 'Multiple|No matches|ambiguous' "h_$n.txt" || true
+          done
