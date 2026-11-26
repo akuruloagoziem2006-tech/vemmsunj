@@ -6987,7 +6987,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   <button class="btn quiet" type="button" data-scale="year" aria-pressed="false">1 year per second</button>
 </div>
 <p><label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer"><input id="spin" type="checkbox" checked style="width:auto;margin:0"> Show each planet's spin</label></p>
-<canvas id="orrery" style="width:100%;aspect-ratio:1/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:8px"></canvas>
+<canvas id="orrery" style="width:100%;aspect-ratio:1/1;display:block;background:#05070B;border:1px solid var(--rule);border-radius:8px;touch-action:none;cursor:grab"></canvas>
 <p class="meta" id="orrery-status" role="status" aria-live="polite"></p>
 <h2>Real speeds</h2>
 <div class="table-wrap"><table class="data">
@@ -7034,6 +7034,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     Uranus: { a: 19.19, e: 0.0472 }, Neptune: { a: 30.07, e: 0.0086 }
   };
   var trueScale = false;
+  var view = { z: 1, x: 0, y: 0 };
 
   function solveE(M, e) {
     var E = M;
@@ -7117,7 +7118,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   function draw() {
     var W = canvas.clientWidth;
     var H = canvas.clientHeight || W;
-    var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 18;
+    var cx = W / 2 + view.x, cy = H / 2 + view.y, half = (Math.min(W, H) / 2 - 18) * view.z;
     ctx.fillStyle = "#05070B";
     ctx.fillRect(0, 0, W, H);
     planets.forEach(function (p) { drawOrbitLine(p.name, cx, cy, half); });
@@ -7144,6 +7145,72 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       ctx.fillStyle = "#E9E6DC";
       ctx.font = "11px sans-serif";
       ctx.fillText(p.name, x + size + 4, y + 4);
+    });
+  }
+
+  function setZoom(nz, px, py) {
+    var W = canvas.clientWidth, H = canvas.clientHeight || W;
+    nz = Math.max(0.5, Math.min(8, nz));
+    if (px === undefined) { px = W / 2; py = H / 2; }
+    var cx = W / 2 + view.x, cy = H / 2 + view.y;
+    var f = nz / view.z;
+    view.x = (px - (px - cx) * f) - W / 2;
+    view.y = (py - (py - cy) * f) - H / 2;
+    view.z = nz;
+    draw();
+  }
+  function localPt(e) {
+    var r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+  var orrPtrs = {}, orrPinch = null;
+  canvas.addEventListener("pointerdown", function (e) {
+    orrPtrs[e.pointerId] = localPt(e);
+    canvas.setPointerCapture(e.pointerId);
+    if (Object.keys(orrPtrs).length === 2) {
+      var k = Object.keys(orrPtrs).map(function (i) { return orrPtrs[i]; });
+      orrPinch = { d: Math.hypot(k[0][0] - k[1][0], k[0][1] - k[1][1]), z: view.z };
+    }
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!orrPtrs[e.pointerId]) return;
+    var prev = orrPtrs[e.pointerId], cur = localPt(e);
+    orrPtrs[e.pointerId] = cur;
+    var ids = Object.keys(orrPtrs);
+    if (ids.length === 2 && orrPinch) {
+      var k = ids.map(function (i) { return orrPtrs[i]; });
+      var d = Math.hypot(k[0][0] - k[1][0], k[0][1] - k[1][1]);
+      var mx = (k[0][0] + k[1][0]) / 2, my = (k[0][1] + k[1][1]) / 2;
+      setZoom(orrPinch.z * d / orrPinch.d, mx, my);
+    } else if (ids.length === 1) {
+      view.x += cur[0] - prev[0];
+      view.y += cur[1] - prev[1];
+      draw();
+    }
+  });
+  function orrEnd(e) {
+    delete orrPtrs[e.pointerId];
+    if (Object.keys(orrPtrs).length < 2) orrPinch = null;
+  }
+  canvas.addEventListener("pointerup", orrEnd);
+  canvas.addEventListener("pointercancel", orrEnd);
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var pt = localPt(e);
+    setZoom(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), pt[0], pt[1]);
+  }, { passive: false });
+  canvas.addEventListener("dblclick", function () { view = { z: 1, x: 0, y: 0 }; draw(); });
+
+  var zoomBox = document.querySelector(".orb-controls");
+  if (zoomBox) {
+    [["−", function () { setZoom(view.z / 1.25); }], ["+", function () { setZoom(view.z * 1.25); }],
+     ["Reset zoom", function () { view = { z: 1, x: 0, y: 0 }; draw(); }]].forEach(function (b) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn quiet";
+      btn.textContent = b[0];
+      btn.addEventListener("click", b[1]);
+      zoomBox.appendChild(btn);
     });
   }
 
