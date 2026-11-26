@@ -2426,6 +2426,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
 {% endblock %}
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.4/dist/satellite.min.js"></script>
 <script>
 (function () {
   var R = 6371;
@@ -2444,7 +2445,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     return;
   }
 
-  var data = null, simElapsed = 0, speed = 1, selectedName = null, sats = [];
+  var data = null, simElapsed = 0, lastSnapMs = 0, speed = 1, selectedName = null, sats = [];
   var countries = [];
   var tierA = {}, tierB = {};
   var selCountries = [];
@@ -2708,7 +2709,33 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     return new THREE.Vector3(Math.cos(la) * Math.cos(lo) * r, Math.sin(la) * r, -Math.cos(la) * Math.sin(lo) * r);
   }
   // Latitude and longitude of a satellite at a moment, from its stored ground points.
+  function _satrec(d) {
+    if (!d._rec && d.tle1 && d.tle2 && window.satellite) {
+      d._rec = satellite.twoline2satrec(d.tle1, d.tle2);
+    }
+    return d._rec;
+  }
   function groundPosition(d, elapsed) {
+    var rec = _satrec(d);
+    if (rec) {
+      var when = new Date(elapsed * 1000);
+      var pv = satellite.propagate(rec, when);
+      if (pv && pv.position) {
+        var g = satellite.eciToGeodetic(pv.position, satellite.gstime(when));
+        return [g.latitude / DEG, g.longitude / DEG];
+      }
+    }
+    return groundPositionTrack(d, elapsed);
+  }
+  function satPosition(d, elapsed) {
+    var rec = _satrec(d);
+    if (rec) {
+      var pv = satellite.propagate(rec, new Date(elapsed * 1000));
+      if (pv && pv.position) return [pv.position.x, pv.position.y, pv.position.z];
+    }
+    return satPositionTrack(d, elapsed);
+  }
+  function groundPositionTrack(d, elapsed) {
     var g = d.ground, period = d.period_s;
     var phase = ((elapsed % period) + period) % period;
     var n = g.length - 1;
@@ -2755,7 +2782,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   }
 
   // Position along the stored orbit, looping every orbital period.
-  function satPosition(d, elapsed) {
+  function satPositionTrack(d, elapsed) {
     var period = d.period_s;
     var phase = ((elapsed % period) + period) % period;
     var n = d.track.length - 1;
@@ -2896,7 +2923,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         }
         data = d;
         mergeExtras();
-        simElapsed = 0;
+        if (!simElapsed) { simElapsed = Date.now() / 1000; }
         buildSatellites(d.satellites);
         renderList();
         updateInfo();
@@ -2978,7 +3005,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     last = now;
     if (data) {
       simElapsed += dt * speed;
-      var gmst = data.gmst_deg + EARTH_RATE_DEG_PER_DAY * (simElapsed / 86400);
+      var gmst = window.satellite ? satellite.gstime(new Date(simElapsed * 1000)) * 180 / Math.PI : data.gmst_deg;
       earthGroup.rotation.y = gmst * DEG;
       sunLight.position.copy(sc(data.sun, 10));
       sats.forEach(function (s) {
@@ -5719,6 +5746,7 @@ def globe_snapshot(now=None):
         out.append({
             "name": sat.name,
             "norad": int(l1[2:7]),
+            "tle1": l1, "tle2": l2,
             "group": grp,
             "lat": round(sub.latitude.degrees, 3),
             "lon": round(sub.longitude.degrees, 3),
