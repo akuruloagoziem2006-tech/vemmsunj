@@ -1,0 +1,33 @@
+name: SPICE kernel coverage probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: List kernels and test one
+        run: |
+          pip install -q spiceypy requests
+          curl -sL --max-time 60 -o sep.html "https://ssd.jpl.nasa.gov/sats/elem/sep.html"
+          grep -oiE 'href="[^"]+\.bsp"' sep.html | sed 's/href="//;s/"$//' | sort -u > kernels.txt
+          echo "kernel links: $(wc -l < kernels.txt)"
+          while read -r k; do
+            case "$k" in http*) u="$k";; /*) u="https://ssd.jpl.nasa.gov$k";; *) u="https://ssd.jpl.nasa.gov/sats/elem/$k";; esac
+            code=$(curl -sL --max-time 120 -o "$(basename "$k")" -w "%{http_code} %{size_download}" "$u")
+            echo "$code $u"
+          done < kernels.txt
+          python3 - << 'PY'
+          import glob, spiceypy as spice
+          for f in sorted(glob.glob("*.bsp")):
+              try:
+                  spice.furnsh(f)
+                  ids = sorted(set(int(x) for x in spice.spkobj(f)))
+                  print(f, "bodies:", len(ids), "first ids:", ids[:12])
+                  spice.unload(f)
+              except Exception as e:
+                  print(f, "could not read:", e)
+          PY
