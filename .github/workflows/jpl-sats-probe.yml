@@ -1,0 +1,12 @@
+name: JPL satellite elements links
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Find JPL satellite element pages
+        run: |
+          curl -sL --max-time 60 -o jpl.html -w "home: %{http_code}\n" "https://ssd.jpl.nasa.gov/sats/elem/"
+          grep -oiE 'href="[^"]+"' jpl.html | sort -u | head -n 60
