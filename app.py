@@ -7491,10 +7491,12 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       var mx = cx + rr * Math.cos(ang), my = cy + rr * Math.sin(ang);
       moonCtx.fillStyle = "#C8C8C8";
       moonCtx.beginPath(); moonCtx.arc(mx, my, 2.2, 0, TAU); moonCtx.fill();
-      if (orb.length <= 15) {
-        moonCtx.fillStyle = "#9AA3B2";
-        moonCtx.font = "10px sans-serif";
-        moonCtx.fillText(m.name, mx + 4, my + 3);
+      var major = MAJOR_MOONS.indexOf(m.name) >= 0;
+      if (major || orb.length <= 15) {
+        var lbl = m.name.charAt(0) + m.name.slice(1).toLowerCase();
+        moonCtx.font = major ? "12px sans-serif" : "10px sans-serif";
+        moonCtx.fillStyle = major ? "#E5E9F0" : "#9AA3B2";
+        moonCtx.fillText(lbl, mx + 5, my + 4);
       }
     });
   }
@@ -7538,6 +7540,23 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     view.z = nz;
     draw();
   }
+  (function () {
+    var box = document.querySelector(".orb-controls");
+    if (!box) return;
+    ["Jupiter", "Saturn", "Uranus", "Neptune"].forEach(function (name) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn quiet";
+      b.textContent = name + " moons";
+      b.addEventListener("click", function () {
+        var p = planets.filter(function (x) { return x.name === name; })[0];
+        if (!p) return;
+        focusPlanet(p);
+        openMoonPanel(name);
+      });
+      box.appendChild(b);
+    });
+  })();
   canvas.addEventListener("pointerdown", function (e) { downAt = [e.clientX, e.clientY]; });
   canvas.addEventListener("click", function (e) {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
