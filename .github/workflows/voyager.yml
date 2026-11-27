@@ -1,0 +1,22 @@
+name: Voyager distances (JPL Horizons)
+on:
+  schedule:
+    - cron: "40 */6 * * *"
+  workflow_dispatch:
+concurrency:
+  group: render-precompute
+  cancel-in-progress: false
+jobs:
+  voyager:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Store Voyager positions
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 240 -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+                 "https://vemmsunj.onrender.com/api/cron/precompute?step=voyager"; then echo; exit 0; fi
+            echo "attempt $attempt failed"; sleep 60
+          done
+          exit 1

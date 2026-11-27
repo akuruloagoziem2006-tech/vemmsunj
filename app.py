@@ -3082,6 +3082,20 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   groundBtn.setAttribute("aria-pressed", "false");
   groundBtn.style.margin = "0 0 .6rem .4rem";
   canvas.parentNode.insertBefore(groundBtn, canvas);
+  fetch("/api/voyager", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var box = document.createElement("p");
+      box.className = "meta";
+      box.style.margin = ".4rem 0";
+      box.textContent = (d.voyagers && d.voyagers.length)
+        ? d.voyagers.map(function (v) {
+            return v.name + ": " + v.dist_au + " AU (" + v.light_hours + " light-hours) from Earth, ecliptic longitude " + v.ecl_lon_deg + "°";
+          }).join(" · ") + ". Not drawn on the globe: too far away."
+        : "Voyager distances are not stored yet.";
+      canvas.parentNode.insertBefore(box, canvas);
+    })
+    .catch(function () {});
   groundBtn.addEventListener("click", function () {
     groundOn = !groundOn;
     groundBtn.setAttribute("aria-pressed", groundOn ? "true" : "false");
@@ -5326,6 +5340,57 @@ def daily_archive(kind):
             '<div class="feed-grid">' + grid + '</div>'
             '{% endblock %}')
     return render_template_string(html, title=title, section="home")
+
+VOYAGERS = [("Voyager 1", "-31"), ("Voyager 2", "-32")]
+KM_PER_AU = 149597870.7
+KM_PER_LIGHT_HOUR = 299792.458 * 3600
+
+def voyager_rows(now=None):
+    """Earth-centred position of each Voyager now, from JPL Horizons (state vectors, ecliptic frame)."""
+    now = now or datetime.now(timezone.utc)
+    start = now.strftime("%Y-%m-%d %H:%M")
+    stop = (now + timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M")
+    rows = []
+    for name, cmd in VOYAGERS:
+        r = requests.get("https://ssd.jpl.nasa.gov/api/horizons.api", params={
+            "format": "text", "COMMAND": f"'{cmd}'", "OBJ_DATA": "NO", "MAKE_EPHEM": "YES",
+            "EPHEM_TYPE": "VECTORS", "CENTER": "'500@399'", "REF_PLANE": "ECLIPTIC",
+            "OUT_UNITS": "KM-S", "VEC_TABLE": "1", "START_TIME": f"'{start}'",
+            "STOP_TIME": f"'{stop}'", "STEP_SIZE": "'1 h'"}, timeout=60)
+        r.raise_for_status()
+        txt = r.text
+        if "$$SOE" not in txt:
+            continue
+        block = txt.split("$$SOE", 1)[1]
+        def comp(k):
+            m = re.search(r"(?<![A-Z])" + k + r"\s*=\s*([-+]?\d+\.\d+E[-+]\d+)", block)
+            return float(m.group(1)) if m else None
+        x, y, z = comp("X"), comp("Y"), comp("Z")
+        if None in (x, y, z):
+            continue
+        d = math.sqrt(x * x + y * y + z * z)
+        rows.append({
+            "name": name,
+            "dist_km": round(d),
+            "dist_au": round(d / KM_PER_AU, 2),
+            "light_hours": round(d / KM_PER_LIGHT_HOUR, 2),
+            "ecl_lon_deg": round(math.degrees(math.atan2(y, x)) % 360, 1),
+            "ecl_lat_deg": round(math.degrees(math.asin(z / d)), 1),
+            "computed_at": now.isoformat(timespec="minutes"),
+        })
+    return rows
+
+def store_voyagers():
+    rows = voyager_rows()
+    if rows:
+        cache_put("voyager-v1", json.dumps(rows))
+    return {"stored": len(rows)}
+
+@app.route("/api/voyager")
+def api_voyager():
+    body = cache_get("voyager-v1", 10**9)
+    return jsonify({"voyagers": json.loads(body) if body else [],
+                    "note": "Distances are from Earth, from NASA JPL Horizons, updated every six hours."})
 
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
@@ -10341,6 +10406,8 @@ def cron_precompute():
             nights = observe_rows(place)
             cache_put(f"observe-v1:{place['id']}", json.dumps(nights))
             result = len(nights)
+        elif step == "voyager":
+            result = store_voyagers()
         elif step == "passcount":
             result = {"slices": _slice_count()}
         elif step in ("planets", "sky", "post", "pslice", "pmerge"):
