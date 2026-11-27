@@ -5464,6 +5464,15 @@ def api_voyager():
                     "history": json.loads(hist) if hist else {},
                     "note": "Distances are from Earth, from NASA JPL Horizons, updated hourly."})
 
+@app.route("/api/moons")
+def api_moons():
+    """Planet moon systems from data/moons.json, built by the weekly JPL SPICE job."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "moons.json")
+    if not os.path.exists(path):
+        return jsonify({"planets": [], "note": "Moon data is not built yet."})
+    with open(path, encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
