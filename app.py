@@ -3118,7 +3118,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   (function () {
     var box = document.createElement("div");
     box.className = "meta voyager-panel";
-    box.style.cssText = "margin:.4rem 0;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:8px";
+    box.style.cssText = "margin:.25rem 0;padding:.2rem .4rem;font-size:.78rem;line-height:1.35;";
     canvas.parentNode.insertBefore(box, canvas);
     function rate(h) {
       if (!h || h.length < 2) return null;
@@ -3140,7 +3140,7 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         box.appendChild(line);
       });
       var note = document.createElement("div");
-      note.textContent = "Too far to draw on the globe. Positions update hourly.";
+      note.textContent = "Too far to draw. Updated hourly.";
       box.appendChild(note);
     }
     function load() {
