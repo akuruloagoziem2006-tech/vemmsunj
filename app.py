@@ -3120,6 +3120,12 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     box.className = "meta voyager-panel";
     box.style.cssText = "margin:.25rem 0;padding:.2rem .4rem;font-size:.78rem;line-height:1.35;";
     canvas.parentNode.insertBefore(box, canvas);
+    setTimeout(function () {
+      var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
+      var gb = btns.filter(function (b) { return /ground track/i.test(b.textContent); })[0];
+      var rb = btns.filter(function (b) { return b.textContent.trim() === "Reset view"; })[0];
+      if (gb && rb) gb.parentNode.insertBefore(rb, gb.nextSibling);
+    }, 0);
     function rate(h) {
       if (!h || h.length < 2) return null;
       var first = h[0], last = h[h.length - 1], dt = last.t - first.t;
