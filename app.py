@@ -7298,15 +7298,28 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     Neptune: [["Proteus", 117647, 1.122, 210, false], ["Triton", 354759, 5.877, 1353, true]]
   };
 
+  function dataMoons(name) {
+    if (!moonData || !moonData.planets) return MOONS[name] || [];
+    var sys = moonData.planets.filter(function (x) { return x.planet === name; })[0];
+    if (!sys) return [];
+    var out = [];
+    sys.moons.forEach(function (m) {
+      if (!m.orbit) return;
+      out.push([m.name, m.orbit.a_km, m.orbit.period_days, 1000, m.orbit.retrograde]);
+    });
+    return out;
+  }
   function drawMoons(name, x, y, size, elapsed) {
-    var list = MOONS[name];
-    if (!list) return;
     var R = KM[name] || 1;
+    var list = dataMoons(name);
+    if (!list.length) return;
     list.forEach(function (m, i) {
       var rr = (size * 0.9 + 5 + 5 * Math.log10(m[1] / R)) * view.z;
-      ctx.strokeStyle = "rgba(255,255,255,0.07)";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke();
+      if (view.z >= 2.5) {
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke();
+      }
       var dir = m[4] ? -1 : 1;
       var ang = i * 2.399 + dir * TAU * elapsed / (m[2] * 86400);
       var mx = x + rr * Math.cos(ang), my = y + rr * Math.sin(ang);
@@ -7409,7 +7422,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   var moonData = null, moonPanel = null, moonCanvas = null, moonCtx = null, moonName = null, moonRaf = null, downAt = null;
   fetch("/api/moons", { cache: "no-store" })
     .then(function (r) { return r.json(); })
-    .then(function (d) { moonData = d; if (moonName) renderMoonPanel(moonName); })
+    .then(function (d) { moonData = d; draw(); if (moonName) renderMoonPanel(moonName); })
     .catch(function () {});
   function planetScreen(p) {
     var W = canvas.clientWidth, H = canvas.clientHeight || W;
