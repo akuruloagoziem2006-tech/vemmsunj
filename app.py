@@ -3115,20 +3115,43 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
       else if (h.parentNode !== document.querySelector(".sat-btn").parentNode) { h.remove(); addButtons(); }
     }, 2000);
   })();
-  fetch("/api/voyager", { cache: "no-store" })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var box = document.createElement("p");
-      box.className = "meta voyager-panel";
-      box.style.margin = ".4rem 0";
-      box.textContent = (d.voyagers && d.voyagers.length)
-        ? d.voyagers.map(function (v) {
-            return v.name + ": " + v.dist_au + " AU (" + v.light_hours + " light-hours) from Earth, ecliptic longitude " + v.ecl_lon_deg + "°";
-          }).join(" · ") + ". Not drawn on the globe: too far away."
-        : "Voyager distances are not stored yet.";
-      canvas.parentNode.insertBefore(box, canvas);
-    })
-    .catch(function () {});
+  (function () {
+    var box = document.createElement("div");
+    box.className = "meta voyager-panel";
+    box.style.cssText = "margin:.4rem 0;padding:.5rem .7rem;border:1px solid var(--rule);border-radius:8px";
+    canvas.parentNode.insertBefore(box, canvas);
+    function rate(h) {
+      if (!h || h.length < 2) return null;
+      var first = h[0], last = h[h.length - 1], dt = last.t - first.t;
+      return dt > 0 ? (last.dist_km - first.dist_km) / dt : null;
+    }
+    function render(d) {
+      box.textContent = "";
+      if (!d.voyagers || !d.voyagers.length) { box.textContent = "Voyager distances are not stored yet."; return; }
+      var title = document.createElement("strong");
+      title.textContent = "Voyager tracker (JPL Horizons)";
+      box.appendChild(title);
+      d.voyagers.forEach(function (v) {
+        var r = rate((d.history || {})[v.name]);
+        var line = document.createElement("div");
+        line.textContent = v.name + ": " + v.dist_au + " AU from Earth, " + v.light_hours +
+          " light-hours away, ecliptic longitude " + v.ecl_lon_deg + "°" +
+          (r === null ? "" : ", moving away at " + r.toFixed(2) + " km/s (from stored history)");
+        box.appendChild(line);
+      });
+      var note = document.createElement("div");
+      note.textContent = "Too far to draw on the globe. Positions update hourly.";
+      box.appendChild(note);
+    }
+    function load() {
+      fetch("/api/voyager", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(render)
+        .catch(function () {});
+    }
+    load();
+    setInterval(load, 60000);
+  })();
   groundBtn.addEventListener("click", function () {
     groundOn = !groundOn;
     groundBtn.setAttribute("aria-pressed", groundOn ? "true" : "false");
@@ -5415,15 +5438,26 @@ def voyager_rows(now=None):
 
 def store_voyagers():
     rows = voyager_rows()
-    if rows:
-        cache_put("voyager-v1", json.dumps(rows))
+    if not rows:
+        return {"stored": 0}
+    cache_put("voyager-v1", json.dumps(rows))
+    body = cache_get("voyager-hist-v1", 10**9)
+    hist = json.loads(body) if body else {}
+    for r in rows:
+        t = datetime.fromisoformat(r["computed_at"]).timestamp()
+        h = hist.setdefault(r["name"], [])
+        h.append(dict(r, t=t))
+        hist[r["name"]] = h[-168:]
+    cache_put("voyager-hist-v1", json.dumps(hist))
     return {"stored": len(rows)}
 
 @app.route("/api/voyager")
 def api_voyager():
     body = cache_get("voyager-v1", 10**9)
+    hist = cache_get("voyager-hist-v1", 10**9)
     return jsonify({"voyagers": json.loads(body) if body else [],
-                    "note": "Distances are from Earth, from NASA JPL Horizons, updated every six hours."})
+                    "history": json.loads(hist) if hist else {},
+                    "note": "Distances are from Earth, from NASA JPL Horizons, updated hourly."})
 
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
