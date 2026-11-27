@@ -3082,11 +3082,44 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   groundBtn.setAttribute("aria-pressed", "false");
   groundBtn.style.margin = "0 0 .6rem .4rem";
   canvas.parentNode.insertBefore(groundBtn, canvas);
+  (function () {
+    function addButtons() {
+      var first = document.querySelector(".sat-btn");
+      if (!first || document.getElementById("voyager-heading")) return;
+      var box = first.parentNode;
+      var h = document.createElement("div");
+      h.id = "voyager-heading";
+      h.className = "muted";
+      h.style.cssText = "width:100%;margin-top:.6rem;font-weight:600";
+      h.textContent = "Deep space probes (not on the globe)";
+      box.appendChild(h);
+      ["Voyager 1", "Voyager 2"].forEach(function (name) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn quiet sat-btn";
+        b.textContent = name;
+        b.addEventListener("click", function () {
+          var panel = document.querySelector(".voyager-panel");
+          if (!panel) return;
+          panel.scrollIntoView({ behavior: "smooth", block: "center" });
+          panel.style.outline = "2px solid var(--accent)";
+          setTimeout(function () { panel.style.outline = ""; }, 2000);
+        });
+        box.appendChild(b);
+      });
+    }
+    addButtons();
+    setInterval(function () {
+      var h = document.getElementById("voyager-heading");
+      if (!h) addButtons();
+      else if (h.parentNode !== document.querySelector(".sat-btn").parentNode) { h.remove(); addButtons(); }
+    }, 2000);
+  })();
   fetch("/api/voyager", { cache: "no-store" })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var box = document.createElement("p");
-      box.className = "meta";
+      box.className = "meta voyager-panel";
       box.style.margin = ".4rem 0";
       box.textContent = (d.voyagers && d.voyagers.length)
         ? d.voyagers.map(function (v) {
