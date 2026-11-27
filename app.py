@@ -3118,8 +3118,8 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   (function () {
     var box = document.createElement("div");
     box.className = "meta voyager-panel";
-    box.style.cssText = "margin:.25rem 0;padding:.2rem .4rem;font-size:.78rem;line-height:1.35;";
-    canvas.parentNode.insertBefore(box, canvas);
+    box.style.cssText = "margin:.2rem 0 .3rem;padding:.1rem .35rem;font-size:.74rem;line-height:1.25;";
+    canvas.parentNode.insertBefore(box, canvas.parentNode.firstChild);
     setTimeout(function () {
       var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
       var gb = btns.filter(function (b) { return /ground track/i.test(b.textContent); })[0];
@@ -3142,12 +3142,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
         var line = document.createElement("div");
         line.textContent = v.name + ": " + v.dist_au + " AU from Earth, " + v.light_hours +
           " light-hours away, ecliptic longitude " + v.ecl_lon_deg + "°" +
-          (r === null ? "" : ", moving away at " + r.toFixed(2) + " km/s (from stored history)");
+          (r === null ? "" : ", +" + r.toFixed(2) + " km/s");
         box.appendChild(line);
       });
-      var note = document.createElement("div");
-      note.textContent = "Too far to draw. Updated hourly.";
-      box.appendChild(note);
     }
     function load() {
       fetch("/api/voyager", { cache: "no-store" })
