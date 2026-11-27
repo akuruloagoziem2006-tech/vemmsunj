@@ -7298,6 +7298,9 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     Neptune: [["Proteus", 117647, 1.122, 210, false], ["Triton", 354759, 5.877, 1353, true]]
   };
 
+  var MAJOR_MOONS = ["IO", "EUROPA", "GANYMEDE", "CALLISTO", "TITAN", "RHEA", "IAPETUS", "DIONE", "TETHYS",
+    "ENCELADUS", "MIMAS", "TRITON", "MIRANDA", "ARIEL", "UMBRIEL", "TITANIA", "OBERON", "PROTEUS", "PHOBOS", "DEIMOS", "MOON"];
+  var labelBoxes = [];
   function dataMoons(name) {
     if (!moonData || !moonData.planets) return MOONS[name] || [];
     var sys = moonData.planets.filter(function (x) { return x.planet === name; })[0];
@@ -7326,10 +7329,20 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       var bs = Math.max(1.2, 3.0 * Math.sqrt(m[3] / 2634));
       ctx.fillStyle = "#C8C8C8";
       ctx.beginPath(); ctx.arc(mx, my, bs, 0, TAU); ctx.fill();
-      if (view.z >= 2.5) {
-        ctx.fillStyle = "#9AA3B2";
-        ctx.font = "9px sans-serif";
-        ctx.fillText(m[0], mx + bs + 3, my + 3);
+      var major = MAJOR_MOONS.indexOf(m[0]) >= 0;
+      if (major || view.z >= 4) {
+        var label = m[0].charAt(0) + m[0].slice(1).toLowerCase();
+        ctx.font = major ? "11px sans-serif" : "9px sans-serif";
+        var th = major ? 12 : 10;
+        var box = [mx + bs + 3, my - th / 2, ctx.measureText(label).width + 2, th];
+        var clash = labelBoxes.some(function (b) {
+          return box[0] < b[0] + b[2] && b[0] < box[0] + box[2] && box[1] < b[1] + b[3] && b[1] < box[1] + box[3];
+        });
+        if (!clash) {
+          labelBoxes.push(box);
+          ctx.fillStyle = major ? "#D8DEE9" : "#9AA3B2";
+          ctx.fillText(label, box[0], my + 3);
+        }
       }
     });
   }
@@ -7340,6 +7353,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var cx = W / 2 + view.x, cy = H / 2 + view.y, half = (Math.min(W, H) / 2 - 18) * view.z;
     ctx.fillStyle = "#05070B";
     ctx.fillRect(0, 0, W, H);
+    labelBoxes = [];
     planets.forEach(function (p) { drawOrbitLine(p.name, cx, cy, half); });
     drawSun(cx, cy);
     var elapsed = simSec - t0;
