@@ -7453,6 +7453,16 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var sys = systemOf(name);
     moonPanel.querySelector(".mp-title").textContent = name + " moon system";
     var info = moonPanel.querySelector(".mp-info");
+    var list = moonPanel.querySelector(".mp-list");
+    list.textContent = "";
+    if (sys) {
+      sys.moons.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).forEach(function (m) {
+        var d = document.createElement("div");
+        d.textContent = /^NAIF /.test(m.name) ? m.name.replace("NAIF ", "Unnamed (NAIF ") + ")" : m.name.charAt(0) + m.name.slice(1).toLowerCase();
+        d.style.cssText = m.orbit ? "" : "color:#6F7A8C";
+        list.appendChild(d);
+      });
+    }
     if (!sys) { info.textContent = moonData ? "No moon data for " + name + "." : "Moon data is loading..."; return; }
     var withOrbit = sys.moons.filter(function (m) { return m.orbit; }).length;
     var unnamed = sys.moons.filter(function (m) { return /^NAIF /.test(m.name); }).length;
@@ -7460,6 +7470,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       sys.count + " moons listed (published total " + sys.published + "), " + withOrbit + " with orbits" +
       (unnamed ? ", " + unnamed + " unnamed (NAIF IDs)" : "") + ".");
   }
+  var panelBoxes = [];
   function drawMoonSystem() {
     if (!moonCanvas || !moonName) return;
     var W = moonCanvas.clientWidth, H = moonCanvas.clientHeight || W;
@@ -7471,6 +7482,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     moonCtx.fillStyle = "#05070B";
     moonCtx.fillRect(0, 0, W, H);
     var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 12;
+    panelBoxes = [];
     var body = Math.max(4, 14 * Math.sqrt((KM[moonName] || 1000) / 69911));
     moonCtx.fillStyle = COLORS[moonName] || "#E9E6DC";
     moonCtx.beginPath(); moonCtx.arc(cx, cy, body, 0, TAU); moonCtx.fill();
@@ -7492,9 +7504,16 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       moonCtx.fillStyle = "#C8C8C8";
       moonCtx.beginPath(); moonCtx.arc(mx, my, 2.2, 0, TAU); moonCtx.fill();
       var major = MAJOR_MOONS.indexOf(m.name) >= 0;
-      if (major || orb.length <= 15) {
-        var lbl = m.name.charAt(0) + m.name.slice(1).toLowerCase();
-        moonCtx.font = major ? "12px sans-serif" : "10px sans-serif";
+      var lbl = /^NAIF /.test(m.name) ? m.name.replace("NAIF ", "#") : m.name.charAt(0) + m.name.slice(1).toLowerCase();
+      moonCtx.font = major ? "12px sans-serif" : "10px sans-serif";
+      var tw = moonCtx.measureText(lbl).width;
+      var th = major ? 13 : 11;
+      var box = [mx + 5, my - th / 2, tw + 2, th];
+      var clash = panelBoxes.some(function (b) {
+        return box[0] < b[0] + b[2] && b[0] < box[0] + box[2] && box[1] < b[1] + b[3] && b[1] < box[1] + box[3];
+      });
+      if (!clash) {
+        panelBoxes.push(box);
         moonCtx.fillStyle = major ? "#E5E9F0" : "#9AA3B2";
         moonCtx.fillText(lbl, mx + 5, my + 4);
       }
@@ -7510,6 +7529,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     moonPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><strong class="mp-title"></strong><button type="button" class="btn quiet" style="padding:0 .5rem">Close</button></div>' +
       '<p class="meta mp-info" style="margin:.3rem 0"></p>' +
       '<canvas class="mp-canvas" style="width:100%;max-width:520px;aspect-ratio:1/1;display:block;margin:0 auto;border-radius:8px"></canvas>' +
+      '<div class="mp-list" style="margin-top:.6rem;max-height:260px;overflow-y:auto;font-size:.85rem;line-height:1.6;columns:2;column-gap:1rem"></div>' +
       '<p class="meta" style="margin-top:.4rem">Moon distances are scaled to fit, so they are not to scale. Positions come from JPL SPICE ephemerides and run at the speed set above.</p>';
     moonCanvas = moonPanel.querySelector(".mp-canvas");
     moonCtx = moonCanvas.getContext("2d");
