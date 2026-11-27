@@ -1,7 +1,7 @@
 name: Voyager distances (JPL Horizons)
 on:
   schedule:
-    - cron: "40 */6 * * *"
+    - cron: "40 * * * *"
   workflow_dispatch:
 concurrency:
   group: render-precompute
