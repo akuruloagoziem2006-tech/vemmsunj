@@ -1,0 +1,19 @@
+name: JPL satellite element format probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read one satellite entry and the element table format
+        run: |
+          B="https://ssd.jpl.nasa.gov/sats/elem"
+          curl -sL --max-time 60 -o elem.html -w "index: %{http_code} %{size_download} bytes\n" "$B/"
+          echo "--- text around SAT415 and JUP347:"
+          sed -e 's/<[^>]*>/ /g' elem.html | grep -A 12 -E 'SAT415|JUP347' | head -n 40
+          echo "--- links to data files:"
+          grep -oiE 'href="[^"]*\.(txt|dat|csv|tab|html)"' elem.html | sort -u | head -n 20
+          echo "--- sep.html head:"
+          curl -sL --max-time 60 -o sep.html -w "sep: %{http_code} %{size_download} bytes\n" "$B/sep.html"
+          sed -e 's/<[^>]*>/ /g' sep.html | grep -v '^\s*$' | head -n 25
