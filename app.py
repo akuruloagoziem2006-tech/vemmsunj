@@ -3118,8 +3118,13 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
   (function () {
     var box = document.createElement("div");
     box.className = "meta voyager-panel";
-    box.style.cssText = "margin:.2rem 0 .3rem;padding:.1rem .35rem;font-size:.74rem;line-height:1.25;";
-    canvas.parentNode.insertBefore(box, canvas.parentNode.firstChild);
+    box.style.cssText = "width:100%;box-sizing:border-box;margin:.2rem 0 .3rem;padding:.1rem .35rem;font-size:.74rem;line-height:1.25;";
+    (function placeBox(tries) {
+      var rt = Array.prototype.slice.call(document.querySelectorAll('button'))
+        .filter(function (b) { return b.textContent.trim() === 'Real time'; })[0];
+      if (rt) { rt.parentNode.insertBefore(box, rt); return; }
+      if (tries > 0) setTimeout(function () { placeBox(tries - 1); }, 200);
+    })(50);
     setTimeout(function () {
       var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
       var gb = btns.filter(function (b) { return /ground track/i.test(b.textContent); })[0];
@@ -3145,6 +3150,9 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
           (r === null ? "" : ", +" + r.toFixed(2) + " km/s");
         box.appendChild(line);
       });
+      var note = document.createElement("div");
+      note.textContent = "Too far to draw on the globe. Positions update hourly.";
+      box.appendChild(note);
     }
     function load() {
       fetch("/api/voyager", { cache: "no-store" })
