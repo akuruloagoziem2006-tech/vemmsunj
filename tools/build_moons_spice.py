@@ -78,7 +78,7 @@ def orbit_of(i, planet):
         return None
     period_d = 2 * math.pi * math.sqrt(a ** 3 / gm) / 86400
     return {"a_km": round(a, 1), "e": round(e, 6), "period_days": round(period_d, 4),
-            "tp_jd": EPOCH_JD, "retrograde": inc > math.pi / 2}
+            "tp_jd": float(EPOCH_JD), "retrograde": bool(float(inc) > math.pi / 2)}
 
 
 def main():
