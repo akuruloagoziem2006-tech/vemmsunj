@@ -7471,6 +7471,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       (unnamed ? ", " + unnamed + " unnamed (NAIF IDs)" : "") + ".");
   }
   var panelBoxes = [];
+  var moonView = { z: 1, x: 0, y: 0 };
   function drawMoonSystem() {
     if (!moonCanvas || !moonName) return;
     var W = moonCanvas.clientWidth, H = moonCanvas.clientHeight || W;
@@ -7481,7 +7482,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     moonCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     moonCtx.fillStyle = "#05070B";
     moonCtx.fillRect(0, 0, W, H);
-    var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 12;
+    var cx = W / 2 + moonView.x, cy = H / 2 + moonView.y, half = Math.min(W, H) / 2 - 12;
     panelBoxes = [];
     var body = Math.max(4, 14 * Math.sqrt((KM[moonName] || 1000) / 69911));
     moonCtx.fillStyle = COLORS[moonName] || "#E9E6DC";
@@ -7494,7 +7495,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var inner = body + 10, outer = half, elapsed = simSec - t0;
     orb.forEach(function (m, i) {
       var f = amax > amin ? Math.log(m.orbit.a_km / amin) / Math.log(amax / amin) : 0.5;
-      var rr = inner + (outer - inner) * f;
+      var rr = (inner + (outer - inner) * f) * moonView.z;
       moonCtx.strokeStyle = "rgba(255,255,255,0.07)";
       moonCtx.lineWidth = 1;
       moonCtx.beginPath(); moonCtx.arc(cx, cy, rr, 0, TAU); moonCtx.stroke();
@@ -7526,14 +7527,53 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   function buildMoonPanel() {
     moonPanel = document.createElement("div");
     moonPanel.style.cssText = "display:none;margin:.8rem 0;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:8px;background:#0a0d13";
-    moonPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><strong class="mp-title"></strong><button type="button" class="btn quiet" style="padding:0 .5rem">Close</button></div>' +
+    moonPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><strong class="mp-title"></strong><button type="button" class="btn quiet mp-in" style="padding:0 .5rem">+</button> <button type="button" class="btn quiet mp-out" style="padding:0 .5rem">&minus;</button> <button type="button" class="btn quiet mp-reset" style="padding:0 .5rem">Reset</button> <button type="button" class="btn quiet mp-close" style="padding:0 .5rem">Close</button></div>' +
       '<p class="meta mp-info" style="margin:.3rem 0"></p>' +
-      '<canvas class="mp-canvas" style="width:100%;max-width:520px;aspect-ratio:1/1;display:block;margin:0 auto;border-radius:8px"></canvas>' +
+      '<canvas class="mp-canvas" style="width:100%;max-width:100%;touch-action:none;cursor:grab;aspect-ratio:1/1;display:block;margin:0 auto;border-radius:8px"></canvas>' +
       '<div class="mp-list" style="margin-top:.6rem;max-height:260px;overflow-y:auto;font-size:.85rem;line-height:1.6;columns:2;column-gap:1rem"></div>' +
       '<p class="meta" style="margin-top:.4rem">Moon distances are scaled to fit, so they are not to scale. Positions come from JPL SPICE ephemerides and run at the speed set above.</p>';
     moonCanvas = moonPanel.querySelector(".mp-canvas");
     moonCtx = moonCanvas.getContext("2d");
-    moonPanel.querySelector("button").addEventListener("click", function () {
+    var zoomTo = function (nz, px, py) {
+      var W = moonCanvas.clientWidth, H = moonCanvas.clientHeight || W;
+      nz = Math.max(1, Math.min(12, nz));
+      var cx = W / 2 + moonView.x, cy = H / 2 + moonView.y, f = nz / moonView.z;
+      moonView.x = (px - (px - cx) * f) - W / 2;
+      moonView.y = (py - (py - cy) * f) - H / 2;
+      moonView.z = nz;
+      if (nz === 1) { moonView.x = 0; moonView.y = 0; }
+    };
+    var centreOf = function () {
+      var W = moonCanvas.clientWidth, H = moonCanvas.clientHeight || W;
+      return [W / 2, H / 2];
+    };
+    moonPanel.querySelector(".mp-in").addEventListener("click", function () {
+      var c = centreOf(); zoomTo(moonView.z * 1.6, c[0], c[1]);
+    });
+    moonPanel.querySelector(".mp-out").addEventListener("click", function () {
+      var c = centreOf(); zoomTo(moonView.z / 1.6, c[0], c[1]);
+    });
+    moonPanel.querySelector(".mp-reset").addEventListener("click", function () {
+      moonView = { z: 1, x: 0, y: 0 };
+    });
+    moonCanvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var r = moonCanvas.getBoundingClientRect();
+      zoomTo(moonView.z * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    var drag = null;
+    moonCanvas.addEventListener("pointerdown", function (e) {
+      drag = [e.clientX, e.clientY];
+      moonCanvas.setPointerCapture(e.pointerId);
+    });
+    moonCanvas.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      if (moonView.z > 1) { moonView.x += e.clientX - drag[0]; moonView.y += e.clientY - drag[1]; }
+      drag = [e.clientX, e.clientY];
+    });
+    moonCanvas.addEventListener("pointerup", function () { drag = null; });
+    moonCanvas.addEventListener("pointercancel", function () { drag = null; });
+    moonPanel.querySelector(".mp-close").addEventListener("click", function () {
       moonPanel.style.display = "none";
       moonName = null;
       cancelAnimationFrame(moonRaf);
@@ -7543,6 +7583,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   }
   function openMoonPanel(name) {
     moonName = name;
+    moonView = { z: 1, x: 0, y: 0 };
     if (!moonPanel) buildMoonPanel();
     moonPanel.style.display = "block";
     renderMoonPanel(name);
