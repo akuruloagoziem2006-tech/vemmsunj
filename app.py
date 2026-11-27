@@ -5318,9 +5318,6 @@ def backfill_nasa_pages(now=None):
             if item.get("media_type") != "image":
                 out["skipped"].append(f"{day}: video")
                 continue
-            if item.get("copyright"):
-                out["skipped"].append(f"{day}: third-party credit")
-                continue
             url = item.get("hdurl") or item.get("url") or ""
             if not url.startswith("https://") or "nasa-logo" in url or "/assets/images/" in url:
                 out["skipped"].append(f"{day}: placeholder returned, not a picture")
