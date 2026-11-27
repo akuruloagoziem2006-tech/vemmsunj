@@ -7527,6 +7527,17 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     if (!moonRaf) moonLoop();
     moonPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+  function focusPlanet(p) {
+    var W = canvas.clientWidth, H = canvas.clientHeight || W;
+    var cx = W / 2 + view.x, cy = H / 2 + view.y;
+    var q = planetScreen(p);
+    var dx = q[0] - cx, dy = q[1] - cy;
+    var nz = 6, ratio = nz / view.z;
+    view.x = -dx * ratio;
+    view.y = -dy * ratio;
+    view.z = nz;
+    draw();
+  }
   canvas.addEventListener("pointerdown", function (e) { downAt = [e.clientX, e.clientY]; });
   canvas.addEventListener("click", function (e) {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
@@ -7535,7 +7546,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       var q = planetScreen(p), d = Math.hypot(q[0] - pt[0], q[1] - pt[1]);
       if (d < bd) { bd = d; hit = p; }
     });
-    if (hit) openMoonPanel(hit.name);
+    if (hit) { focusPlanet(hit); openMoonPanel(hit.name); }
   });
   canvas.addEventListener("dblclick", function () { view = { z: 1, x: 0, y: 0 }; draw(); });
 
