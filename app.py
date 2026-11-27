@@ -5331,7 +5331,7 @@ def backfill_nasa_pages(now=None):
             title = item.get("title") or "Astronomy picture"
             page = item.get("link") or "https://science.nasa.gov/apod/"
             body = (f"Astronomy Picture of the Day · NASA APOD: {title}. "
-                    "f"Image: {item.get('copyright') or 'NASA'}. Tap to open it on NASA's site.")
+                    f"Image: {item.get('copyright') or 'NASA'}. Tap to open it on NASA's site.")
             db.execute(
                 "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
