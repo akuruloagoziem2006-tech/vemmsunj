@@ -5293,13 +5293,10 @@ def _apod_api_items(days=7):
             print(f"apod feed: no picture address for {day} {title!r}", flush=True)
             continue
         credit = tag(block, "apod:copyright")
-        if credit and not APOD_AGENCY_CREDIT.search(credit):
-            print(f"apod feed: skipped, personal credit: {day} {title!r}", flush=True)
-            continue
         if tag(block, "apod:media_type") not in ("", "image") and "image" not in tag(block, "apod:media_type"):
             print(f"apod feed: not an image for {day}", flush=True)
             continue
-        out.append({"date": day, "media_type": "image", "copyright": None,
+        out.append({"date": day, "media_type": "image", "copyright": re.sub(r"<[^>]+>", "", credit).strip() or None,
                     "hdurl": hd, "url": hd,
                     "title": title.split(" - ", 1)[-1] if " - " in title else title,
                     "link": tag(block, "link")})
@@ -5334,7 +5331,7 @@ def backfill_nasa_pages(now=None):
             title = item.get("title") or "Astronomy picture"
             page = item.get("link") or "https://science.nasa.gov/apod/"
             body = (f"Astronomy Picture of the Day · NASA APOD: {title}. "
-                    "Image credit and rights are on NASA's page. Tap to open it on NASA's site.")
+                    "f"Image: {item.get('copyright') or 'NASA'}. Tap to open it on NASA's site.")
             db.execute(
                 "INSERT INTO posts (author, body, listing_id, seen_at, ai_explanation, created_at, image_svg) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
