@@ -7405,6 +7405,111 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var pt = localPt(e);
     setZoom(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), pt[0], pt[1]);
   }, { passive: false });
+  // ---- Planet moon systems: tap a planet to open its moons from data/moons.json ----
+  var moonData = null, moonPanel = null, moonCanvas = null, moonCtx = null, moonName = null, moonRaf = null, downAt = null;
+  fetch("/api/moons", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { moonData = d; if (moonName) renderMoonPanel(moonName); })
+    .catch(function () {});
+  function planetScreen(p) {
+    var W = canvas.clientWidth, H = canvas.clientHeight || W;
+    var cx = W / 2 + view.x, cy = H / 2 + view.y, half = (Math.min(W, H) / 2 - 18) * view.z;
+    var pos = keplerAt(p.name, p.a0 + TAU * (simSec - t0) / p.period);
+    var rad = rFor(pos.r, half);
+    return [cx + rad * Math.cos(pos.nu), cy - rad * Math.sin(pos.nu)];
+  }
+  function systemOf(name) {
+    if (!moonData || !moonData.planets) return null;
+    return moonData.planets.filter(function (x) { return x.planet === name; })[0] || null;
+  }
+  function renderMoonPanel(name) {
+    var sys = systemOf(name);
+    moonPanel.querySelector(".mp-title").textContent = name + " moon system";
+    var info = moonPanel.querySelector(".mp-info");
+    if (!sys) { info.textContent = moonData ? "No moon data for " + name + "." : "Moon data is loading..."; return; }
+    var withOrbit = sys.moons.filter(function (m) { return m.orbit; }).length;
+    var unnamed = sys.moons.filter(function (m) { return /^NAIF /.test(m.name); }).length;
+    info.textContent = (sys.count === 0 ? "No known moons." :
+      sys.count + " moons listed (published total " + sys.published + "), " + withOrbit + " with orbits" +
+      (unnamed ? ", " + unnamed + " unnamed (NAIF IDs)" : "") + ".");
+  }
+  function drawMoonSystem() {
+    if (!moonCanvas || !moonName) return;
+    var W = moonCanvas.clientWidth, H = moonCanvas.clientHeight || W;
+    if (moonCanvas.width !== Math.round(W * dpr) || moonCanvas.height !== Math.round(H * dpr)) {
+      moonCanvas.width = Math.round(W * dpr);
+      moonCanvas.height = Math.round(H * dpr);
+    }
+    moonCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    moonCtx.fillStyle = "#05070B";
+    moonCtx.fillRect(0, 0, W, H);
+    var cx = W / 2, cy = H / 2, half = Math.min(W, H) / 2 - 12;
+    var body = Math.max(4, 14 * Math.sqrt((KM[moonName] || 1000) / 69911));
+    moonCtx.fillStyle = COLORS[moonName] || "#E9E6DC";
+    moonCtx.beginPath(); moonCtx.arc(cx, cy, body, 0, TAU); moonCtx.fill();
+    var sys = systemOf(moonName);
+    var orb = sys ? sys.moons.filter(function (m) { return m.orbit; }) : [];
+    if (!orb.length) return;
+    var as = orb.map(function (m) { return m.orbit.a_km; });
+    var amin = Math.min.apply(null, as), amax = Math.max.apply(null, as);
+    var inner = body + 10, outer = half, elapsed = simSec - t0;
+    orb.forEach(function (m, i) {
+      var f = amax > amin ? Math.log(m.orbit.a_km / amin) / Math.log(amax / amin) : 0.5;
+      var rr = inner + (outer - inner) * f;
+      moonCtx.strokeStyle = "rgba(255,255,255,0.07)";
+      moonCtx.lineWidth = 1;
+      moonCtx.beginPath(); moonCtx.arc(cx, cy, rr, 0, TAU); moonCtx.stroke();
+      var dir = m.orbit.retrograde ? -1 : 1;
+      var ang = i * 2.399 + dir * TAU * elapsed / (m.orbit.period_days * 86400);
+      var mx = cx + rr * Math.cos(ang), my = cy + rr * Math.sin(ang);
+      moonCtx.fillStyle = "#C8C8C8";
+      moonCtx.beginPath(); moonCtx.arc(mx, my, 2.2, 0, TAU); moonCtx.fill();
+      if (orb.length <= 15) {
+        moonCtx.fillStyle = "#9AA3B2";
+        moonCtx.font = "10px sans-serif";
+        moonCtx.fillText(m.name, mx + 4, my + 3);
+      }
+    });
+  }
+  function moonLoop() {
+    drawMoonSystem();
+    moonRaf = requestAnimationFrame(moonLoop);
+  }
+  function buildMoonPanel() {
+    moonPanel = document.createElement("div");
+    moonPanel.style.cssText = "display:none;margin:.8rem 0;padding:.6rem .8rem;border:1px solid var(--rule);border-radius:8px;background:#0a0d13";
+    moonPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><strong class="mp-title"></strong><button type="button" class="btn quiet" style="padding:0 .5rem">Close</button></div>' +
+      '<p class="meta mp-info" style="margin:.3rem 0"></p>' +
+      '<canvas class="mp-canvas" style="width:100%;max-width:520px;aspect-ratio:1/1;display:block;margin:0 auto;border-radius:8px"></canvas>' +
+      '<p class="meta" style="margin-top:.4rem">Moon distances are scaled to fit, so they are not to scale. Positions come from JPL SPICE ephemerides and run at the speed set above.</p>';
+    moonCanvas = moonPanel.querySelector(".mp-canvas");
+    moonCtx = moonCanvas.getContext("2d");
+    moonPanel.querySelector("button").addEventListener("click", function () {
+      moonPanel.style.display = "none";
+      moonName = null;
+      cancelAnimationFrame(moonRaf);
+      moonRaf = null;
+    });
+    statusEl.parentNode.insertBefore(moonPanel, statusEl.nextSibling);
+  }
+  function openMoonPanel(name) {
+    moonName = name;
+    if (!moonPanel) buildMoonPanel();
+    moonPanel.style.display = "block";
+    renderMoonPanel(name);
+    if (!moonRaf) moonLoop();
+    moonPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  canvas.addEventListener("pointerdown", function (e) { downAt = [e.clientX, e.clientY]; });
+  canvas.addEventListener("click", function (e) {
+    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+    var pt = localPt(e), hit = null, bd = 16;
+    planets.forEach(function (p) {
+      var q = planetScreen(p), d = Math.hypot(q[0] - pt[0], q[1] - pt[1]);
+      if (d < bd) { bd = d; hit = p; }
+    });
+    if (hit) openMoonPanel(hit.name);
+  });
   canvas.addEventListener("dblclick", function () { view = { z: 1, x: 0, y: 0 }; draw(); });
 
   var zoomBox = document.querySelector(".orb-controls");
