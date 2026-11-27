@@ -7471,6 +7471,8 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
       (unnamed ? ", " + unnamed + " unnamed (NAIF IDs)" : "") + ".");
   }
   var panelBoxes = [];
+  var REAL_COLORS = { Mercury: "#8C8580", Venus: "#E6C97A", Earth: "#4F7FB8", Mars: "#C1502E",
+    Jupiter: "#D8B48A", Saturn: "#E4D2A0", Uranus: "#B5E3E8", Neptune: "#3F5FC0" };
   var moonView = { z: 1, x: 0, y: 0 };
   function drawMoonSystem() {
     if (!moonCanvas || !moonName) return;
@@ -7485,8 +7487,17 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var cx = W / 2 + moonView.x, cy = H / 2 + moonView.y, half = Math.min(W, H) / 2 - 12;
     panelBoxes = [];
     var body = Math.max(4, 14 * Math.sqrt((KM[moonName] || 1000) / 69911));
-    moonCtx.fillStyle = COLORS[moonName] || "#E9E6DC";
+    moonCtx.fillStyle = REAL_COLORS[moonName] || "#E9E6DC";
     moonCtx.beginPath(); moonCtx.arc(cx, cy, body, 0, TAU); moonCtx.fill();
+    if (moonName === "Jupiter") {
+      moonCtx.save();
+      moonCtx.beginPath(); moonCtx.arc(cx, cy, body, 0, TAU); moonCtx.clip();
+      [-0.5, -0.2, 0.1, 0.4].forEach(function (f, i) {
+        moonCtx.fillStyle = i % 2 ? "rgba(160,100,60,0.45)" : "rgba(250,240,220,0.35)";
+        moonCtx.fillRect(cx - body, cy + f * body, 2 * body, body * 0.14);
+      });
+      moonCtx.restore();
+    }
     var sys = systemOf(moonName);
     var orb = sys ? sys.moons.filter(function (m) { return m.orbit; }) : [];
     if (!orb.length) return;
