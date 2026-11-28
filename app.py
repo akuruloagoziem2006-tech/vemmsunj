@@ -9774,11 +9774,11 @@ def index():
     slides = sorted(iotd + apod, key=_feed_date, reverse=True)
     # One Earth image (the newest EPIC frame) plus NASA's Image of the Day; older frames stay stored
     # Image of the Day shows NASA's Image of the Day only; the Earth (EPIC) picture is not shown here
-    daily_items = [r for r in feed if "Image of the Day" in (r.get("body") or "")][:1]
+    daily_items = [r for r in feed if "Image of the Day" in (r.get("body") or "")][:4]
     # Newest first; placeholder logos from the old NASA API path are never shown
     apod_items = [r for r in feed if "NASA APOD" in (r.get("body") or "")
                   and "nasa-logo" not in (r.get("image_url") or "")
-                  and "/assets/images/" not in (r.get("image_url") or "")][:1]
+                  and "/assets/images/" not in (r.get("image_url") or "")][:4]
     return render_template("home.html", stored=stored, recent=feed, daily_items=daily_items, apod_items=apod_items, slides=slides, sky=data["sky"],
                            places=data["places"], title="VEMMSUNJ", section="home")
 
