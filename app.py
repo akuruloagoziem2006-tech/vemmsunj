@@ -6617,8 +6617,34 @@ SIM_TEMPLATES = {"simulate.html": r"""{% extends "base.html" %}
         g.addColorStop(1, "rgba(201,85,58,0)");
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(q2.x, q2.y, 14, 0, Math.PI * 2); ctx.fill();
+        var nxt = at(simT + 1);
+        var p2 = xy(nxt.alt, nxt.az, c, R);
+        var ang = Math.atan2(p2.y - q2.y, p2.x - q2.x);
+        if (!isFinite(ang)) ang = 0;
+        var station = /ISS|CSS|TIANHE|MENGTIAN|WENTIAN|SHENZHOU|TIANZHOU|PROGRESS/i.test(CHOSEN.sat);
+        ctx.save();
+        ctx.translate(q2.x, q2.y);
+        ctx.rotate(ang);
+        ctx.strokeStyle = "#C9D6E8";
         ctx.fillStyle = "#E9E6DC";
-        ctx.beginPath(); ctx.arc(q2.x, q2.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.lineWidth = 1;
+        if (station) {
+          // Truss with two long solar arrays and a pressurised module
+          ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(9, 0); ctx.stroke();
+          ctx.fillStyle = "#5E7FA8";
+          ctx.fillRect(-16, -4, 6, 8); ctx.fillRect(10, -4, 6, 8);
+          ctx.fillStyle = "#E9E6DC";
+          ctx.fillRect(-3, -3, 6, 6);
+        } else {
+          // Body with one panel each side and an antenna
+          ctx.fillStyle = "#E9E6DC";
+          ctx.fillRect(-3, -3, 6, 6);
+          ctx.fillStyle = "#5E7FA8";
+          ctx.fillRect(-12, -3, 8, 6); ctx.fillRect(4, -3, 8, 6);
+          ctx.strokeStyle = "#E9E6DC";
+          ctx.beginPath(); ctx.moveTo(0, -3); ctx.lineTo(0, -7); ctx.stroke();
+        }
+        ctx.restore();
         ctx.font = "13px sans-serif";
         ctx.fillText(CHOSEN.sat, q2.x + 8, q2.y - 8);
       }
