@@ -1,0 +1,24 @@
+name: Satellite photo source probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Wikimedia Commons API and one licence
+        run: |
+          curl -s --max-time 60 -G "https://commons.wikimedia.org/w/api.php" \
+            --data-urlencode "action=query" --data-urlencode "titles=File:International Space Station.jpg" \
+            --data-urlencode "prop=imageinfo" --data-urlencode "iiprop=url|extmetadata" \
+            --data-urlencode "format=json" -o commons.json -w "commons: %{http_code}\n"
+          python3 -c "
+          import json
+          d = json.load(open('commons.json'))
+          for p in d['query']['pages'].values():
+              for ii in p.get('imageinfo', []):
+                  m = ii.get('extmetadata', {})
+                  print('url:', ii.get('url'))
+                  print('licence:', m.get('LicenseShortName', {}).get('value'))
+                  print('artist:', m.get('Artist', {}).get('value', '')[:120])
+          "
