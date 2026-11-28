@@ -1,0 +1,55 @@
+{
+ "generated": "2026-11-28T15:51+00:00",
+ "source": "Wikimedia Commons (freely licensed files only)",
+ "photos": {
+  "iss": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/Dramatic_Views_of_Hurricane_Florence_from_the_International_Space_Station_From_9_12_%2842828603210%29_%28cropped%29.jpg/960px-Dramatic_Views_of_Hurricane_Florence_from_the_International_Space_Station_From_9_12_%2842828603210%29_%28cropped%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:Dramatic_Views_of_Hurricane_Florence_from_the_International_Space_Station_From_9_12_(42828603210)_(cropped).jpg",
+   "licence": "CC BY 2.0",
+   "credit": "NASA/Goddard Space Flight Center",
+   "title": "File:Dramatic Views of Hurricane Florence from the International Space Station From 9 12 (42828603210) (cropped).jpg"
+  },
+  "tiangong": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/25/Chinese_Tiangong_Space_Station.jpg/960px-Chinese_Tiangong_Space_Station.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:Chinese_Tiangong_Space_Station.jpg",
+   "licence": "CC BY-SA 4.0",
+   "credit": "Shujianyang",
+   "title": "File:Chinese Tiangong Space Station.jpg"
+  },
+  "hubble": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/99/James_Webb_Space_Telescope_Mirror37.jpg/960px-James_Webb_Space_Telescope_Mirror37.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:James_Webb_Space_Telescope_Mirror37.jpg",
+   "licence": "Public domain",
+   "credit": "NASA/MSFC/David Higginbotham/Emmett Given",
+   "title": "File:James Webb Space Telescope Mirror37.jpg"
+  },
+  "sentinel-2": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/32/South_Georgia_Island_as_seen_by_Sentinel-2.jpg/960px-South_Georgia_Island_as_seen_by_Sentinel-2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:South_Georgia_Island_as_seen_by_Sentinel-2.jpg",
+   "licence": "CC BY-SA 3.0 igo",
+   "credit": "European Space Agency",
+   "title": "File:South Georgia Island as seen by Sentinel-2.jpg"
+  },
+  "landsat-8": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/69/Elephant_Island_by_Landsat_8.jpeg/960px-Elephant_Island_by_Landsat_8.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:Elephant_Island_by_Landsat_8.jpeg",
+   "licence": "Public domain",
+   "credit": "NASA Earth Observatory image by Joshua Stevens, using Landsat data from the U.S. Geological Survey. Story by Kasha Patel.",
+   "title": "File:Elephant Island by Landsat 8.jpeg"
+  },
+  "terra": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/95/Rub%27_al_Khali_%28Arabian_Empty_Quarter%29_sand_dunes_imaged_by_Terra_%28EOS_AM-1%29.jpg/960px-Rub%27_al_Khali_%28Arabian_Empty_Quarter%29_sand_dunes_imaged_by_Terra_%28EOS_AM-1%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:Rub%27_al_Khali_(Arabian_Empty_Quarter)_sand_dunes_imaged_by_Terra_(EOS_AM-1).jpg",
+   "licence": "Public domain",
+   "credit": "NASA/GSFC/METI/ERSDAC/JAROS, and U.S./Japan ASTER Science Team",
+   "title": "File:Rub' al Khali (Arabian Empty Quarter) sand dunes imaged by Terra (EOS AM-1).jpg"
+  },
+  "aqua": {
+   "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/16/Balkan_Fires%2C_Earth_from_Aqua_%28EOS_PM-1%29_%282007-07-25%29.jpg/960px-Balkan_Fires%2C_Earth_from_Aqua_%28EOS_PM-1%29_%282007-07-25%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+   "page": "https://commons.wikimedia.org/wiki/File:Balkan_Fires,_Earth_from_Aqua_(EOS_PM-1)_(2007-07-25).jpg",
+   "licence": "Public domain",
+   "credit": "NASA's Aqua (EOS PM-1) satellite (Jeff Schmaltz, MODIS Land Rapid Response Team, NASA GSFC)",
+   "title": "File:Balkan Fires, Earth from Aqua (EOS PM-1) (2007-07-25).jpg"
+  }
+ }
+}
