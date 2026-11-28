@@ -5499,6 +5499,15 @@ def api_moons():
     with open(path, encoding="utf-8") as f:
         return jsonify(json.load(f))
 
+@app.route("/api/sat_photos")
+def api_sat_photos():
+    """Freely licensed satellite photos from data/sat_photos.json (built weekly)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sat_photos.json")
+    if not os.path.exists(path):
+        return jsonify({"photos": {}})
+    with open(path, encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
 @app.route("/api/cron/daily", methods=["GET", "POST"])
 def cron_daily():
     secret = os.environ.get("CRON_SECRET")
@@ -6646,6 +6655,42 @@ SIM_TEMPLATES = {"simulate.html": r"""{% extends "base.html" %}
         }
         ctx.restore();
         ctx.font = "13px sans-serif";
+        var PHOTO_RULES = [["iss", /ISS|NAUKA|ZARYA/i], ["tiangong", /TIANHE|MENGTIAN|WENTIAN|TIANGONG|^CSS/i],
+          ["hubble", /HUBBLE|^HST/i], ["sentinel-2", /SENTINEL-2/i], ["landsat-8", /LANDSAT 8/i],
+          ["terra", /^TERRA/i], ["aqua", /^AQUA/i]];
+        if (!window.vmSatPhotos) {
+          window.vmSatPhotos = { photos: null, imgs: {} };
+          fetch("/api/sat_photos", { cache: "no-store" })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { window.vmSatPhotos.photos = d.photos || {}; })
+            .catch(function () { window.vmSatPhotos.photos = {}; });
+        }
+        var pkey = null;
+        for (var ri = 0; ri < PHOTO_RULES.length; ri++) {
+          if (PHOTO_RULES[ri][1].test(CHOSEN.sat)) { pkey = PHOTO_RULES[ri][0]; break; }
+        }
+        var entry = pkey && window.vmSatPhotos.photos && window.vmSatPhotos.photos[pkey];
+        if (entry) {
+          var im = window.vmSatPhotos.imgs[pkey];
+          if (!im) { im = new Image(); im.src = entry.image; window.vmSatPhotos.imgs[pkey] = im; }
+          if (im.complete && im.naturalWidth) {
+            ctx.save();
+            ctx.beginPath(); ctx.arc(q2.x, q2.y, 13, 0, Math.PI * 2); ctx.clip();
+            ctx.drawImage(im, q2.x - 13, q2.y - 13, 26, 26);
+            ctx.restore();
+            ctx.strokeStyle = "#E9E6DC"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(q2.x, q2.y, 13, 0, Math.PI * 2); ctx.stroke();
+            var cr = document.getElementById("sim-credit");
+            if (!cr) {
+              cr = document.createElement("p");
+              cr.id = "sim-credit"; cr.className = "meta";
+              canvas.parentNode.insertBefore(cr, canvas.nextSibling);
+            }
+            var ctxt = "Photo of " + entry.title.replace(/^File:/, "").replace(/\.[a-z]+$/i, "") +
+              ": " + entry.credit + ", " + entry.licence + ". Source: Wikimedia Commons.";
+            if (cr.textContent !== ctxt) cr.textContent = ctxt;
+          }
+        }
         ctx.fillText(CHOSEN.sat, q2.x + 8, q2.y - 8);
       }
     }
