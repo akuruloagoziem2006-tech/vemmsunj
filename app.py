@@ -8422,10 +8422,10 @@ TRACKER_TEMPLATES = {"tracker.html": r"""{% extends "base.html" %}
     ctx.setLineDash([6, 4]); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(B.x0, ey); ctx.lineTo(B.x0 + B.w, ey); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = INK; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#E9E6DC'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
     if (ey > B.y0 && ey < B.y0 + B.h) ctx.fillText('Equator', B.x0 + 6, ey - 4);
     ctx.restore();
-    ctx.fillStyle = INK; ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#E9E6DC'; ctx.font = '10px sans-serif';
     for (var lo = -180; lo <= 180; lo += lonStep) {
       var lx = xy(0, lo, B)[0];
       if (lx < B.x0 - 2 || lx > B.x0 + B.w + 2) continue;
