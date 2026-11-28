@@ -7226,6 +7226,46 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
   }
 
   var TAU = Math.PI * 2;
+  var spaceBg = null, spaceKey = "";
+  function spaceRng(seed) {
+    return function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  }
+  // Deep-space backdrop: a dark radial base, soft nebula glows and faint stars. Built once per size.
+  function spaceBackground(W, H) {
+    var key = W + "x" + H;
+    if (spaceBg && spaceKey === key) return spaceBg;
+    var c = document.createElement("canvas");
+    c.width = Math.round(W * dpr);
+    c.height = Math.round(H * dpr);
+    var g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var base = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
+    base.addColorStop(0, "#0B1020");
+    base.addColorStop(0.55, "#060911");
+    base.addColorStop(1, "#010203");
+    g.fillStyle = base;
+    g.fillRect(0, 0, W, H);
+    [[0.18, 0.28, "120,80,170", 0.12], [0.82, 0.72, "40,120,140", 0.09], [0.6, 0.18, "90,60,130", 0.07]]
+      .forEach(function (n) {
+        var nb = g.createRadialGradient(W * n[0], H * n[1], 0, W * n[0], H * n[1], Math.max(W, H) * 0.38);
+        nb.addColorStop(0, "rgba(" + n[2] + "," + n[3] + ")");
+        nb.addColorStop(1, "rgba(" + n[2] + ",0)");
+        g.fillStyle = nb;
+        g.fillRect(0, 0, W, H);
+      });
+    var r = spaceRng(20261128);
+    for (var i = 0; i < 260; i++) {
+      var x = r() * W, y = r() * H, m = r();
+      var size = m > 0.97 ? 1.4 : (m > 0.85 ? 1 : 0.6);
+      g.fillStyle = "rgba(230,236,255," + (0.25 + 0.7 * r()).toFixed(2) + ")";
+      g.beginPath();
+      g.arc(x, y, size, 0, TAU);
+      g.fill();
+    }
+    spaceBg = c;
+    spaceKey = key;
+    return c;
+  }
   var ORB = {
     Mercury: { a: 0.387, e: 0.2056 }, Venus: { a: 0.723, e: 0.0068 },
     Earth: { a: 1.0, e: 0.0167 }, Mars: { a: 1.524, e: 0.0934 },
@@ -7376,8 +7416,7 @@ ORBIT_TEMPLATES = {"orbits.html": r"""{% extends "base.html" %}
     var W = canvas.clientWidth;
     var H = canvas.clientHeight || W;
     var cx = W / 2 + view.x, cy = H / 2 + view.y, half = (Math.min(W, H) / 2 - 18) * view.z;
-    ctx.fillStyle = "#05070B";
-    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(spaceBackground(W, H), 0, 0, W, H);
     labelBoxes = [];
     planets.forEach(function (p) { drawOrbitLine(p.name, cx, cy, half); });
     drawSun(cx, cy);
