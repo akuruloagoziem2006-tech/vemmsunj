@@ -7030,7 +7030,7 @@ PLANET_TEMPLATES = {"planets.html": r"""{% extends "base.html" %}
 {% else %}
 <p class="meta">No planet is above the horizon right now.</p>
 {% endif %}
-<p><a href="/planets/orbits">Watch the planets orbit the Sun</a></p>
+<p><a href="/planets/orbits" style="font-size:1.25rem;font-weight:600">Watch the planets orbit the Sun</a></p>
 <nav class="seg" aria-label="Viewing equipment">
   <a href="/planets?place={{ place['id'] }}&view=all" {% if view == 'all' %}aria-current="page"{% endif %}>All</a>
   <a href="/planets?place={{ place['id'] }}&view=naked" {% if view == 'naked' %}aria-current="page"{% endif %}>Naked eye</a>
