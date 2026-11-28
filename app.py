@@ -3295,7 +3295,11 @@ COMPASS_TEMPLATES = {"compass.html": r"""{% extends "base.html" %}
   }
   function colorFor(o) {
     if (o.kind === "moon") return "#E9E6DC";
-    if (o.kind === "planet") return "#E8C27A";
+    if (o.kind === "planet") {
+      var PC = { Mercury: "#B5B2AC", Venus: "#F3E6B5", Mars: "#C1502E", Jupiter: "#D8B48A",
+        Saturn: "#E4D2A0", Uranus: "#B5E3E8", Neptune: "#3F5FC0" };
+      return PC[o.name] || "#E8C27A";
+    }
     if (o.kind === "satellite") return /ISS/i.test(o.name) ? "#C9553A" : "#C9D6E8";
     return "#E9E6DC";
   }
