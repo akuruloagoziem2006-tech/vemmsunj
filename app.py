@@ -3174,6 +3174,24 @@ GLOBE_TEMPLATES = {"globe.html": """{% extends "base.html" %}
     if (window.vmTrack) window.vmTrack('ground_track', groundOn ? 'on' : 'off');
     updateGroundTrack();
   });
+  (function applySatParam() {
+    var sat = new URLSearchParams(location.search).get("sat");
+    if (!sat) return;
+    var tries = 0;
+    (function tryApply() {
+      if (!data || !data.satellites) {
+        if (tries++ < 100) setTimeout(tryApply, 200);
+        return;
+      }
+      var hit = data.satellites.filter(function (x) { return x.name === sat; })[0];
+      if (!hit) return;
+      selectedName = sat;
+      if (!groundOn) groundBtn.click();
+      renderList();
+      updateInfo();
+      updateHighlights();
+    })();
+  })();
   var resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "btn quiet";
@@ -8751,7 +8769,7 @@ document.addEventListener('DOMContentLoaded', function () {
     addRow('Position calculated', (calc ? calc.textContent : '-') + ' UTC');
     var links = document.createElement('div');
     links.className = 'links';
-    [['See the orbit on the Globe', '/globe'],
+    [['See the orbit on the Globe', '/globe?sat=' + encodeURIComponent(name)],
      ['Pass simulation for Griffith Observatory', '/places/1/simulate'], ['Log a sighting', '/posts']].forEach(function (l) {
       var a = document.createElement('a');
       a.className = 'btn quiet';
