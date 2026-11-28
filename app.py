@@ -1047,6 +1047,10 @@ header.site { position: relative; z-index: 2000; }
 <style>
 /* Aurora map: square, so the whole world fits with no grey bands */
 .aurora-full #map { height: 100vw !important; min-height: 0 !important; }
+/* Map page: edge to edge across the screen, and tall enough to fill it below the header */
+.map-full { width: 100vw !important; max-width: 100vw !important; margin-left: calc(50% - 50vw) !important; margin-right: calc(50% - 50vw) !important; }
+.map-full #map { width: 100% !important; height: calc(100vh - 150px) !important; min-height: 460px; border-radius: 0; border-left: 0; border-right: 0; }
+@media (max-width: 700px) { .map-full #map { height: calc(100dvh - 130px) !important; } }
 </style>
 <style>
 /* Sightings restructure: feed first, composer on demand, actions in a row */
